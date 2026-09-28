@@ -1,0 +1,97 @@
+<?php
+
+namespace App\Http\Controllers\Api\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use App\Services\AccountLockoutService;
+use App\Services\RoleService;
+use App\Services\TrustedDeviceService;
+use App\Services\TwoFactorService;
+use App\Services\UipJwtService;
+use App\Support\SecurityLog;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+
+/**
+ * يطابق TwoFactorChallengeController القديمة — بفرق تصميم واحد **متعمّد
+ * وموثّق** (شوف "⚠️ فرق عن العقد الأصلي" في AUTH_API_CONTRACT.md):
+ *
+ * القديم بيعتمد على PHP session (`_2fa_pending_user_id`) عشان يعرف مين
+ * اللي بيكمّل الـ 2FA. إحنا هنا API بالكامل Stateless (JWT بس، من غير
+ * session cookie)، فمفيش حاجة تتخزن على السيرفر بين خطوة اللوجن وخطوة
+ * التحقق. البديل: اللوجن بيرجّع `challenge_token` (JWT قصير العمر — 5
+ * دقايق، claim خاص `typ=2fa_challenge` عشان محدش يستخدمه كـ access token
+ * عادي)، والفرونت لازم يبعته تاني هنا. ده أكتر أمانًا من إنه يبعت الـ
+ * user_id نفسه في الـ body (اللي كان ممكن يتلاعب بيه).
+ */
+class TwoFactorChallengeController extends Controller
+{
+    public function __construct(
+        private RoleService $roles,
+        private TwoFactorService $twoFactor,
+        private TrustedDeviceService $trustedDevice,
+        private AccountLockoutService $lockout
+    ) {
+    }
+
+    /** POST /api/v1/auth/two-factor/verify */
+    public function submit(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'challenge_token' => 'required|string',
+            'code'            => 'required|string',
+            'remember_device' => 'sometimes|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+
+        $claims = UipJwtService::decode($request->input('challenge_token'));
+
+        if (!$claims || ($claims['typ'] ?? null) !== '2fa_challenge' || empty($claims['sub'])) {
+            return $this->apiError('No two-factor challenge is pending. Please log in again.', null, 409);
+        }
+
+        $user = User::find($claims['sub']);
+        if (!$user) {
+            return $this->apiError('Session expired. Please log in again.', null, 401);
+        }
+
+        if (!$this->twoFactor->verifyLoginCode($user, (string) $request->input('code'))) {
+            return $this->apiError('Invalid or expired code. Please try again.', ['code' => ['Invalid or expired code.']], 422);
+        }
+
+        $role = (string) ($claims['role'] ?? $this->roles->primaryRoleFor($user->id));
+
+        if ($request->boolean('remember_device')) {
+            $this->trustedDevice->trustCurrentDevice($user->id, $request->ip(), $request->userAgent());
+        }
+
+        $this->lockout->registerSuccessfulLogin($user);
+        DB::table('users')->where('id', $user->id)->update([
+            'last_login_at' => now(),
+            'last_login_ip' => $request->ip(),
+        ]);
+
+        $tokens = UipJwtService::issueTokenPair($user->id, $role);
+
+        SecurityLog::write('Successful login (2FA)', ['user_id' => $user->id, 'ip' => $request->ip()]);
+
+        return $this->apiSuccess(
+            array_merge(['redirect' => $this->roles->homeRouteFor($role)], $tokens),
+            'Two-factor verification successful.'
+        );
+    }
+
+    /** POST /api/v1/auth/two-factor/cancel */
+    public function cancel(Request $request)
+    {
+        // Stateless: مفيش حاجة متخزنة على السيرفر تتلغى (القديم كان بيمسح
+        // مفاتيح الـ session بس) — الـ challenge_token نفسه هيخلص لوحده
+        // بعد 5 دقايق. الرد دايمًا نجاح، زي القديم بالظبط.
+        return $this->apiSuccess(null, 'Two-factor challenge cancelled.');
+    }
+}

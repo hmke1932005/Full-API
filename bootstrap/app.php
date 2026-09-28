@@ -1,0 +1,67 @@
+<?php
+
+/**
+ * ⚠️ ده مش ملف bootstrap/app.php كامل — ده الجزء اللي لازم تضيفه/تدمجه
+ * جوه ملف bootstrap/app.php بتاع مشروعك (اللي composer create-project
+ * لارافيل بيعمله تلقائيًا). متستبدلش الملف بالكامل بيه، لأنه هيبوظ باقي
+ * إعدادات الـ providers/exceptions بتاعة لارافيل.
+ *
+ * الترتيب هنا مهم ويطابق ترتيب القديم بالظبط
+ * (app/Middleware/... + routes/api.php سطر 156):
+ *   SecurityHeaders -> Cors -> RateLimit -> Locale
+ * السبب: SecurityHeaders وCors لازم يلفوا حتى ريسبونس الـ 429 اللي
+ * RateLimit بيرجعه (عشان الهيدرز الأمنية وCORS يتحطوا عليه برضو، مش بس
+ * على الريسبونسات الناجحة) — فلازم يتسجلوا قبله في السلسلة.
+ *
+ * uip.auth بيتسجل كـ alias عادي (route-level، زي ما هو)، مش global —
+ * ده يطابق AuthMiddleware القديمة اللي كانت بس على المجموعات المحمية.
+ */
+
+use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Configuration\Exceptions;
+use Illuminate\Foundation\Configuration\Middleware;
+
+return Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(
+        channels: __DIR__.'/../routes/channels.php',
+        web: __DIR__ . '/../routes/web.php',
+        api: __DIR__ . '/../routes/api.php',
+        commands: __DIR__ . '/../routes/console.php',
+        health: '/up',
+    )
+    ->withMiddleware(function (Middleware $middleware) {
+        $middleware->alias([
+            'uip.auth'  => \App\Http\Middleware\UipAuthMiddleware::class,
+            // بند 3 — يطابق app/Middleware/AdminMiddleware.php القديمة.
+            // لازم يتحط بعد uip.auth في نفس المجموعة (محتاج uip_role
+            // اللي uip.auth بيحطها في $request->attributes).
+            'uip.admin' => \App\Http\Middleware\UipAdminMiddleware::class,
+
+            // بند 17 — يطابق app/Middleware/FeedCommentRateLimitMiddleware.php
+            // القديمة. غطا إضافي فوق UipRateLimitMiddleware العام (اللي
+            // على مستوى الـ IP/user لكل الـ API)، مقيّد بس على
+            // POST /feed/{id}/comments. لازم يتحط بعد uip.auth في نفس
+            // المجموعة (محتاج uip_user_id اللي uip.auth بيحطها).
+            'feed.comment_rate_limit' => \App\Http\Middleware\FeedCommentRateLimitMiddleware::class,
+
+            // Meetings Round 2 (Lobby & Access, بند 23 — Guest Access).
+            // نسخة اختيارية من uip.auth: بتحط uip_user_id لو فيه Bearer
+            // صالح، وبتكمل عادي من غير فشل لو مفيش (ضيف من غير حساب UIP).
+            // مقصورة على prefix('meetings/join') بس، مش global.
+            'uip.auth.optional' => \App\Http\Middleware\UipAuthOptionalMiddleware::class,
+        ]);
+
+        // بند 2 — نفس ترتيب القديم بالظبط. prepend() يحطهم أول الـ 'api'
+        // middleware group (اللي routes/api.php محمّل عليها تلقائيًا في
+        // لارافيل 11)، فبيغطوا كل ريكوست تحت /api/* — بما فيه أي OPTIONS
+        // preflight لروت مش مسجّل أصلًا (شوف ملحوظة UipCorsMiddleware).
+        $middleware->api(prepend: [
+            \App\Http\Middleware\UipSecurityHeadersMiddleware::class,
+            \App\Http\Middleware\UipCorsMiddleware::class,
+            \App\Http\Middleware\UipRateLimitMiddleware::class,
+            \App\Http\Middleware\UipLocaleMiddleware::class,
+        ]);
+    })
+    ->withExceptions(function (Exceptions $exceptions) {
+        //
+    })->create();
