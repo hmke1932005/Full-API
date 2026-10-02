@@ -23,4 +23,14 @@ return [
     // مفتاح على مستوى الميزة: حتى لو enabled فوق = true، تخصيص الإيميلات
     // فاضل مقفول لحد ما ده يتفعّل صراحة.
     'email_personalization_enabled' => (bool) env('AI_EMAIL_PERSONALIZATION_ENABLED', false),
+
+    // بيانات مؤسس/مطوّر المنصة اللي المساعد بيدّيها لأي يوزر يسأل عن التواصل
+    // أو عن اللي بنى المنصة. تتغيّر من .env من غير تعديل كود.
+    'founder' => [
+        'name_en'  => env('UIP_FOUNDER_NAME_EN', 'Haitham Mohamed'),
+        'name_ar'  => env('UIP_FOUNDER_NAME_AR', 'هيثم محمد'),
+        'email'    => env('UIP_FOUNDER_EMAIL', 'haythemmohamed478@gmail.com'),
+        'phone'    => env('UIP_FOUNDER_PHONE', '01143894042'),
+        'linkedin' => env('UIP_FOUNDER_LINKEDIN', 'https://www.linkedin.com/in/haithem-mohamed-8b7143243/'),
+    ],
 ];
