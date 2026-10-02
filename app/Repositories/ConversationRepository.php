@@ -201,9 +201,18 @@ class ConversationRepository
 
     private const MEMBER_FLAGS = ['is_favorite', 'is_pinned', 'is_muted', 'is_archived'];
 
+    /** الواجهة بتبعت favorite/pin/mute/archive (من غير is_) — بنطبّعها لأسماء الأعمدة الفعلية. */
+    private const FLAG_ALIASES = [
+        'favorite' => 'is_favorite', 'favourite' => 'is_favorite', 'favorited' => 'is_favorite',
+        'pin' => 'is_pinned', 'pinned' => 'is_pinned',
+        'mute' => 'is_muted', 'muted' => 'is_muted',
+        'archive' => 'is_archived', 'archived' => 'is_archived',
+    ];
+
     /** بتبدّل واحدة من فلاجز العضو البوليانية (favorite/pinned/muted/archived). */
     public function setMemberFlag(int $conversationId, $userId, string $flag, bool $value): void
     {
+        $flag = self::FLAG_ALIASES[strtolower($flag)] ?? $flag;
         if (!in_array($flag, self::MEMBER_FLAGS, true)) {
             throw new \InvalidArgumentException("Unknown conversation member flag: {$flag}");
         }
