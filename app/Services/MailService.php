@@ -227,23 +227,35 @@ class MailService
         ?string $lockedUntil,
         string $supportEmail,
         string $supportPhone,
-        string $locale = 'ar'
+        string $locale = 'ar',
+        ?string $resetUrl = null,
+        ?string $attemptIp = null
     ): bool {
         $ar = $locale === 'ar';
+
+        $lines = [
+            $permanent
+                ? ($ar ? 'تم قفل حسابك بشكل دائم لأسباب أمنية.' : 'Your account has been permanently locked for security reasons.')
+                : ($ar ? "تم قفل حسابك مؤقتًا حتى {$lockedUntil}." : "Your account is temporarily locked until {$lockedUntil}."),
+            $ar
+                ? 'السبب: محاولات دخول فاشلة متكررة' . ($attemptIp ? " (آخر محاولة من IP: {$attemptIp})" : '') . '.'
+                : 'Reason: repeated failed login attempts' . ($attemptIp ? " (latest attempt from IP: {$attemptIp})" : '') . '.',
+        ];
+        if ($resetUrl) {
+            $lines[] = $ar
+                ? 'لو ماكنتش أنت، يُنصح بتغيير كلمة السر فورًا من الزر أدناه (الرابط صالح لمدة ساعة).'
+                : "If this wasn't you, we recommend changing your password right away using the button below (valid for one hour).";
+        }
+        $lines[] = $ar
+            ? "للمساعدة تواصل معنا عبر {$supportEmail} أو {$supportPhone}."
+            : "For help, contact us at {$supportEmail} or {$supportPhone}.";
 
         $this->deliver(
             $toEmail,
             $ar ? 'تم قفل حسابك' : 'Your account was locked',
             $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
-            [
-                $permanent
-                    ? ($ar ? 'تم قفل حسابك بشكل دائم لأسباب أمنية.' : 'Your account has been permanently locked for security reasons.')
-                    : ($ar ? "تم قفل حسابك مؤقتًا حتى {$lockedUntil}." : "Your account is temporarily locked until {$lockedUntil}."),
-                $ar
-                    ? "للمساعدة تواصل معنا عبر {$supportEmail} أو {$supportPhone}."
-                    : "For help, contact us at {$supportEmail} or {$supportPhone}.",
-            ],
-            null,
+            $lines,
+            $resetUrl ? ['label' => $ar ? 'تغيير كلمة السر' : 'Change password', 'url' => $resetUrl] : null,
             $locale,
             [],
             'sendAccountLockedNotice',

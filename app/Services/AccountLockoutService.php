@@ -47,7 +47,8 @@ class AccountLockoutService
     public function __construct(
         private SecurityPolicyRepository $policies,
         private UserRepository $users,
-        private AuditLogService $auditLog
+        private AuditLogService $auditLog,
+        private MailService $mail
     ) {
     }
 
@@ -176,7 +177,48 @@ class AccountLockoutService
         SecurityLog::write('Account locked after failed login attempts', [
             'user_id' => $user->id, 'ip' => $ip, 'permanent' => $permanent, 'locked_until' => $lockedUntil?->toDateTimeString(),
         ]);
+
+        if (!empty($policy['notify_email'])) {
+            $this->notifyOwnerOfLock($user, $ip, $permanent, $lockedUntil?->toDateTimeString(), $policy, $locale);
+        }
+
         return ['just_locked' => true, 'message' => $message];
+    }
+
+    /**
+     * بيبعت لصاحب الحساب نفسه إيميل "في حد حاول يدخل على حسابك" + لينك
+     * إعادة تعيين الباسورد. بيتنادى مرة واحدة بس لحظة القفل (مش مع كل
+     * محاولة فاشلة) عشان محدش يقدر يستخدمه في spam على صاحب الإيميل.
+     * أي فشل هنا بيتسجل بس ومبيكسرش رد تسجيل الدخول.
+     */
+    private function notifyOwnerOfLock(User $user, string $ip, bool $permanent, ?string $lockedUntil, array $policy, string $locale): void
+    {
+        try {
+            $plainToken = bin2hex(random_bytes(32));
+            DB::table('password_reset_tokens')->insert([
+                'user_id'    => $user->id,
+                'token_hash' => hash('sha256', $plainToken),
+                'expires_at' => now()->addHour(),
+                'created_at' => now(),
+            ]);
+
+            $base = rtrim((string) (config('app.frontend_url') ?: config('app.url')), '/');
+            $resetUrl = $base . '/auth/reset-password?token=' . $plainToken;
+
+            $this->mail->sendAccountLockedNotice(
+                (string) $user->email,
+                (string) ($user->full_name ?? ''),
+                $permanent,
+                $lockedUntil,
+                (string) ($policy['support_email'] ?? ''),
+                (string) ($policy['support_phone'] ?? ''),
+                (string) ($user->preferred_language ?? $locale),
+                $resetUrl,
+                $ip
+            );
+        } catch (\Throwable $e) {
+            Log::error('Lockout notice email failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+        }
     }
 
     public function registerSuccessfulLogin(User $user): void
