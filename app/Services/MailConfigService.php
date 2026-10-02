@@ -26,17 +26,36 @@ class MailConfigService
         return Crypt::encryptString($plain);
     }
 
-    /** بيرجّع القيمة الأصلية، ولو القيمة قديمة ومحفوظة plaintext بيرجّعها زي ما هي. */
+    /**
+     * بيرجّع القيمة الأصلية. القيم القديمة المحفوظة plaintext بترجع زي ما هي.
+     * لو القيمة مشفّرة بس فك التشفير فشل (غالبًا APP_KEY اتغيّر)، بنرجّع '' بدل
+     * ما نبعت النص المشفّر كأنه سر حقيقي (ده كان بيطلّع "Key not found" من Brevo).
+     */
     public static function decryptSecret(?string $stored): string
     {
         if ($stored === null || $stored === '') {
             return '';
         }
         try {
-            return Crypt::decryptString($stored);
+            return trim(Crypt::decryptString($stored));
         } catch (DecryptException) {
-            return $stored;
+            if (self::looksEncrypted($stored)) {
+                Log::warning('MailConfigService: stored mail secret could not be decrypted — APP_KEY probably changed. Re-enter it in Admin > Settings > Mail.');
+                return '';
+            }
+            return trim($stored);
         }
+    }
+
+    /** payload بتاع Laravel Crypt = base64(JSON{iv,value,mac,tag}) */
+    private static function looksEncrypted(string $value): bool
+    {
+        $json = base64_decode($value, true);
+        if ($json === false) {
+            return false;
+        }
+        $data = json_decode($json, true);
+        return is_array($data) && isset($data['iv'], $data['value'], $data['mac']);
     }
 
     public function apply(): void
@@ -58,7 +77,7 @@ class MailConfigService
             config(['mail.default' => $driver]);
 
             if ($driver === 'brevo') {
-                config(['mail.mailers.brevo.key' => self::decryptSecret($rows['mail_brevo_api_key'] ?? '') ?: (string) env('BREVO_API_KEY', '')]);
+                config(['mail.mailers.brevo.key' => self::decryptSecret($rows['mail_brevo_api_key'] ?? '') ?: trim((string) env('BREVO_API_KEY', ''))]);
             } else {
                 $encryption = $rows['mail_encryption'] ?? 'tls';
                 $password = self::decryptSecret($rows['mail_password'] ?? '');

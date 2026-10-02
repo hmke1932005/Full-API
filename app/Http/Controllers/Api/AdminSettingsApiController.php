@@ -383,6 +383,10 @@ class AdminSettingsApiController extends Controller
             return $this->apiError('The from-address email format is invalid.', null, 422);
         }
 
+        if ($brevoKey !== '' && str_starts_with($brevoKey, 'xsmtpsib-')) {
+            return $this->apiError('That is a Brevo SMTP key. Please use an API key (starts with "xkeysib-") from SMTP & API → API Keys.', null, 422);
+        }
+
         $this->settings->set('mail_driver', $driver);
         if ($brevoKey !== '') {
             $this->settings->set('mail_brevo_api_key', MailConfigService::encryptSecret($brevoKey));

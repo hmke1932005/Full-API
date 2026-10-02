@@ -18,6 +18,7 @@ class BrevoTransport extends AbstractTransport
     public function __construct(private string $apiKey, private int $timeout = 15)
     {
         parent::__construct();
+        $this->apiKey = trim($this->apiKey);
     }
 
     protected function doSend(SentMessage $message): void
@@ -64,6 +65,13 @@ class BrevoTransport extends AbstractTransport
                 ->post('https://api.brevo.com/v3/smtp/email', $payload);
         } catch (\Throwable $e) {
             throw new TransportException('Brevo API request failed: ' . $e->getMessage(), 0, $e);
+        }
+
+        if ($response->status() === 401) {
+            throw new TransportException(
+                'Brevo rejected the API key (401). Use an API key (starts with "xkeysib-") from Brevo → SMTP & API → API Keys, '
+                . 'not the SMTP key, and re-save it in Admin → Settings → Mail. Details: ' . $response->body()
+            );
         }
 
         if ($response->failed()) {
