@@ -54,13 +54,14 @@ class MailService
         ?array $button,
         string $locale,
         array $meta,
-        string $logContext
+        string $logContext,
+        string $variant = 'info'
     ): bool {
         $this->lastError = null;
 
         try {
             app(MailConfigService::class)->apply();
-            Mail::to($toEmail)->send(new GenericMail($subject, $heading, $lines, $button, $locale, $meta));
+            Mail::to($toEmail)->send(new GenericMail($subject, $heading, $lines, $button, $locale, $meta, $variant));
 
             return true;
         } catch (Throwable $e) {
@@ -100,7 +101,8 @@ class MailService
                 ['label' => $ar ? 'البريد الإلكتروني' : 'Email', 'value' => $email],
                 ['label' => $ar ? 'كلمة السر المؤقتة' : 'Temporary password', 'value' => $tempPassword],
             ],
-            'sendStudentInvite'
+            'sendStudentInvite',
+            'invite'
         );
     }
 
@@ -123,7 +125,8 @@ class MailService
                 ['label' => $ar ? 'البريد الإلكتروني' : 'Email', 'value' => $toEmail],
                 ['label' => $ar ? 'كلمة السر المؤقتة' : 'Temporary password', 'value' => $tempPassword],
             ],
-            'sendSupervisorInvite'
+            'sendSupervisorInvite',
+            'invite'
         );
     }
 
@@ -146,7 +149,8 @@ class MailService
                 ['label' => $ar ? 'البريد الإلكتروني' : 'Email', 'value' => $toEmail],
                 ['label' => $ar ? 'كلمة السر المؤقتة' : 'Temporary password', 'value' => $tempPassword],
             ],
-            'sendAcademicStaffInvite'
+            'sendAcademicStaffInvite',
+            'invite'
         );
     }
 
@@ -166,7 +170,8 @@ class MailService
             $linkUrl ? ['label' => $ar ? 'عرض التفاصيل' : 'View details', 'url' => $linkUrl] : null,
             $locale,
             [],
-            'sendNotificationEmail'
+            'sendNotificationEmail',
+            'notification'
         );
     }
 
@@ -185,7 +190,8 @@ class MailService
             $downloadUrl ? ['label' => 'Download', 'url' => $downloadUrl] : null,
             'en',
             [],
-            'sendScheduledReport'
+            'sendScheduledReport',
+            'report'
         );
 
         return true;
@@ -207,7 +213,8 @@ class MailService
             $downloadUrl ? ['label' => $ar ? 'تحميل' : 'Download', 'url' => $downloadUrl] : null,
             $locale,
             [],
-            'sendDataExportReady'
+            'sendDataExportReady',
+            'success'
         );
 
         return true;
@@ -239,7 +246,8 @@ class MailService
             null,
             $locale,
             [],
-            'sendAccountLockedNotice'
+            'sendAccountLockedNotice',
+            'security'
         );
 
         return true;
@@ -265,7 +273,8 @@ class MailService
             ['label' => $ar ? 'إعادة تعيين كلمة السر' : 'Reset password', 'url' => $resetUrl],
             $locale,
             [],
-            'sendPasswordReset'
+            'sendPasswordReset',
+            'reset'
         );
     }
 
@@ -290,7 +299,8 @@ class MailService
             null,
             $locale,
             [],
-            'sendTestEmail'
+            'sendTestEmail',
+            'test'
         );
     }
 
