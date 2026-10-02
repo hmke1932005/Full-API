@@ -35,6 +35,14 @@ use Throwable;
  */
 class MailService
 {
+    /** آخر خطأ إرسال (بيظهر للأدمن في "Send Test Email"). */
+    private ?string $lastError = null;
+
+    public function getLastError(): ?string
+    {
+        return $this->lastError;
+    }
+
     /**
      * @param array<int, array{label: string, value: string}> $meta صفوف إضافية (باسورد مؤقت...الخ)
      */
@@ -48,11 +56,15 @@ class MailService
         array $meta,
         string $logContext
     ): bool {
+        $this->lastError = null;
+
         try {
+            app(MailConfigService::class)->apply();
             Mail::to($toEmail)->send(new GenericMail($subject, $heading, $lines, $button, $locale, $meta));
 
             return true;
         } catch (Throwable $e) {
+            $this->lastError = $e->getMessage();
             Log::error("{$logContext}: failed to send email", [
                 'email' => $toEmail,
                 'error' => $e->getMessage(),

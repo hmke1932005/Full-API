@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Repositories\SettingRepository;
 use App\Services\AuditLogService;
 use App\Services\FileUploadService;
+use App\Services\MailConfigService;
 use App\Services\MailService;
 use App\Services\NotificationPreferencesService;
 use App\Services\TwoFactorService;
@@ -95,8 +96,12 @@ class AdminSettingsApiController extends Controller
         $from = (array) config('mail.from', []);
 
         $hasPasswordOverride = $get('password', '') !== '';
+        $envDefault = (string) config('mail.default', 'smtp');
+        $driver = (string) $get('driver', in_array($envDefault, MailConfigService::DRIVERS, true) ? $envDefault : 'smtp');
 
         return [
+            'driver'         => $driver,
+            'has_brevo_key'  => $get('brevo_api_key', '') !== '' || (string) config('mail.mailers.brevo.key', '') !== '',
             'host'         => $get('host', $smtp['host'] ?? ''),
             'port'         => $get('port', $smtp['port'] ?? 587),
             'username'     => $get('username', $smtp['username'] ?? ''),
@@ -364,16 +369,29 @@ class AdminSettingsApiController extends Controller
         $fromName   = trim((string) $request->input('mail_from_name', ''));
         $fromAddr   = trim((string) $request->input('mail_from_address', ''));
         $replyTo    = trim((string) $request->input('mail_reply_to', ''));
+        $driver     = (string) $request->input('mail_driver', 'smtp');
+        $brevoKey   = trim((string) $request->input('mail_brevo_api_key', ''));
+
+        if (!in_array($driver, MailConfigService::DRIVERS, true)) {
+            return $this->apiError('Invalid mail driver.', null, 422);
+        }
+        if ($replyTo !== '' && !filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
+            return $this->apiError('The reply-to email format is invalid.', null, 422);
+        }
 
         if ($fromAddr !== '' && !filter_var($fromAddr, FILTER_VALIDATE_EMAIL)) {
             return $this->apiError('The from-address email format is invalid.', null, 422);
         }
 
+        $this->settings->set('mail_driver', $driver);
+        if ($brevoKey !== '') {
+            $this->settings->set('mail_brevo_api_key', MailConfigService::encryptSecret($brevoKey));
+        }
         $this->settings->set('mail_host', $host);
         $this->settings->set('mail_port', $port);
         $this->settings->set('mail_username', $username);
         if ($password !== '') {
-            $this->settings->set('mail_password', $password);
+            $this->settings->set('mail_password', MailConfigService::encryptSecret($password));
         }
         $this->settings->set('mail_encryption', in_array($encryption, ['tls', 'ssl', ''], true) ? $encryption : 'tls');
         $this->settings->set('mail_from_name', $fromName);
@@ -382,6 +400,7 @@ class AdminSettingsApiController extends Controller
 
         // Never record the password value itself, only that it changed.
         $this->auditLog->record($userId, 'admin.mail_settings_update', 'Setting', null, null, [
+            'driver' => $driver, 'brevo_key_changed' => $brevoKey !== '',
             'host' => $host, 'port' => $port, 'username' => $username,
             'password_changed' => $password !== '', 'encryption' => $encryption,
             'from_name' => $fromName, 'from_address' => $fromAddr, 'reply_to' => $replyTo,
@@ -406,7 +425,7 @@ class AdminSettingsApiController extends Controller
 
         return $sent
             ? $this->apiSuccess(null, "Test email sent to {$user->email}.")
-            : $this->apiError('Send failed — check your SMTP credentials and the error log.', null, 422);
+            : $this->apiError('Send failed — ' . ($this->mail->getLastError() ?: 'check your mail credentials and the error log.'), null, 422);
     }
 
     /** PATCH /api/v1/admin/settings/ai — blank API key submission means "keep existing", same contract as updateMailSettings(). */
