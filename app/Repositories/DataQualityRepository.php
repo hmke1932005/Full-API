@@ -30,6 +30,22 @@ class DataQualityRepository
         return '`' . preg_replace('/[^A-Za-z0-9_]/', '', $ident) . '`';
     }
 
+    /**
+     * هل العمود نصي؟ مقارنة العمود بـ '' بتبوّظ (SQLSTATE 1525) على
+     * DATETIME/DATE/TIMESTAMP/TIME في MySQL strict، فمقارنة الفاضي
+     * بتتطبق على الأعمدة النصية بس؛ الباقي بيتفحص بـ IS NULL فقط.
+     */
+    private function isTextType(string $type): bool
+    {
+        $type = strtoupper($type);
+        foreach (['CHAR', 'TEXT', 'ENUM', 'CLOB'] as $hint) {
+            if (str_contains($type, $hint)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** نفس فحص الـ driver بتاع DataExplorerRepository — لازم لتبديل RAND()/RANDOM() في outliers(). */
     private function driver(): string
     {
@@ -63,10 +79,10 @@ class DataQualityRepository
 
         $totalRows = (int) (DB::selectOne('SELECT COUNT(*) AS c FROM ' . $this->quoteIdent($table))->c ?? 0);
 
-        $completeness = $this->completeness($table, $visible, $totalRows);
+        $completeness = $this->completeness($table, $columns, $visible, $totalRows);
         $duplicates = $this->duplicates($table, $this->contentColumns($columns, $visible), $totalRows);
         $outliers = $this->outliers($table, $columns, $visible, $totalRows);
-        $validity = $this->validity($table, $visible, $totalRows);
+        $validity = $this->validity($table, $columns, $visible, $totalRows);
         $freshness = $this->freshness($table, $columns);
 
         $scoreParts = array_filter([
@@ -90,17 +106,26 @@ class DataQualityRepository
     }
 
     /** % من القيم غير الفارغة/غير null عبر الأعمدة الظاهرة، بالإضافة لأسوأ الحالات. */
-    private function completeness(string $table, array $visible, int $totalRows): array
+    private function completeness(string $table, array $columns, array $visible, int $totalRows): array
     {
         if (!$visible || $totalRows === 0) {
             return ['pct' => null, 'columns' => []];
         }
 
+        $types = [];
+        foreach ($columns as $c) {
+            $types[$c['name']] = (string) ($c['type'] ?? '');
+        }
+
         $perColumn = [];
         foreach ($visible as $col) {
             $ident = $this->quoteIdent($col);
+            // مقارنة '' بتتطبق على الأعمدة النصية بس (DATETIME بيرمي 1525)
+            $where = $this->isTextType($types[$col] ?? '')
+                ? "{$ident} IS NULL OR {$ident} = ''"
+                : "{$ident} IS NULL";
             $missing = (int) (DB::selectOne(
-                "SELECT COUNT(*) AS c FROM " . $this->quoteIdent($table) . " WHERE {$ident} IS NULL OR {$ident} = ''"
+                "SELECT COUNT(*) AS c FROM " . $this->quoteIdent($table) . " WHERE {$where}"
             )->c ?? 0);
             $perColumn[] = [
                 'column'      => $col,
@@ -243,7 +268,7 @@ class DataQualityRepository
     }
 
     /** فحص صيغة على الأعمدة اللي بتتعرف كـ email/URL من اسمها. */
-    private function validity(string $table, array $visible, int $totalRows): array
+    private function validity(string $table, array $columns, array $visible, int $totalRows): array
     {
         if ($totalRows === 0) {
             return ['pct' => null, 'issues' => []];
@@ -253,7 +278,15 @@ class DataQualityRepository
         $checkedCount = 0;
         $invalidTotal = 0;
 
+        $types = [];
+        foreach ($columns as $c) {
+            $types[$c['name']] = (string) ($c['type'] ?? '');
+        }
+
         foreach ($visible as $col) {
+            if (!$this->isTextType($types[$col] ?? '')) {
+                continue; // فحص الصيغة (LIKE / != '') للأعمدة النصية بس
+            }
             $lower = strtolower($col);
             $ident = $this->quoteIdent($col);
             $isEmail = false;
