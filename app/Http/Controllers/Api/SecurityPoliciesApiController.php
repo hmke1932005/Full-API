@@ -185,6 +185,10 @@ class SecurityPoliciesApiController extends Controller
         } catch (\InvalidArgumentException $e) {
             return $this->apiError($e->getMessage(), null, 422);
         } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Security policy save failed', [
+                'policy' => get_class($service),
+                'error'  => $e->getMessage(),
+            ]);
             return $this->apiError('Could not save that policy.', null, 422);
         }
     }
