@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\PortfolioService;
+use App\Services\RoleService;
 use Illuminate\Http\Request;
 
 /**
@@ -31,7 +32,7 @@ use Illuminate\Http\Request;
  */
 class PortfoliosApiController extends Controller
 {
-    public function __construct(private PortfolioService $portfolios)
+    public function __construct(private PortfolioService $portfolios, private RoleService $roles)
     {
     }
 
@@ -49,6 +50,7 @@ class PortfoliosApiController extends Controller
             'eligible_projects' => $data['eligibleProjects'],
             'featured_projects' => $data['featuredProjects'],
             'share_url'         => $this->publicBaseUrl() . '/p/' . ($user->uuid ?? ''),
+            'role'              => $this->roles->primaryRoleFor($userId),
         ], 'Portfolio retrieved successfully.');
     }
 
@@ -80,7 +82,13 @@ class PortfoliosApiController extends Controller
         }
 
         return $this->apiSuccess([
-            'owner'             => ['full_name' => $user->full_name, 'uuid' => $user->uuid],
+            // role: عشان الصفحة العامة تعرض شارة الدور (مشرف/أدمن/محلل...) وتخفي
+            // أقسام المشاريع للأدوار اللي مش بتملك مشاريع. slug بس — مفيش بيانات حساسة.
+            'owner'             => [
+                'full_name' => $user->full_name,
+                'uuid'      => $user->uuid,
+                'role'      => $this->roles->primaryRoleFor((int) $user->id),
+            ],
             'portfolio'         => $data['portfolio']->toArray(),
             'featured_projects' => $data['featuredProjects'],
         ], 'Portfolio retrieved successfully.');
