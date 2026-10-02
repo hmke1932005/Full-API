@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AiMessage;
 use App\Services\AiAssistantService;
+use App\Services\AiUserContextService;
 use App\Services\FileUploadService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * منقولة من app/Controllers/Common/AiAssistantController.php القديمة —
@@ -25,7 +28,8 @@ class AiAssistantController extends Controller
 {
     public function __construct(
         private AiAssistantService $assistant,
-        private FileUploadService $uploads
+        private FileUploadService $uploads,
+        private AiUserContextService $userContext
     ) {
     }
 
@@ -454,13 +458,34 @@ class AiAssistantController extends Controller
         $role = $this->role($request);
         $portal = (string) $request->input('portal', $this->portalForRole($role));
         $page = $request->input('page');
+        $route = $request->input('route');
+        $locale = $request->input('locale');
         $project = $request->input('project');
         $dashboard = $request->input('dashboard');
+
+        // بروفايل اليوزر من الداتابيز بمعرّف التوكن بس (مش من body الطلب).
+        // كاش قصير عشان رسايل متتالية ماتعيدش نفس الاستعلامات.
+        $userId = $this->uid($request);
+        $profile = [];
+        if ($userId > 0) {
+            try {
+                $profile = Cache::remember(
+                    'ai_profile:' . $userId . ':' . ($role ?? 'none'),
+                    45,
+                    fn () => $this->userContext->forUser($userId, $role)
+                );
+            } catch (\Throwable $e) {
+                Log::warning('AI profile context failed', ['error' => $e->getMessage()]);
+            }
+        }
 
         return array_filter([
             'portal'    => $portal,
             'page'      => is_string($page) ? mb_substr($page, 0, 200) : null,
+            'route'     => is_string($route) ? mb_substr($route, 0, 200) : null,
+            'locale'    => in_array($locale, ['ar', 'en'], true) ? $locale : null,
             'role'      => $role,
+            'profile'   => $profile ?: null,
             'project'   => is_array($project) ? $project : null,
             'dashboard' => is_array($dashboard) ? $dashboard : null,
         ], fn ($v) => $v !== null && $v !== '');

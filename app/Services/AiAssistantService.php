@@ -40,7 +40,8 @@ class AiAssistantService
         private AiKnowledgeBaseService $knowledge,
         private AuditLogService $auditLog,
         private FaqResolverService $faqResolver,
-        private FaqIntentRepository $faqRepo
+        private FaqIntentRepository $faqRepo,
+        private AiUserContextService $userContext
     ) {
         $this->client = $client;
         $this->applySettingsOverrides($this->client, $this->settings);
@@ -258,7 +259,7 @@ class AiAssistantService
             'role'             => 'user',
             'content'          => $content,
             'status'           => 'complete',
-            'context_snapshot' => json_encode($context, JSON_UNESCAPED_UNICODE),
+            'context_snapshot' => json_encode($this->snapshotContext($context), JSON_UNESCAPED_UNICODE),
         ]);
 
         $this->attachAttachmentsToMessage($attachmentIds, (int) $userMessage->id);
@@ -376,7 +377,7 @@ class AiAssistantService
             'role'             => 'user',
             'content'          => $content,
             'status'           => 'complete',
-            'context_snapshot' => json_encode($context, JSON_UNESCAPED_UNICODE),
+            'context_snapshot' => json_encode($this->snapshotContext($context), JSON_UNESCAPED_UNICODE),
         ]);
 
         if ((int) $conversation->message_count === 0 || $conversation->title === 'New chat') {
@@ -573,11 +574,21 @@ class AiAssistantService
             $this->knowledge->platformOverview(),
             $this->knowledge->capabilitiesSummary(),
             $this->knowledge->portalFocus($portal),
+            $this->knowledge->behaviorRules(),
         ];
+
+        // بروفايل اليوزر الموثّق (من الداتابيز عبر AiUserContextService في الكنترولر).
+        $profile = is_array($context['profile'] ?? null) ? $context['profile'] : [];
+        $profileText = $this->userContext->toPromptText($profile);
+        if ($profileText !== '') {
+            $parts[] = $profileText;
+        }
 
         $safeContext = array_filter([
             'Current portal'      => $context['portal'] ?? null,
             'Current page'        => $context['page'] ?? null,
+            'Current route'       => $context['route'] ?? null,
+            'Interface language'  => $context['locale'] ?? null,
             'User role'           => $context['role'] ?? null,
             'University'          => $context['university'] ?? null,
             'Faculty'             => $context['faculty'] ?? null,
@@ -590,6 +601,10 @@ class AiAssistantService
             $lines = ['[Authorized context for this request — use only this and what the user tells you directly]'];
             foreach ($safeContext as $label => $value) {
                 $lines[] = "{$label}: {$value}";
+            }
+            $guide = $this->knowledge->pageGuide($context['route'] ?? null);
+            if ($guide !== '') {
+                $lines[] = "What this page is: {$guide}";
             }
             $parts[] = implode("\n", $lines);
         }
@@ -608,6 +623,13 @@ class AiAssistantService
         }
 
         return implode("\n\n", $parts);
+    }
+
+    /** السياق اللي بيتخزن مع رسالة اليوزر: من غير البروفايل (بيتعاد بناؤه من الداتابيز كل تيرن). */
+    private function snapshotContext(array $context): array
+    {
+        unset($context['profile']);
+        return $context;
     }
 
     private function modelNameForDisclosure(): string
