@@ -47,7 +47,7 @@ class ForgotPasswordController extends Controller
                 'created_at' => now(),
             ]);
 
-            $base = rtrim((string) (env('FRONTEND_URL') ?: config('app.url')), '/');
+            $base = rtrim((string) (config('app.frontend_url') ?: config('app.url')), '/');
             $resetUrl = $base . '/auth/reset-password?token=' . $plainToken;
 
             $sent = $this->mail->sendPasswordReset(

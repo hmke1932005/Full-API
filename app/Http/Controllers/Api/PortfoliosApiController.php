@@ -61,7 +61,7 @@ class PortfoliosApiController extends Controller
      */
     private function publicBaseUrl(): string
     {
-        return rtrim((string) (env('FRONTEND_URL') ?: env('APP_URL', 'http://localhost')), '/');
+        return rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/');
     }
 
     // -- Show (عرض بشكل عام بـ uuid مستخدم تاني) -----------------------------

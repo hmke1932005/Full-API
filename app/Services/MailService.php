@@ -76,7 +76,7 @@ class MailService
 
     private function loginUrl(): string
     {
-        $base = rtrim((string) (env('FRONTEND_URL') ?: env('APP_URL', 'http://localhost')), '/');
+        $base = rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/');
 
         return "{$base}/login";
     }

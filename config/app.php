@@ -54,6 +54,10 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // رابط الواجهة (Vercel) — بيتبني منه لينكات الإيميلات. لازم يعدّي من config
+    // عشان يشتغل لما الـ config يتعمله cache (env() بترجع null وقتها).
+    'frontend_url' => env('FRONTEND_URL'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone
