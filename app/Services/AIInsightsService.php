@@ -117,6 +117,7 @@ class AIInsightsService
 
             $raw = $this->completeJson($this->client, $system, $user);
             $result = $this->normalize($raw);
+            $result['language'] = app()->getLocale() === 'ar' ? 'ar' : 'en'; // لغة التقرير، عشان الواجهة تعرف لو مختلفة عن لغة العرض
 
             return $this->repo->record([
                 'status'             => 'completed',
