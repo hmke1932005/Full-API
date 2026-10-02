@@ -347,7 +347,7 @@ class MessagingController extends Controller
     {
         try {
             return $action();
-        } catch (\RuntimeException $e) {
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
             return $this->apiError($e->getMessage(), null, 422);
         }
     }
