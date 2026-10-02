@@ -245,6 +245,30 @@ class MailService
         return true;
     }
 
+    /** إيميل إعادة تعيين كلمة السر — بيرجّع نتيجة الإرسال الفعلية. */
+    public function sendPasswordReset(string $toEmail, string $fullName, string $resetUrl, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+
+        return $this->deliver(
+            $toEmail,
+            $ar ? 'إعادة تعيين كلمة السر' : 'Reset your password',
+            $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
+            [
+                $ar
+                    ? 'وصلنا طلب لإعادة تعيين كلمة السر الخاصة بحسابك. اضغط على الزر أدناه لاختيار كلمة سر جديدة. الرابط صالح لمدة ساعة واحدة.'
+                    : 'We received a request to reset your password. Click the button below to choose a new one. This link is valid for one hour.',
+                $ar
+                    ? 'لو ماكنتش أنت اللي طلبت ده، تجاهل هذه الرسالة.'
+                    : "If you didn't request this, you can safely ignore this email.",
+            ],
+            ['label' => $ar ? 'إعادة تعيين كلمة السر' : 'Reset password', 'url' => $resetUrl],
+            $locale,
+            [],
+            'sendPasswordReset'
+        );
+    }
+
     /**
      * "Send Test Email to Myself" — على عكس الاستَب القديم، دي لازم ترجع
      * نتيجة الإرسال الفعلية (مش true دايمًا) لأن الغرض الوحيد منها إن

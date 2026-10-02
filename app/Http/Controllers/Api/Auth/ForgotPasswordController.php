@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\MailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,11 +14,15 @@ use Illuminate\Support\Facades\Validator;
  * يطابق ForgotPasswordController::submit() + AuthService::createPasswordResetToken() القديمين.
  * ⚠️ عن قصد الرد دايمًا بنجاح بغض النظر هل الإيميل موجود ولا لأ (منع user enumeration).
  *
- * TODO: MailService::sendPasswordReset() الحقيقي غير متصل هنا لسه — دلوقتي
- * بس بيسجل اللينك في الـ log (زي القديم في وضع التطوير) بدل ما يبعت إيميل فعلي.
+ * بيبعت إيميل إعادة التعيين فعليًا عبر MailService::sendPasswordReset()،
+ * وأي فشل في الإرسال بيتسجل في الـ log بس (الرد للمستخدم ثابت).
  */
 class ForgotPasswordController extends Controller
 {
+    public function __construct(private MailService $mail)
+    {
+    }
+
     public function submit(Request $request)
     {
         $validator = Validator::make($request->all(), ['email' => 'required|email']);
@@ -42,10 +47,19 @@ class ForgotPasswordController extends Controller
                 'created_at' => now(),
             ]);
 
-            $resetUrl = rtrim(config('app.url'), '/') . '/auth/reset-password?token=' . $plainToken;
-            Log::info('Password reset link', ['email' => $email, 'link' => $resetUrl]);
+            $base = rtrim((string) (env('FRONTEND_URL') ?: config('app.url')), '/');
+            $resetUrl = $base . '/auth/reset-password?token=' . $plainToken;
 
-            // TODO: استبدل السطر ده بإرسال إيميل حقيقي عبر Mail::to($user->email)->send(...)
+            $sent = $this->mail->sendPasswordReset(
+                (string) $user->email,
+                (string) ($user->full_name ?? ''),
+                $resetUrl,
+                (string) ($user->preferred_language ?? 'ar')
+            );
+
+            if (!$sent) {
+                Log::error('Password reset email failed', ['email' => $email, 'error' => $this->mail->getLastError()]);
+            }
         }
 
         return response()->json([
