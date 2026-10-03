@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Exam;
+use App\Models\ExamAttempt;
 use App\Models\ExamQuestionPool;
 use App\Models\Question;
 use App\Models\QuestionBank;
@@ -553,6 +554,50 @@ class ExamSystemService
         return $this->exams->forCreator($academicStaffId);
     }
 
+    /**
+     * Exam list for the staff workspace: every exam + students_count (eligible students),
+     * attempts_count, submitted_count and pending_grading_count (finished, not graded yet).
+     * One grouped query for all attempt counters, so the list stays a single request.
+     */
+    public function listExamsWithMeta($academicStaffId): array
+    {
+        $exams = $this->exams->forCreator($academicStaffId);
+        if (!$exams) {
+            return [];
+        }
+
+        $ids = array_map(fn (Exam $e) => $e->id, $exams);
+        $rows = ExamAttempt::whereIn('exam_id', $ids)
+            ->selectRaw('exam_id, status, COUNT(*) as c')
+            ->groupBy('exam_id', 'status')
+            ->get();
+
+        $meta = [];
+        foreach ($rows as $r) {
+            $m = &$meta[$r->exam_id];
+            $m ??= ['attempts' => 0, 'submitted' => 0, 'pending' => 0];
+            $n = (int) $r->c;
+            $m['attempts'] += $n;
+            if (in_array($r->status, ['submitted', 'auto_submitted', 'grading', 'graded'], true)) {
+                $m['submitted'] += $n;
+            }
+            if (in_array($r->status, ['submitted', 'auto_submitted', 'grading'], true)) {
+                $m['pending'] += $n;
+            }
+            unset($m);
+        }
+
+        return array_map(function (Exam $e) use ($meta) {
+            $m = $meta[$e->id] ?? ['attempts' => 0, 'submitted' => 0, 'pending' => 0];
+            $row = $e->toArray();
+            $row['students_count'] = $this->targets->countForExamSaved($e->id, $e->university_id);
+            $row['attempts_count'] = $m['attempts'];
+            $row['submitted_count'] = $m['submitted'];
+            $row['pending_grading_count'] = $m['pending'];
+            return $row;
+        }, $exams);
+    }
+
     public function findOwnedExam($id, $academicStaffId): ?Exam
     {
         return $this->exams->findOwned($id, $academicStaffId);
@@ -570,6 +615,7 @@ class ExamSystemService
             'title'                         => trim($data['title']),
             'description'                   => $data['description'] ?? null,
             'subject'                       => $data['subject'] ?? null,
+            'exam_type'                     => $data['exam_type'] ?? 'midterm',
             'academic_year'                 => $data['academic_year'] ?? null,
             'semester'                      => $data['semester'] ?? null,
             'duration_minutes'              => $data['duration_minutes'],
@@ -586,6 +632,10 @@ class ExamSystemService
             // max_violations=3 نفس مثال السبك بالظبط (Phase 13).
             'secure_mode_enabled'           => $data['secure_mode_enabled'] ?? true,
             'max_violations'                => array_key_exists('max_violations', $data) ? $data['max_violations'] : 3,
+            'auto_submit_on_timeout'        => $data['auto_submit_on_timeout'] ?? true,
+            'allow_back_navigation'         => $data['allow_back_navigation'] ?? false,
+            'show_answer_review'            => $data['show_answer_review'] ?? false,
+            'show_score_only'               => $data['show_score_only'] ?? false,
             'status'                        => 'draft',
         ]);
     }
@@ -593,10 +643,11 @@ class ExamSystemService
     public function updateExam(Exam $exam, array $data): Exam
     {
         $fillable = array_intersect_key($data, array_flip([
-            'title', 'description', 'subject', 'academic_year', 'semester',
+            'title', 'description', 'subject', 'exam_type', 'academic_year', 'semester',
             'duration_minutes', 'start_at', 'end_at', 'max_attempts', 'passing_score',
             'instructions', 'randomize_questions', 'randomize_options', 'result_visibility',
             'program_id', 'secure_mode_enabled', 'max_violations',
+            'auto_submit_on_timeout', 'allow_back_navigation', 'show_answer_review', 'show_score_only',
         ]));
         $exam->fill($fillable);
         $exam->save();

@@ -493,7 +493,7 @@ class ExamSystemApiController extends Controller
             return $err;
         }
 
-        $exams = array_map(fn ($e) => $e->toArray(), $this->examSystem->listExams($staff->id));
+        $exams = $this->examSystem->listExamsWithMeta($staff->id);
 
         return $this->apiSuccess($exams, 'Exams retrieved successfully.');
     }
@@ -512,6 +512,7 @@ class ExamSystemApiController extends Controller
             'title'               => 'required|string|max:200',
             'description'         => 'nullable|string|max:5000',
             'subject'             => 'nullable|string|max:150',
+            'exam_type'           => 'nullable|in:midterm,final,quiz,practice',
             'academic_year'       => 'nullable|string|max:20',
             'semester'            => 'nullable|string|max:20',
             'duration_minutes'    => 'required|integer|min:1',
@@ -526,6 +527,10 @@ class ExamSystemApiController extends Controller
             'program_id'          => 'nullable|integer',
             'secure_mode_enabled' => 'nullable|boolean',
             'max_violations'      => 'nullable|integer|min:1|max:255',
+            'auto_submit_on_timeout' => 'nullable|boolean',
+            'allow_back_navigation'  => 'nullable|boolean',
+            'show_answer_review'     => 'nullable|boolean',
+            'show_score_only'        => 'nullable|boolean',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
@@ -575,6 +580,7 @@ class ExamSystemApiController extends Controller
             'title'               => 'sometimes|required|string|max:200',
             'description'         => 'nullable|string|max:5000',
             'subject'             => 'nullable|string|max:150',
+            'exam_type'           => 'nullable|in:midterm,final,quiz,practice',
             'academic_year'       => 'nullable|string|max:20',
             'semester'            => 'nullable|string|max:20',
             'duration_minutes'    => 'sometimes|required|integer|min:1',
@@ -588,6 +594,10 @@ class ExamSystemApiController extends Controller
             'result_visibility'   => 'nullable|in:immediate,after_close,manual',
             'secure_mode_enabled' => 'nullable|boolean',
             'max_violations'      => 'nullable|integer|min:1|max:255',
+            'auto_submit_on_timeout' => 'nullable|boolean',
+            'allow_back_navigation'  => 'nullable|boolean',
+            'show_answer_review'     => 'nullable|boolean',
+            'show_score_only'        => 'nullable|boolean',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);

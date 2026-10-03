@@ -205,6 +205,8 @@ class ExamAttemptService
                 'result_visibility'     => $exam->result_visibility,
                 'secure_mode_enabled'   => (bool) $exam->secure_mode_enabled,
                 'max_violations'        => $exam->max_violations !== null ? (int) $exam->max_violations : null,
+                'allow_back_navigation' => (bool) $exam->allow_back_navigation,
+                'auto_submit_on_timeout' => (bool) $exam->auto_submit_on_timeout,
             ],
             'questions'              => $questions,
         ];

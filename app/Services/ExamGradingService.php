@@ -698,6 +698,10 @@ class ExamGradingService
             'score'      => null,
             'percentage' => null,
             'questions'  => null,
+            'score_only' => (bool) $exam->show_score_only,
+            'review_allowed' => (bool) $exam->show_answer_review && !$exam->show_score_only,
+            'passing_score' => $exam->passing_score !== null ? (float) $exam->passing_score : null,
+            'total_marks' => (float) $exam->total_marks,
         ];
 
         if (!$visible) {
@@ -711,6 +715,11 @@ class ExamGradingService
 
         $base['score'] = $attempt->score !== null ? (float) $attempt->score : null;
         $base['percentage'] = $attempt->percentage !== null ? (float) $attempt->percentage : null;
+
+        // Exam settings: score-only / no answer review → grades only, no per-question breakdown.
+        if (!$base['review_allowed']) {
+            return $base;
+        }
         $base['questions'] = array_map(function ($pivot) use ($answers, $grades) {
             $question = $pivot->question;
             $answer = $answers[$pivot->id] ?? null;

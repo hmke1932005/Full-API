@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Exam;
+use App\Repositories\ExamAttemptRepository;
 use App\Repositories\ExamRepository;
 use App\Repositories\ExamTargetRepository;
 
@@ -20,7 +21,8 @@ class StudentExamService
 {
     public function __construct(
         private ExamRepository $exams,
-        private ExamTargetRepository $targets
+        private ExamTargetRepository $targets,
+        private ExamAttemptRepository $attempts
     ) {
     }
 
@@ -34,12 +36,22 @@ class StudentExamService
 
         $exams = array_filter(
             array_map(fn ($id) => $this->exams->find($id), $examIds),
-            fn (?Exam $e) => $e !== null && in_array($e->status, ['published', 'scheduled'], true)
+            function (?Exam $e) use ($studentId) {
+                if ($e === null) {
+                    return false;
+                }
+                if (in_array($e->status, ['published', 'scheduled'], true)) {
+                    return true;
+                }
+                // Finished exams stay in the student's list (as "Completed") only if they took part.
+                return in_array($e->status, ['closed', 'grading', 'graded'], true)
+                    && count($this->attempts->forStudentAndExam($studentId, $e->id)) > 0;
+            }
         );
 
         usort($exams, fn (Exam $a, Exam $b) => ($a->start_at?->timestamp ?? PHP_INT_MAX) <=> ($b->start_at?->timestamp ?? PHP_INT_MAX));
 
-        return array_map(fn (Exam $e) => $this->summaryFor($e), $exams);
+        return array_map(fn (Exam $e) => $this->summaryFor($e, $studentId), array_values($exams));
     }
 
     /** بيانات وصفية لامتحان واحد — null لو مش موجود أو الطالب مش مؤهل أو لسه مش منشور. */
@@ -49,23 +61,29 @@ class StudentExamService
         if (!$exam || (int) $exam->university_id !== (int) $universityId) {
             return null;
         }
-        if (!in_array($exam->status, ['published', 'scheduled'], true)) {
+        $finishedButTookPart = in_array($exam->status, ['closed', 'grading', 'graded'], true)
+            && count($this->attempts->forStudentAndExam($studentId, $exam->id)) > 0;
+        if (!in_array($exam->status, ['published', 'scheduled'], true) && !$finishedButTookPart) {
             return null;
         }
         if (!$this->targets->studentIsEligibleForExam($examId, $studentId)) {
             return null;
         }
 
-        return $this->summaryFor($exam);
+        return $this->summaryFor($exam, $studentId);
     }
 
-    private function summaryFor(Exam $exam): array
+    private function summaryFor(Exam $exam, $studentId = null): array
     {
+        $mine = $studentId !== null ? $this->attempts->forStudentAndExam($studentId, $exam->id) : [];
+        $last = $mine[0] ?? null;
+
         return [
             'id'                 => $exam->id,
             'title'              => $exam->title,
             'description'        => $exam->description,
             'subject'            => $exam->subject,
+            'exam_type'          => $exam->exam_type,
             'academic_year'      => $exam->academic_year,
             'semester'           => $exam->semester,
             'duration_minutes'   => $exam->duration_minutes,
@@ -85,6 +103,17 @@ class StudentExamService
             'secure_mode_enabled' => (bool) $exam->secure_mode_enabled,
             'max_violations'     => $exam->max_violations !== null ? (int) $exam->max_violations : null,
             'status'             => $exam->status,
+            'allow_back_navigation' => (bool) $exam->allow_back_navigation,
+            'auto_submit_on_timeout' => (bool) $exam->auto_submit_on_timeout,
+            'show_answer_review' => (bool) $exam->show_answer_review,
+            'show_score_only'    => (bool) $exam->show_score_only,
+            'attempts_used'      => count($mine),
+            'last_attempt'       => $last ? [
+                'id'         => $last->id,
+                'status'     => $last->status,
+                'score'      => $last->score !== null ? (float) $last->score : null,
+                'percentage' => $last->percentage !== null ? (float) $last->percentage : null,
+            ] : null,
         ];
     }
 }

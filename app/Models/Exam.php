@@ -26,10 +26,11 @@ class Exam extends Model
 
     protected $fillable = [
         'university_id', 'faculty_id', 'department_id', 'program_id', 'created_by_academic_staff_id',
-        'title', 'description', 'subject', 'academic_year', 'semester',
+        'title', 'description', 'subject', 'exam_type', 'academic_year', 'semester',
         'duration_minutes', 'start_at', 'end_at', 'max_attempts', 'passing_score', 'total_marks',
         'instructions', 'randomize_questions', 'randomize_options', 'result_visibility', 'results_published_at', 'status',
         'secure_mode_enabled', 'max_violations',
+        'auto_submit_on_timeout', 'allow_back_navigation', 'show_answer_review', 'show_score_only',
     ];
 
     protected $casts = [
@@ -39,6 +40,10 @@ class Exam extends Model
         'randomize_questions'  => 'boolean',
         'randomize_options'    => 'boolean',
         'secure_mode_enabled'  => 'boolean',
+        'auto_submit_on_timeout' => 'boolean',
+        'allow_back_navigation'  => 'boolean',
+        'show_answer_review'     => 'boolean',
+        'show_score_only'        => 'boolean',
         'passing_score'        => 'decimal:2',
         'total_marks'          => 'decimal:2',
     ];
