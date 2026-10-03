@@ -328,14 +328,20 @@ class StudentsApiController extends Controller
             $locale,
             $this->nullableInt($request, 'program_id'),
             $this->nullableInt($request, 'current_semester'),
-            $request->input('study_start_date')
+            $request->input('study_start_date'),
+            $request->input('password') !== null ? (string) $request->input('password') : null,
+            $request->has('send_email') ? $request->boolean('send_email') : true
         );
 
         if (!$result['success']) {
             return $this->apiError($result['message'], null, 422);
         }
 
-        return $this->apiSuccess(null, $result['message'], 201);
+        return $this->apiSuccess([
+            'id'         => $result['student_id'] ?? null,
+            'password'   => $result['password'] ?? null,
+            'email_sent' => $result['email_sent'] ?? false,
+        ], $result['message'], 201);
     }
 
     /**
@@ -648,6 +654,28 @@ class StudentsApiController extends Controller
         }
 
         return $this->apiSuccess(null, 'Student removed successfully.');
+    }
+
+    /** PATCH /api/v1/students/{id}/password — university/faculty sets (or regenerates) a student's password. */
+    public function setPassword(Request $request, $id)
+    {
+        $scope = $this->resolveScope($request);
+        if (!$scope) {
+            return $this->apiError('Only university or faculty accounts can change a student password.', null, 403);
+        }
+
+        $result = $this->management->setPassword(
+            $id,
+            $scope['universityId'],
+            (int) $request->attributes->get('uip_user_id'),
+            $request->input('password') !== null ? (string) $request->input('password') : null,
+            (string) $request->input('locale', 'ar'),
+            $scope['facultyId']
+        );
+
+        return $result['success']
+            ? $this->apiSuccess(['password' => $result['password'] ?? null], $result['message'])
+            : $this->apiError($result['message'], null, 422);
     }
 
     /**

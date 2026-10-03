@@ -31,6 +31,7 @@ use App\Repositories\UserRepository;
 class StudentManagementService
 {
     private const INVITE_EXPIRY_DAYS = 7;
+    private const MIN_PASSWORD_LENGTH = 8;
 
     public function __construct(
         private StudentRepository $students,
@@ -89,9 +90,18 @@ class StudentManagementService
         string $locale = 'ar',
         ?int $programId = null,
         ?int $currentSemester = null,
-        ?string $studyStartDate = null
+        ?string $studyStartDate = null,
+        ?string $password = null,
+        bool $sendEmail = true
     ): array {
         $email = mb_strtolower(trim($email));
+        $password = $password !== null ? trim($password) : null;
+        $manualPassword = $password !== null && $password !== '';
+        if ($manualPassword && mb_strlen($password) < self::MIN_PASSWORD_LENGTH) {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'كلمة السر يجب ألا تقل عن 8 أحرف.'
+                : 'The password must be at least 8 characters.'];
+        }
 
         if ($this->users->emailExists($email)) {
             return ['success' => false, 'message' => $locale === 'ar'
@@ -147,7 +157,7 @@ class StudentManagementService
             }
         }
 
-        $tempPassword = $this->generateTempPassword();
+        $tempPassword = $manualPassword ? $password : $this->generateTempPassword();
 
         $user = $this->users->createWithRole([
             'full_name'     => trim($fullName),
@@ -174,25 +184,179 @@ class StudentManagementService
             'study_start_date'          => $studyStartDate,
             'expected_graduation_date'  => $expectedGraduationDate,
             'group_id'                  => $groupId,
-            'invitation_status'         => 'pending',
-            'invited_at'                => date('Y-m-d H:i:s'),
-            'expires_at'                => date('Y-m-d H:i:s', strtotime('+' . self::INVITE_EXPIRY_DAYS . ' days')),
+            // A manually-set password means the admin hands the credentials over themselves:
+            // no invitation flow (no "Invite pending/expired" badge, nothing to resend).
+            'invitation_status'         => $manualPassword ? null : 'pending',
+            'invited_at'                => $manualPassword ? null : date('Y-m-d H:i:s'),
+            'expires_at'                => $manualPassword ? null : date('Y-m-d H:i:s', strtotime('+' . self::INVITE_EXPIRY_DAYS . ' days')),
         ]);
         $student->save();
 
         $university = $this->universities->find($universityId);
         $universityName = $university ? ($university->name($locale) ?: $university->name('en')) : '';
 
-        $this->mail->sendStudentInvite($email, trim($fullName), $universityName, $tempPassword, $locale);
+        $emailSent = $sendEmail
+            ? (bool) $this->mail->sendStudentInvite($email, trim($fullName), $universityName, $tempPassword, $locale)
+            : false;
 
         $this->auditLog->record($actingUserId, 'university.student_invite', 'Student', $student->id, null, [
             'email' => $email, 'faculty_id' => $faculty?->id, 'department_id' => $department?->id,
             'program_id' => $program?->id, 'group_id' => $groupId,
+            'manual_password' => $manualPassword, 'email_sent' => $emailSent,
         ]);
 
-        return ['success' => true, 'message' => $locale === 'ar'
-            ? 'تمت إضافة الطالب وإرسال بيانات الدخول له بالبريد الإلكتروني.'
-            : "Student added — login details were emailed to them."];
+        $message = match (true) {
+            $emailSent => $locale === 'ar'
+                ? 'تمت إضافة الطالب وإرسال بيانات الدخول له بالبريد الإلكتروني.'
+                : 'Student added — login details were emailed to them.',
+            $sendEmail => $locale === 'ar'
+                ? 'تمت إضافة الطالب لكن تعذر إرسال البريد الإلكتروني — سلّمه بيانات الدخول يدويًا.'
+                : 'Student added, but the email could not be sent — hand over the login details manually.',
+            default => $locale === 'ar' ? 'تمت إضافة الطالب.' : 'Student added.',
+        };
+
+        // The password is returned to the (university/faculty) admin so they can hand it over
+        // when email delivery is off or fails.
+        return ['success' => true, 'message' => $message, 'password' => $tempPassword,
+            'email_sent' => $emailSent, 'student_id' => $student->id];
+    }
+
+    /**
+     * Admin sets (or regenerates, when $password is empty) a student's login password.
+     * @return array{success:bool, message:string, password?:string}
+     */
+    public function setPassword($id, $universityId, $actingUserId, ?string $password, string $locale = 'ar', $facultyId = null): array
+    {
+        $student = $this->students->findOwned($id, $universityId, $facultyId);
+        $user = $student ? User::find($student->user_id) : null;
+        if (!$student || !$user) {
+            return ['success' => false, 'message' => $locale === 'ar' ? 'الطالب غير موجود.' : 'Student not found.'];
+        }
+
+        $password = $password !== null ? trim($password) : '';
+        if ($password !== '' && mb_strlen($password) < self::MIN_PASSWORD_LENGTH) {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'كلمة السر يجب ألا تقل عن 8 أحرف.'
+                : 'The password must be at least 8 characters.'];
+        }
+        $new = $password !== '' ? $password : $this->generateTempPassword();
+
+        $user->fill(['password_hash' => password_hash($new, PASSWORD_DEFAULT)]);
+        $user->save();
+
+        $this->auditLog->record($actingUserId, 'university.student_set_password', 'Student', $student->id, null, [
+            'source' => $password !== '' ? 'custom' : 'generated',
+        ]);
+
+        return ['success' => true, 'message' => $locale === 'ar' ? 'تم تحديث كلمة السر.' : 'Password updated.', 'password' => $new];
+    }
+
+    /**
+     * Bulk import (CSV/XLSX rows keyed by lower-cased header): full_name, email, student_number,
+     * faculty, department, academic_year, current_semester, group, password (optional).
+     * faculty/department/group accept an id or an exact Arabic/English name. A faculty-scoped
+     * admin ($forcedFacultyId) can only import into their own faculty.
+     * @return array{imported:int, skipped:int, errors:string[], results:array}
+     */
+    public function importRows(array $rows, $universityId, $actingUserId, ?int $forcedFacultyId = null, string $locale = 'ar', bool $sendEmail = false): array
+    {
+        $faculties = $this->faculties->forUniversity($universityId);
+        $groups = $this->groups->forUniversityWithCounts($universityId);
+
+        $match = function ($cell, array $items, callable $names) {
+            $cell = trim((string) $cell);
+            if ($cell === '') {
+                return null;
+            }
+            foreach ($items as $it) {
+                $id = is_array($it) ? ($it['id'] ?? null) : $it->id;
+                if (ctype_digit($cell) && (int) $cell === (int) $id) {
+                    return (int) $id;
+                }
+                foreach ($names($it) as $n) {
+                    if ($n !== null && mb_strtolower(trim((string) $n)) === mb_strtolower($cell)) {
+                        return (int) $id;
+                    }
+                }
+            }
+            return false; // given but not found
+        };
+
+        $results = [];
+        $errors = [];
+        $imported = 0;
+
+        foreach (array_values($rows) as $i => $row) {
+            $n = $i + 2;
+            $fullName = trim((string) ($row['full_name'] ?? $row['name'] ?? ''));
+            $email = trim((string) ($row['email'] ?? ''));
+            $fail = function (string $msg) use (&$results, &$errors, $n, $email) {
+                $results[] = ['row' => $n, 'email' => $email, 'success' => false, 'message' => $msg];
+                $errors[] = "Row {$n} ({$email}): {$msg}";
+            };
+
+            if ($fullName === '' || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $fail($locale === 'ar' ? 'الاسم أو البريد الإلكتروني ناقص أو غير صالح.' : 'Missing name or a valid email.');
+                continue;
+            }
+
+            $facultyId = $forcedFacultyId;
+            if ($facultyId === null) {
+                $f = $match($row['faculty'] ?? $row['faculty_id'] ?? '', $faculties, fn ($x) => [$x->name_en, $x->name_ar]);
+                if ($f === false) {
+                    $fail($locale === 'ar' ? 'الكلية غير موجودة.' : 'Faculty not found.');
+                    continue;
+                }
+                $facultyId = $f;
+            }
+
+            $departmentId = null;
+            $dCell = trim((string) ($row['department'] ?? $row['department_id'] ?? ''));
+            if ($dCell !== '') {
+                if (!$facultyId) {
+                    $fail($locale === 'ar' ? 'حدد الكلية قبل القسم.' : 'A faculty is required before a department.');
+                    continue;
+                }
+                $d = $match($dCell, $this->departments->forFaculty($facultyId), fn ($x) => [$x->name_en, $x->name_ar]);
+                if ($d === false || $d === null) {
+                    $fail($locale === 'ar' ? 'القسم غير موجود في هذه الكلية.' : 'Department not found in that faculty.');
+                    continue;
+                }
+                $departmentId = $d;
+            }
+
+            $groupId = null;
+            $gCell = trim((string) ($row['group'] ?? $row['group_id'] ?? ''));
+            if ($gCell !== '') {
+                $g = $match($gCell, $groups, fn ($x) => [$x['name'] ?? null]);
+                if ($g === false || $g === null) {
+                    $fail($locale === 'ar' ? 'المجموعة غير موجودة.' : 'Group not found.');
+                    continue;
+                }
+                $groupId = $g;
+            }
+
+            $int = fn ($v) => (($v = trim((string) $v)) !== '' && ctype_digit($v)) ? (int) $v : null;
+            $res = $this->invite(
+                $universityId, $actingUserId, $fullName, $email,
+                trim((string) ($row['student_number'] ?? '')) ?: null,
+                $facultyId, $departmentId,
+                $int($row['academic_year'] ?? ''), $groupId, $locale, null,
+                $int($row['current_semester'] ?? ''), null,
+                trim((string) ($row['password'] ?? '')) ?: null,
+                $sendEmail
+            );
+
+            $results[] = ['row' => $n, 'email' => $email, 'success' => $res['success'], 'message' => $res['message'],
+                'password' => $res['success'] ? ($res['password'] ?? null) : null];
+            if ($res['success']) {
+                $imported++;
+            } else {
+                $errors[] = "Row {$n} ({$email}): {$res['message']}";
+            }
+        }
+
+        return ['imported' => $imported, 'skipped' => count($rows) - $imported, 'errors' => $errors, 'results' => $results];
     }
 
     public function resendInvite($id, $universityId, $actingUserId, string $locale = 'ar', $facultyId = null): array

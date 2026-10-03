@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\SavedDashboardsApiController;
 use App\Http\Controllers\Api\AnnouncementsApiController;
 use App\Http\Controllers\Api\FeedApiController;
 use App\Http\Controllers\Api\StudentsApiController;
+use App\Http\Controllers\Api\BulkApiController;
 use App\Http\Controllers\Api\StudentSettingsApiController;
 use App\Http\Controllers\Api\AcademicStaffSettingsApiController;
 use App\Http\Controllers\Api\ContactsApiController;
@@ -873,6 +874,13 @@ Route::prefix('v1')->group(function () {
         Route::patch('/{id}', [StudentsApiController::class, 'update']);
         Route::delete('/{id}', [StudentsApiController::class, 'delete']);
         Route::post('/{id}/resend', [StudentsApiController::class, 'resend']);
+        Route::patch('/{id}/password', [StudentsApiController::class, 'setPassword'])->where('id', '[0-9]+');
+    });
+
+    // Bulk student actions (CSV/XLSX import, move to group) — called by the university/faculty students pages.
+    Route::prefix('bulk/students')->middleware('uip.auth')->group(function () {
+        Route::post('/import', [BulkApiController::class, 'studentsImport']);
+        Route::post('/update', [BulkApiController::class, 'studentsUpdate']);
     });
 
     // بند 16 — Groups (Student Groups/Teams، migration 099/122). سطح
@@ -1296,6 +1304,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/activate', [SupervisorsApiController::class, 'activate'])->where('id', '[0-9]+');
         Route::post('/{id}/deactivate', [SupervisorsApiController::class, 'deactivate'])->where('id', '[0-9]+');
         Route::post('/{id}/resend', [SupervisorsApiController::class, 'resend'])->where('id', '[0-9]+');
+        Route::patch('/{id}/password', [SupervisorsApiController::class, 'setPassword'])->where('id', '[0-9]+');
 
         Route::get('/{id}/assignments', [SupervisorsApiController::class, 'assignments'])->where('id', '[0-9]+');
         Route::post('/{id}/assignments', [SupervisorsApiController::class, 'assign'])->where('id', '[0-9]+');

@@ -124,11 +124,32 @@ class SupervisorsApiController extends Controller
             $email,
             $request->input('department'),
             $request->input('title'),
-            $permissions
+            $permissions,
+            (string) $request->input('locale', 'ar'),
+            $request->input('password') !== null ? (string) $request->input('password') : null
         );
 
         return $result['success']
-            ? $this->apiSuccess(null, $result['message'], 201)
+            ? $this->apiSuccess(['password' => $result['password'] ?? null, 'email_sent' => $result['email_sent'] ?? false], $result['message'], 201)
+            : $this->apiError($result['message'], null, 422);
+    }
+
+    /** PATCH /api/v1/supervisors/{id}/password — set or regenerate the supervisor's password. Role جامعة بس. */
+    public function setPassword(Request $request, $id)
+    {
+        if ($request->attributes->get('uip_role') !== 'university') {
+            return $this->apiError('Only university accounts can change a supervisor password.', null, 403);
+        }
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $university = $this->universities->getOrCreate($userId);
+        $result = $this->management->setPassword(
+            $id, $university->id, $userId,
+            $request->input('password') !== null ? (string) $request->input('password') : null,
+            (string) $request->input('locale', 'ar')
+        );
+
+        return $result['success']
+            ? $this->apiSuccess(['password' => $result['password'] ?? null], $result['message'])
             : $this->apiError($result['message'], null, 422);
     }
 

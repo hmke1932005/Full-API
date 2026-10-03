@@ -58,9 +58,15 @@ class SupervisorManagementService
     }
 
     /** @return array{success:bool, message:string} */
-    public function invite($universityId, $actingUserId, string $fullName, string $email, ?string $department, ?string $title, array $permissions, string $locale = 'ar'): array
+    public function invite($universityId, $actingUserId, string $fullName, string $email, ?string $department, ?string $title, array $permissions, string $locale = 'ar', ?string $password = null): array
     {
         $email = mb_strtolower(trim($email));
+        $password = $password !== null ? trim($password) : '';
+        if ($password !== '' && mb_strlen($password) < 8) {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'كلمة السر يجب ألا تقل عن 8 أحرف.'
+                : 'The password must be at least 8 characters.'];
+        }
         $permissions = array_values(array_intersect($permissions, array_keys(self::PERMISSIONS)));
 
         if ($this->supervisors->findByEmail($universityId, $email)) {
@@ -75,7 +81,7 @@ class SupervisorManagementService
                 : 'This email already has an account elsewhere on the platform.'];
         }
 
-        $tempPassword = $this->generateTempPassword();
+        $tempPassword = $password !== '' ? $password : $this->generateTempPassword();
 
         $user = $this->users->createBareWithRole([
             'full_name'     => trim($fullName),
@@ -101,15 +107,43 @@ class SupervisorManagementService
         $university = $this->universities->find($universityId);
         $universityName = $university ? ($university->name($locale) ?: $university->name('en')) : '';
 
-        $this->mail->sendSupervisorInvite($email, $supervisor->full_name, $universityName, $tempPassword, $locale);
+        $emailSent = (bool) $this->mail->sendSupervisorInvite($email, $supervisor->full_name, $universityName, $tempPassword, $locale);
 
         $this->auditLog->record($actingUserId, 'university.supervisor_invite', 'Supervisor', $supervisor->id, null, [
             'email' => $email, 'department' => $department, 'permissions' => $permissions,
         ]);
 
-        return ['success' => true, 'message' => $locale === 'ar'
-            ? 'تمت دعوة المشرف وإرسال بيانات الدخول له بالبريد الإلكتروني.'
-            : 'Supervisor invited — login details were emailed to them.'];
+        return ['success' => true, 'password' => $tempPassword, 'email_sent' => $emailSent, 'message' => $emailSent
+            ? ($locale === 'ar'
+                ? 'تمت دعوة المشرف وإرسال بيانات الدخول له بالبريد الإلكتروني.'
+                : 'Supervisor invited — login details were emailed to them.')
+            : ($locale === 'ar'
+                ? 'تمت إضافة المشرف لكن تعذر إرسال البريد — سلّمه بيانات الدخول يدويًا.'
+                : 'Supervisor added, but the email could not be sent — hand over the login details manually.')];
+    }
+
+    /** Admin sets (or regenerates, when empty) a supervisor's login password. */
+    public function setPassword($id, $universityId, $actingUserId, ?string $password, string $locale = 'ar'): array
+    {
+        $supervisor = $this->supervisors->findOwned($id, $universityId);
+        $user = $supervisor && $supervisor->user_id ? User::find($supervisor->user_id) : null;
+        if (!$supervisor || !$user) {
+            return ['success' => false, 'message' => $locale === 'ar' ? 'المشرف غير موجود.' : 'Supervisor not found.'];
+        }
+        $password = $password !== null ? trim($password) : '';
+        if ($password !== '' && mb_strlen($password) < 8) {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'كلمة السر يجب ألا تقل عن 8 أحرف.'
+                : 'The password must be at least 8 characters.'];
+        }
+        $new = $password !== '' ? $password : $this->generateTempPassword();
+        $user->fill(['password_hash' => password_hash($new, PASSWORD_DEFAULT)]);
+        $user->save();
+        $this->auditLog->record($actingUserId, 'university.supervisor_set_password', 'Supervisor', $supervisor->id, null, [
+            'source' => $password !== '' ? 'custom' : 'generated',
+        ]);
+
+        return ['success' => true, 'password' => $new, 'message' => $locale === 'ar' ? 'تم تحديث كلمة السر.' : 'Password updated.'];
     }
 
     public function resendInvite($id, $universityId, $actingUserId, string $locale = 'ar'): array
