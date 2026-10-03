@@ -619,8 +619,8 @@ class ExamSystemService
             'academic_year'                 => $data['academic_year'] ?? null,
             'semester'                      => $data['semester'] ?? null,
             'duration_minutes'              => $data['duration_minutes'],
-            'start_at'                      => $data['start_at'] ?? null,
-            'end_at'                        => $data['end_at'] ?? null,
+            'start_at'                      => $this->toAppTimezone($data['start_at'] ?? null),
+            'end_at'                        => $this->toAppTimezone($data['end_at'] ?? null),
             'max_attempts'                  => $data['max_attempts'] ?? 1,
             'passing_score'                 => $data['passing_score'] ?? null,
             'instructions'                  => $data['instructions'] ?? null,
@@ -649,9 +649,28 @@ class ExamSystemService
             'program_id', 'secure_mode_enabled', 'max_violations',
             'auto_submit_on_timeout', 'allow_back_navigation', 'show_answer_review', 'show_score_only',
         ]));
+        foreach (['start_at', 'end_at'] as $k) {
+            if (array_key_exists($k, $fillable)) {
+                $fillable[$k] = $this->toAppTimezone($fillable[$k]);
+            }
+        }
         $exam->fill($fillable);
         $exam->save();
         return $exam;
+    }
+
+    /**
+     * Exam times arrive as absolute instants (ISO-8601 with "Z"/offset) from the web app.
+     * Convert to the app timezone before saving so the stored wall-clock value is correct
+     * (Eloquent formats a Carbon in its own timezone and would otherwise drop the offset).
+     * Naive strings (older clients) keep their previous behaviour.
+     */
+    private function toAppTimezone($value)
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        return \Illuminate\Support\Carbon::parse($value)->setTimezone(config('app.timezone'));
     }
 
     public function deleteExam(Exam $exam): void
