@@ -276,6 +276,7 @@ Route::prefix('v1')->group(function () {
         // when the client-side regex parser can't make sense of a paste.
         // See ExamSystemApiController::parseQuestionsWithAi() docblock.
         Route::post('question-banks/{bankId}/questions/parse-ai', [ExamSystemApiController::class, 'parseQuestionsWithAi'])->where('bankId', '[0-9]+');
+        Route::post('question-banks/{bankId}/questions/ai-edit', [ExamSystemApiController::class, 'reviseQuestionsWithAi'])->where('bankId', '[0-9]+');
         Route::patch('questions/{id}', [ExamSystemApiController::class, 'updateQuestion'])->where('id', '[0-9]+');
         Route::delete('questions/{id}', [ExamSystemApiController::class, 'destroyQuestion'])->where('id', '[0-9]+');
         Route::get('questions/{id}/versions', [ExamSystemApiController::class, 'showQuestionVersions'])->where('id', '[0-9]+');

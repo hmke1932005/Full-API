@@ -131,4 +131,79 @@ class AiQuestionParsingService
 
         return $result;
     }
+
+    /**
+     * يعدّل أسئلة موجودة بتعليمات الدكتور (مثلًا: صحّح الإملاء، خلّي الأسئلة
+     * أصعب، اقترح الإجابة الصحيحة، ترجم للإنجليزي). مبيحفظش حاجة — الأسئلة
+     * بترجع بنفس الشكل والترتيب والعدد، والدكتور يراجعها ويضغط Add All.
+     * بيحافظ على نوع السؤال إلا لو التعليمات طلبت غير كده صراحةً، ومش
+     * بيخترع إجابات صحيحة إلا لو التعليمات طلبت اقتراحها.
+     *
+     * @param array<int, array{type:string, prompt:string, options?:array, correct_answer?:?string}> $questions
+     * @return array<int, array{type:string, prompt:string, options:array, correct_answer:?string}>
+     * @throws \RuntimeException
+     */
+    public function revise(array $questions, string $instruction): array
+    {
+        $system = 'You are an assistant helping an instructor edit exam questions. You receive a JSON list of '
+            . 'questions and an editing instruction. Apply the instruction to EVERY question in the list and return '
+            . 'the revised list in the SAME ORDER with the SAME NUMBER of items (never drop, merge, split or add '
+            . 'questions). Keep each question\'s type unless the instruction explicitly asks to change it. Preserve '
+            . 'the original language of each question unless the instruction asks to translate. Do not invent a '
+            . 'correct answer unless the instruction asks you to suggest or fix it; when you do suggest one, mark '
+            . 'exactly one option as correct for mcq. Respond as JSON: {"questions": [{"type": "mcq"|"true_false"|'
+            . '"short_answer"|"essay", "prompt": string, "options": [{"option_text": string, "is_correct": boolean}] '
+            . '(mcq only; empty array otherwise), "correct_answer": string|null (true_false: "true" or "false"; '
+            . 'short_answer: the expected answer; null otherwise)}]}.';
+
+        $user = "Instruction: " . trim($instruction) . "\n\nQuestions (JSON):\n"
+            . json_encode(array_values($questions), JSON_UNESCAPED_UNICODE);
+
+        $data = $this->completeJson($this->client, $system, $user);
+
+        $revised = $data['questions'] ?? null;
+        if (!is_array($revised) || count($revised) !== count($questions)) {
+            throw new \RuntimeException('AI provider did not return one revised question per input question.');
+        }
+
+        $result = [];
+        foreach (array_values($revised) as $i => $q) {
+            $original = array_values($questions)[$i];
+            if (!is_array($q) || trim((string) ($q['prompt'] ?? '')) === '') {
+                $result[] = $original + ['options' => [], 'correct_answer' => null];
+                continue;
+            }
+
+            $type = in_array($q['type'] ?? null, ['mcq', 'true_false', 'short_answer', 'essay'], true)
+                ? $q['type']
+                : ($original['type'] ?? 'essay');
+
+            $options = [];
+            if ($type === 'mcq' && is_array($q['options'] ?? null)) {
+                foreach ($q['options'] as $opt) {
+                    if (!is_array($opt) || trim((string) ($opt['option_text'] ?? '')) === '') {
+                        continue;
+                    }
+                    $options[] = ['option_text' => trim((string) $opt['option_text']), 'is_correct' => (bool) ($opt['is_correct'] ?? false)];
+                }
+            }
+
+            $correctAnswer = null;
+            if ($type === 'true_false') {
+                $ca = strtolower(trim((string) ($q['correct_answer'] ?? '')));
+                $correctAnswer = in_array($ca, ['true', 'false'], true) ? $ca : null;
+            } elseif ($type === 'short_answer' && trim((string) ($q['correct_answer'] ?? '')) !== '') {
+                $correctAnswer = trim((string) $q['correct_answer']);
+            }
+
+            $result[] = [
+                'type'           => $type,
+                'prompt'         => trim((string) $q['prompt']),
+                'options'        => $options,
+                'correct_answer' => $correctAnswer,
+            ];
+        }
+
+        return $result;
+    }
 }

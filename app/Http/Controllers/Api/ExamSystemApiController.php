@@ -293,6 +293,52 @@ class ExamSystemApiController extends Controller
         return $this->apiSuccess(['questions' => $questions], 'Questions parsed successfully.');
     }
 
+    /**
+     * POST /api/v1/exam-system/question-banks/{bankId}/questions/ai-edit
+     * body: instruction (≤ 500), questions[] (≤ 40: type, prompt, options[], correct_answer).
+     * الـ AI بيعدّل الأسئلة بتعليمات الدكتور ويرجعها بنفس الشكل. مبيحفظش حاجة.
+     */
+    public function reviseQuestionsWithAi(Request $request, $bankId)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+
+        if (!$this->examSystem->findOwnedBank($bankId, $staff->id)) {
+            return $this->apiError('Question bank not found.', null, 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'instruction'                   => 'required|string|max:500',
+            'questions'                     => 'required|array|min:1|max:40',
+            'questions.*.type'              => 'required|in:mcq,true_false,short_answer,essay',
+            'questions.*.prompt'            => 'required|string|max:5000',
+            'questions.*.options'           => 'nullable|array|max:12',
+            'questions.*.options.*.option_text' => 'required_with:questions.*.options|string|max:2000',
+            'questions.*.options.*.is_correct'  => 'nullable|boolean',
+            'questions.*.correct_answer'    => 'nullable|string|max:2000',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+
+        if (!$this->aiParser->isAvailable()) {
+            return $this->apiError('AI editing is not configured for this platform. Ask an admin to set it up under AI Controls.', null, 422);
+        }
+
+        try {
+            $questions = $this->aiParser->revise($request->input('questions'), (string) $request->input('instruction'));
+        } catch (\RuntimeException $e) {
+            return $this->apiError('AI editing failed: ' . $e->getMessage(), null, 502);
+        }
+
+        return $this->apiSuccess(['questions' => $questions], 'Questions revised successfully.');
+    }
+
     public function updateQuestion(Request $request, $id)
     {
         if ($err = $this->requireAcademicStaff($request)) {
