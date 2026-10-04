@@ -33,10 +33,17 @@ class UipRateLimitMiddleware
 
     public function handle(Request $request, Closure $next): Response
     {
-        $limit = $this->resolveLimit();
+        // محاولات الامتحان الشغالة (حفظ إجابة / أحداث أمان / تسليم) ليها bucket
+        // مستقل وحد أعلى: الحفظ التلقائي وأحداث الـ secure mode بيستهلكوا طلبات
+        // كتير، ولو شاركوا الـ bucket العام (60/دقيقة) طالب في نص امتحان ممكن
+        // ياخد 429 ويتأخر حفظ إجاباته. لسه فيه سقف (مش مفتوح) ضد أي إساءة استخدام.
+        $isExamAttempt = $this->isExamAttemptRequest($request);
+        $limit = $isExamAttempt
+            ? (int) config('security.exam_attempt_rate_limit_per_min', 240)
+            : $this->resolveLimit();
 
         $window = (int) floor(time() / 60);
-        $key = 'ratelimit_' . preg_replace('/[^a-zA-Z0-9]/', '_', $this->actorKey($request)) . '_' . $window;
+        $key = 'ratelimit_' . ($isExamAttempt ? 'exam_' : '') . preg_replace('/[^a-zA-Z0-9]/', '_', $this->actorKey($request)) . '_' . $window;
 
         $count = (int) Cache::get($key, 0);
 
@@ -54,6 +61,12 @@ class UipRateLimitMiddleware
         Cache::increment($key);
 
         return $next($request);
+    }
+
+    /** مسارات الطالب اللي جوه محاولة امتحان: /api/v1/exam-system/attempts/{id}/... */
+    private function isExamAttemptRequest(Request $request): bool
+    {
+        return $request->is('api/v1/exam-system/attempts/*');
     }
 
     /** السياسة المخزّنة لو متاحة ومفعّلة، وإلا الـ config الثابت — عمرها ما ترمي استثناء يوقف الطلب. */

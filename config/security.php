@@ -12,6 +12,10 @@
 return [
     'rate_limit_per_min' => (int) env('RATE_LIMIT_PER_MIN', 60),
 
+    // سقف مستقل لطلبات محاولة الامتحان الشغالة (attempts/{id}/answers|security-events|submit)
+    // — أعلى من العام عشان الحفظ التلقائي ميتعطّلش بـ 429 في نص الامتحان.
+    'exam_attempt_rate_limit_per_min' => (int) env('EXAM_ATTEMPT_RATE_LIMIT_PER_MIN', 240),
+
     'security_headers' => [
         'X-Frame-Options'        => 'DENY',
         'X-Content-Type-Options' => 'nosniff',
