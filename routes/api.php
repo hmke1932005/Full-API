@@ -380,6 +380,10 @@ Route::prefix('v1')->group(function () {
         // ExamGradingApiController::resolveAttemptForExam).
         Route::get('exams/{id}/attempts', [ExamGradingApiController::class, 'indexAttempts'])->where('id', '[0-9]+');
         Route::get('exams/{id}/attempts/{attemptId}', [ExamGradingApiController::class, 'showAttempt'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
+        // إدارة محاولات الطلاب (صلاحيات المدرس): إلغاء محاولة، وإعادة الامتحان لطالب معيّن.
+        Route::post('exams/{id}/attempts/{attemptId}/cancel', [ExamGradingApiController::class, 'cancelAttempt'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
+        Route::post('exams/{id}/students/{studentId}/retake', [ExamGradingApiController::class, 'grantRetake'])->where('id', '[0-9]+')->where('studentId', '[0-9]+');
+        Route::delete('exams/{id}/students/{studentId}/retake', [ExamGradingApiController::class, 'revokeRetake'])->where('id', '[0-9]+')->where('studentId', '[0-9]+');
         Route::post('exams/{id}/attempts/{attemptId}/auto-grade', [ExamGradingApiController::class, 'autoGrade'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
         Route::put('exams/{id}/attempts/{attemptId}/grades/{examQuestionId}', [ExamGradingApiController::class, 'gradeAnswer'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+')->where('examQuestionId', '[0-9]+');
         Route::get('exams/{id}/attempts/{attemptId}/grades/{examQuestionId}/history', [ExamGradingApiController::class, 'gradeHistory'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+')->where('examQuestionId', '[0-9]+');

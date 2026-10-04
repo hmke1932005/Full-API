@@ -533,6 +533,13 @@ class ExamGradingService
         // pools، فمبقاش رقم ثابت واحد لكل الامتحان — keyed بـ attempt_id
         // (راجع ExamAttemptRepository::questionCountsForExam()).
         $questionCounts = $this->attempts->questionCountsForExam($exam->id);
+        // إعادة الامتحان بصلاحية المدرس — استثناء كل طالب (extra_attempts/available_until)
+        // + عدد محاولاته الفعلي، عشان صفحة المدرس تعرض "متبقي كام" وتفعّل/تعطّل أزرار الإعادة.
+        $overrides = $this->attempts->overridesForExam($exam->id);
+        $usedByStudent = [];
+        foreach ($rows as $r) {
+            $usedByStudent[$r->student_id] = ($usedByStudent[$r->student_id] ?? 0) + 1;
+        }
 
         return array_map(fn ($row) => [
             'id'              => $row->id,
@@ -550,6 +557,11 @@ class ExamGradingService
             'violations_count' => (int) $row->violations_count,
             'graded_count'    => $gradedCounts[$row->id] ?? 0,
             'total_questions' => $questionCounts[$row->id] ?? 0,
+            'cancelled_at'    => $row->cancelled_at,
+            'cancel_reason'   => $row->cancel_reason,
+            'student_attempts_used'  => $usedByStudent[$row->student_id] ?? 0,
+            'student_extra_attempts' => isset($overrides[$row->student_id]) ? (int) $overrides[$row->student_id]->extra_attempts : 0,
+            'student_available_until' => isset($overrides[$row->student_id]) ? $overrides[$row->student_id]->available_until : null,
         ], $rows);
     }
 

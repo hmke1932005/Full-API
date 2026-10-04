@@ -193,3 +193,18 @@ Formats match exactly what the rest of the project already supports (see
 `DataExportService::ALLOWED_FORMATS` and `AdminAiCodeReviewExportController`) — no new
 export formats were introduced. Every export call is audit-logged
 (`academic_staff.exam_system.results_exported`).
+
+## Attempt management (instructor) — cancel attempt / allow retake
+
+All routes: `academic_staff` only, exam must belong to the instructor.
+
+| Method | Path | Body | Notes |
+|---|---|---|---|
+| POST | `/exam-system/exams/{id}/attempts/{attemptId}/cancel` | `reason?`, `allow_retake?` (bool), `available_until?` (datetime) | Sets status `cancelled`. Kept in history and still counts as a used attempt unless `allow_retake=true` (grants +1). In-progress attempts are cut off immediately. |
+| POST | `/exam-system/exams/{id}/students/{studentId}/retake` | `extra_attempts?` (1–10, default 1), `available_until?`, `reason?` | Adds attempts on top of `max_attempts` (cumulative). `available_until` opens a private window for that student even after the exam closed. |
+| DELETE | `/exam-system/exams/{id}/students/{studentId}/retake` | — | Withdraws unused extra attempts only. |
+
+Attempt rows in `GET /exams/{id}/attempts` now include `cancelled_at`, `cancel_reason`, `student_attempts_used`, `student_extra_attempts`, `student_available_until`.
+Student `my-exams` payloads now include `extra_attempts`, `max_attempts_effective`, `retake_allowed`, `retake_available_until`.
+Audit actions: `exam.attempt_cancelled`, `exam.retake_granted`, `exam.retake_revoked`. Student notifications: `exam_attempt_cancelled`, `exam_retake_granted`, `exam_retake_revoked`.
+Run `php artisan migrate` (new migration `2026_10_05_200000_...`).

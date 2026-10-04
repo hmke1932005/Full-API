@@ -6,6 +6,7 @@ use App\Models\ExamAnswer;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptQuestion;
 use App\Models\ExamQuestion;
+use App\Models\ExamStudentOverride;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -82,6 +83,29 @@ class ExamAttemptRepository
             ->count();
     }
 
+    // -----------------------------------------------------------------
+    // Per-student overrides (إعادة الامتحان بصلاحية المدرس)
+    // -----------------------------------------------------------------
+
+    public function overrideFor($examId, $studentId): ?ExamStudentOverride
+    {
+        return ExamStudentOverride::where('exam_id', $examId)->where('student_id', $studentId)->first();
+    }
+
+    /** @return array<int,ExamStudentOverride> keyed بـ student_id. */
+    public function overridesForExam($examId): array
+    {
+        return ExamStudentOverride::where('exam_id', $examId)->get()->keyBy('student_id')->all();
+    }
+
+    public function saveOverride($examId, $studentId, array $data): ExamStudentOverride
+    {
+        return ExamStudentOverride::updateOrCreate(
+            ['exam_id' => $examId, 'student_id' => $studentId],
+            $data
+        );
+    }
+
     public function nextAttemptNumber($studentId, $examId): int
     {
         return (int) (ExamAttempt::where('student_id', $studentId)->where('exam_id', $examId)->max('attempt_number') ?? 0) + 1;
@@ -132,6 +156,7 @@ class ExamAttemptRepository
             ->select(
                 'a.id', 'a.student_id', 'a.attempt_number', 'a.status',
                 'a.started_at', 'a.submitted_at', 'a.score', 'a.percentage', 'a.auto_submitted', 'a.violations_count',
+                'a.cancelled_at', 'a.cancel_reason',
                 's.student_number', 'u.id as user_id', 'u.full_name', 'u.email'
             )
             ->orderByDesc('a.submitted_at')

@@ -19,6 +19,7 @@ class ExamAttempt extends Model
         'exam_id', 'student_id', 'attempt_number', 'status',
         'started_at', 'last_activity_at', 'expires_at', 'submitted_at',
         'auto_submitted', 'violations_count', 'score', 'percentage',
+        'cancelled_at', 'cancelled_by', 'cancel_reason',
     ];
 
     protected $casts = [
@@ -26,6 +27,7 @@ class ExamAttempt extends Model
         'last_activity_at' => 'datetime',
         'expires_at'       => 'datetime',
         'submitted_at'     => 'datetime',
+        'cancelled_at'     => 'datetime',
         'auto_submitted'   => 'boolean',
         'score'            => 'decimal:2',
         'percentage'       => 'decimal:2',

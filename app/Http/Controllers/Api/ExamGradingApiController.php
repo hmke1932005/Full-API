@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Repositories\AcademicStaffRepository;
 use App\Repositories\ExamAttemptRepository;
 use App\Repositories\ExamGradeRepository;
+use App\Services\ExamAttemptManagementService;
 use App\Services\ExamGradingService;
 use App\Services\ExamSystemService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -30,7 +32,8 @@ class ExamGradingApiController extends Controller
         private ExamSystemService $examSystem,
         private ExamAttemptRepository $attemptsRepo,
         private ExamGradeRepository $gradesRepo,
-        private AcademicStaffRepository $staffRepo
+        private AcademicStaffRepository $staffRepo,
+        private ExamAttemptManagementService $management
     ) {
     }
 
@@ -114,6 +117,143 @@ class ExamGradingApiController extends Controller
         }
 
         return $this->apiSuccess($this->grading->attemptDetailForInstructor($attempt), 'Attempt retrieved successfully.');
+    }
+
+    // -----------------------------------------------------------------
+    // Attempt management — cancel an attempt / allow a retake
+    // -----------------------------------------------------------------
+
+    /** يحوّل "available_until" المبعوتة من الفرونت لـ Carbon، أو null لو فاضية. */
+    private function parseUntil($value): ?Carbon
+    {
+        return $value ? Carbon::parse($value) : null;
+    }
+
+    /**
+     * POST /exams/{id}/attempts/{attemptId}/cancel
+     * body: reason?, allow_retake? (bool), available_until? (datetime — بس مع allow_retake)
+     */
+    public function cancelAttempt(Request $request, $examId, $attemptId)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+        [$exam, $err] = $this->resolveOwnedExam($request, $examId, $staff);
+        if ($err) {
+            return $err;
+        }
+        [$attempt, $err] = $this->resolveAttemptForExam($attemptId, $exam);
+        if ($err) {
+            return $err;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'reason'          => 'nullable|string|max:1000',
+            'allow_retake'    => 'nullable|boolean',
+            'available_until' => 'nullable|date',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError('Validation failed.', $validator->errors(), 422);
+        }
+
+        try {
+            $result = $this->management->cancelAttempt(
+                $exam,
+                $attempt,
+                (int) $request->attributes->get('uip_user_id'),
+                $request->input('reason'),
+                $request->boolean('allow_retake'),
+                $this->parseUntil($request->input('available_until'))
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        return $this->apiSuccess([
+            'id'            => $result['attempt']->id,
+            'status'        => $result['attempt']->status,
+            'cancelled_at'  => $result['attempt']->cancelled_at,
+            'cancel_reason' => $result['attempt']->cancel_reason,
+            'retake_granted' => $result['override'] !== null,
+        ], 'Attempt cancelled successfully.');
+    }
+
+    /**
+     * POST /exams/{id}/students/{studentId}/retake
+     * body: extra_attempts? (1..10، default 1), available_until? (datetime), reason?
+     */
+    public function grantRetake(Request $request, $examId, $studentId)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+        [$exam, $err] = $this->resolveOwnedExam($request, $examId, $staff);
+        if ($err) {
+            return $err;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'extra_attempts'  => 'nullable|integer|min:1|max:' . ExamAttemptManagementService::MAX_EXTRA_ATTEMPTS,
+            'available_until' => 'nullable|date',
+            'reason'          => 'nullable|string|max:1000',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError('Validation failed.', $validator->errors(), 422);
+        }
+
+        try {
+            $override = $this->management->grantRetake(
+                $exam,
+                $studentId,
+                (int) $request->input('extra_attempts', 1),
+                $this->parseUntil($request->input('available_until')),
+                (int) $request->attributes->get('uip_user_id'),
+                $request->input('reason')
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        return $this->apiSuccess([
+            'student_id'      => (int) $studentId,
+            'extra_attempts'  => (int) $override->extra_attempts,
+            'available_until' => $override->available_until,
+        ], 'Retake granted successfully.');
+    }
+
+    /** DELETE /exams/{id}/students/{studentId}/retake — يسحب المحاولات الإضافية اللي لسه ماتستخدمتش. */
+    public function revokeRetake(Request $request, $examId, $studentId)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+        [$exam, $err] = $this->resolveOwnedExam($request, $examId, $staff);
+        if ($err) {
+            return $err;
+        }
+
+        try {
+            $override = $this->management->revokeRetake($exam, $studentId, (int) $request->attributes->get('uip_user_id'));
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        return $this->apiSuccess([
+            'student_id'     => (int) $studentId,
+            'extra_attempts' => (int) $override->extra_attempts,
+        ], 'Retake revoked successfully.');
     }
 
     // -----------------------------------------------------------------

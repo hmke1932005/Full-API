@@ -120,19 +120,32 @@ class ExamAttemptService
         if ((int) $exam->university_id !== (int) $universityId) {
             throw new \InvalidArgumentException('Exam not found.');
         }
-        if (!in_array($exam->status, ['published', 'scheduled', 'active'], true)) {
+
+        // استثناء الطالب ده (إعادة الامتحان بصلاحية المدرس): محاولات إضافية، و/أو
+        // نافذة وصول خاصة (available_until) بتتخطى start_at/end_at وحالة closed.
+        $override = $this->attempts->overrideFor($exam->id, $studentId);
+        $extraAttempts = $override ? (int) $override->extra_attempts : 0;
+        $privateWindow = $override && $extraAttempts > 0 && $override->windowIsOpen();
+
+        $openStatuses = ['published', 'scheduled', 'active'];
+        if ($privateWindow) {
+            $openStatuses = array_merge($openStatuses, ['closed', 'grading', 'graded']);
+        }
+        if (!in_array($exam->status, $openStatuses, true)) {
             throw new \InvalidArgumentException('This exam is not currently open for attempts.');
         }
-        if ($exam->start_at && now()->lessThan($exam->start_at)) {
-            throw new \InvalidArgumentException('This exam has not started yet.');
-        }
-        if ($exam->end_at && now()->greaterThan($exam->end_at)) {
-            throw new \InvalidArgumentException('This exam is closed and no longer accepts attempts.');
+        if (!$privateWindow) {
+            if ($exam->start_at && now()->lessThan($exam->start_at)) {
+                throw new \InvalidArgumentException('This exam has not started yet.');
+            }
+            if ($exam->end_at && now()->greaterThan($exam->end_at)) {
+                throw new \InvalidArgumentException('This exam is closed and no longer accepts attempts.');
+            }
         }
         if (!$this->targets->studentIsEligibleForExam($exam->id, $studentId)) {
             throw new \InvalidArgumentException('You are not eligible to take this exam.');
         }
-        if ($this->attempts->countFinishedForStudentAndExam($studentId, $exam->id) >= (int) $exam->max_attempts) {
+        if ($this->attempts->countFinishedForStudentAndExam($studentId, $exam->id) >= (int) $exam->max_attempts + $extraAttempts) {
             throw new \InvalidArgumentException('You have already used the maximum number of attempts for this exam.');
         }
     }

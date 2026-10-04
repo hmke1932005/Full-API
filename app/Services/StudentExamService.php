@@ -43,9 +43,11 @@ class StudentExamService
                 if (in_array($e->status, ['published', 'scheduled'], true)) {
                     return true;
                 }
-                // Finished exams stay in the student's list (as "Completed") only if they took part.
+                // Finished exams stay in the student's list (as "Completed") only if they took part,
+                // or if the instructor opened a retake for them.
                 return in_array($e->status, ['closed', 'grading', 'graded'], true)
-                    && count($this->attempts->forStudentAndExam($studentId, $e->id)) > 0;
+                    && (count($this->attempts->forStudentAndExam($studentId, $e->id)) > 0
+                        || $this->retakeIsOpen($e, $studentId));
             }
         );
 
@@ -62,7 +64,8 @@ class StudentExamService
             return null;
         }
         $finishedButTookPart = in_array($exam->status, ['closed', 'grading', 'graded'], true)
-            && count($this->attempts->forStudentAndExam($studentId, $exam->id)) > 0;
+            && (count($this->attempts->forStudentAndExam($studentId, $exam->id)) > 0
+                || $this->retakeIsOpen($exam, $studentId));
         if (!in_array($exam->status, ['published', 'scheduled'], true) && !$finishedButTookPart) {
             return null;
         }
@@ -73,10 +76,23 @@ class StudentExamService
         return $this->summaryFor($exam, $studentId);
     }
 
+    /** هل المدرس فاتح للطالب ده إعادة (محاولات إضافية لسه متبقية + نافذة خاصة مفتوحة)؟ */
+    private function retakeIsOpen(Exam $exam, $studentId): bool
+    {
+        $override = $this->attempts->overrideFor($exam->id, $studentId);
+        if (!$override || (int) $override->extra_attempts < 1 || !$override->windowIsOpen()) {
+            return false;
+        }
+        $used = count($this->attempts->forStudentAndExam($studentId, $exam->id));
+        return $used < (int) $exam->max_attempts + (int) $override->extra_attempts;
+    }
+
     private function summaryFor(Exam $exam, $studentId = null): array
     {
         $mine = $studentId !== null ? $this->attempts->forStudentAndExam($studentId, $exam->id) : [];
         $last = $mine[0] ?? null;
+        $override = $studentId !== null ? $this->attempts->overrideFor($exam->id, $studentId) : null;
+        $extra = $override ? (int) $override->extra_attempts : 0;
 
         return [
             'id'                 => $exam->id,
@@ -90,6 +106,10 @@ class StudentExamService
             'start_at'           => $exam->start_at,
             'end_at'             => $exam->end_at,
             'max_attempts'       => $exam->max_attempts,
+            'extra_attempts'     => $extra,
+            'max_attempts_effective' => (int) $exam->max_attempts + $extra,
+            'retake_allowed'     => $studentId !== null && $this->retakeIsOpen($exam, $studentId),
+            'retake_available_until' => $override && $extra > 0 ? $override->available_until : null,
             'passing_score'      => $exam->passing_score !== null ? (float) $exam->passing_score : null,
             'total_marks'        => (float) $exam->total_marks,
             // Round 7 — عدد الأسئلة "المعلن" (نفسه لكل طالب دايمًا: يدوي +
