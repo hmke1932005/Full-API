@@ -1444,6 +1444,22 @@ Route::prefix('v1')->group(function () {
     });
 });
 
+// بند 14 — Graduation: قائمة المراجعة + transcript + approve/revoke/edit + الشهادة.
+// الـ role (student / university / faculty) بيتحدد جوّه GraduationApiController.
+// الـ {studentId} رقمي، وكل مسار ثابت بيتسجل قبل /{studentId} على نفس مبدأ باقي المجموعات.
+Route::prefix('v1')->group(function () {
+    Route::prefix('graduation')->middleware('uip.auth')->group(function () {
+        Route::get('/', [GraduationApiController::class, 'index']);
+
+        Route::get('/{studentId}/certificate', [GraduationApiController::class, 'certificate'])->where('studentId', '[0-9]+');
+        Route::post('/{studentId}/approve', [GraduationApiController::class, 'approve'])->where('studentId', '[0-9]+');
+        Route::post('/{studentId}/revoke', [GraduationApiController::class, 'revoke'])->where('studentId', '[0-9]+');
+
+        Route::get('/{studentId}', [GraduationApiController::class, 'show'])->where('studentId', '[0-9]+');
+        Route::patch('/{studentId}', [GraduationApiController::class, 'update'])->where('studentId', '[0-9]+');
+    });
+});
+
 // بند 20 — AI Assistant: كنترولر موحّد لكل بورتال (زي MessagingController
 // بالظبط)، منقول من app/Controllers/Common/AiAssistantController.php +
 // app/Controllers/Admin/AiAssistantSettingsController.php +
