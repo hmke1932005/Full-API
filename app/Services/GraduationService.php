@@ -129,7 +129,8 @@ class GraduationService
         string $locale = 'ar',
         ?int $facultyId = null,
         bool $manualOverride = false,
-        ?string $overrideReason = null
+        ?string $overrideReason = null,
+        array $fields = []
     ): array {
         $eligibility = $this->checkEligibility($studentId);
         $student = $eligibility['student'];
@@ -169,6 +170,19 @@ class GraduationService
             }
         }
 
+        // قيَم اختيارية بيكتبها الموظف وقت الاعتماد (تاريخ/معدل/أسماء). أي حقل
+        // فاضي بيرجع للقيمة المشتقة من ملف الطالب زي الأول بالظبط.
+        $graduationDate = trim((string) ($fields['graduation_date'] ?? ''));
+        if ($graduationDate !== '' && (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $graduationDate) || strtotime($graduationDate) === false)) {
+            return ['success' => false, 'message' => $locale === 'ar' ? 'تاريخ تخرج غير صالح.' : 'Invalid graduation date.'];
+        }
+        $gpaInput = $fields['final_gpa'] ?? null;
+        $hasGpa = $gpaInput !== null && trim((string) $gpaInput) !== '';
+        if ($hasGpa && (!is_numeric($gpaInput) || (float) $gpaInput < 0 || (float) $gpaInput > 4)) {
+            return ['success' => false, 'message' => $locale === 'ar' ? 'المعدل التراكمي لازم يكون رقم بين 0 و 4.' : 'Final GPA must be a number between 0 and 4.'];
+        }
+        $pick = fn (string $key, $default) => $this->blankToNull($fields[$key] ?? null) ?? $default;
+
         $certificateNumber = $this->nextCertificateNumber($universityId);
         $approvedAt = now();
         $isOverride = $manualOverride && !$eligibility['eligible'];
@@ -183,16 +197,16 @@ class GraduationService
             'student_id'         => $studentId,
             'university_id'      => $universityId,
             'status'             => 'graduated',
-            'graduation_date'    => now()->toDateString(),
-            'final_gpa'          => $student['gpa'] ?? null,
+            'graduation_date'    => $graduationDate !== '' ? $graduationDate : now()->toDateString(),
+            'final_gpa'          => $hasGpa ? (float) $gpaInput : ($student['gpa'] ?? null),
             'degree_title_ar'    => ($degreeTitleAr ?? '') !== '' ? $degreeTitleAr : null,
             'degree_title_en'    => ($degreeTitleEn ?? '') !== '' ? $degreeTitleEn : null,
-            'faculty_name_ar'    => $student['faculty_name_ar'] ?? $student['faculty'] ?? null,
-            'faculty_name_en'    => $student['faculty_name_en'] ?? $student['faculty'] ?? null,
-            'department_name_ar' => $student['department_name_ar'] ?? $student['department'] ?? null,
-            'department_name_en' => $student['department_name_en'] ?? $student['department'] ?? null,
-            'program_name_ar'    => $student['program_name_ar'] ?? null,
-            'program_name_en'    => $student['program_name_en'] ?? null,
+            'faculty_name_ar'    => $pick('faculty_name_ar', $student['faculty_name_ar'] ?? $student['faculty'] ?? null),
+            'faculty_name_en'    => $pick('faculty_name_en', $student['faculty_name_en'] ?? $student['faculty'] ?? null),
+            'department_name_ar' => $pick('department_name_ar', $student['department_name_ar'] ?? $student['department'] ?? null),
+            'department_name_en' => $pick('department_name_en', $student['department_name_en'] ?? $student['department'] ?? null),
+            'program_name_ar'    => $pick('program_name_ar', $student['program_name_ar'] ?? null),
+            'program_name_en'    => $pick('program_name_en', $student['program_name_en'] ?? null),
             'certificate_number' => $certificateNumber,
             'notes'              => $finalNotes,
             'approved_by'        => $approvedByUserId,

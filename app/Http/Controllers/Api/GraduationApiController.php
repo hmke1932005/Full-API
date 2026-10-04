@@ -149,7 +149,17 @@ class GraduationApiController extends Controller
             'en',
             $scope['faculty_id'],
             (bool) $request->input('manual_override', false),
-            (string) $request->input('override_reason', '')
+            (string) $request->input('override_reason', ''),
+            [
+                'graduation_date'    => (string) $request->input('graduation_date', ''),
+                'final_gpa'          => $request->input('final_gpa', ''),
+                'faculty_name_ar'    => (string) $request->input('faculty_name_ar', ''),
+                'faculty_name_en'    => (string) $request->input('faculty_name_en', ''),
+                'department_name_ar' => (string) $request->input('department_name_ar', ''),
+                'department_name_en' => (string) $request->input('department_name_en', ''),
+                'program_name_ar'    => (string) $request->input('program_name_ar', ''),
+                'program_name_en'    => (string) $request->input('program_name_en', ''),
+            ]
         );
 
         if (!$result['success']) {
