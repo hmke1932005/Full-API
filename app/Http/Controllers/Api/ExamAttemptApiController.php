@@ -45,6 +45,37 @@ class ExamAttemptApiController extends Controller
         return [$student, null];
     }
 
+    /**
+     * GET /api/v1/exam-system/active-attempt — هل الطالب جوّه امتحان دلوقتي؟
+     * الفرونت بيسألها عند كل تحميل للـ layout عشان يفعّل وضع القفل (إخفاء الـ sidebar،
+     * منع التنقل، تعطيل الـ AI) حتى لو الطالب فتح تاب تاني أو جهاز تاني أو كتب URL تاني.
+     */
+    public function activeAttempt(Request $request)
+    {
+        [$student, $err] = $this->resolveStudent($request);
+        if ($err) {
+            return $err;
+        }
+
+        $attempt = $this->attemptsRepo->activeAttemptForStudent($student->id);
+        if (!$attempt) {
+            return $this->apiSuccess(['active' => false], 'No active attempt.');
+        }
+
+        $attempt = $this->examAttempts->enforceTimer($attempt);
+        if (!$attempt->isActive()) {
+            return $this->apiSuccess(['active' => false], 'No active attempt.');
+        }
+
+        return $this->apiSuccess([
+            'active'     => true,
+            'attempt_id' => $attempt->id,
+            'exam_id'    => $attempt->exam_id,
+            'title'      => $attempt->exam?->title,
+            'expires_at' => $attempt->expires_at,
+        ], 'Active attempt retrieved successfully.');
+    }
+
     /** GET /api/v1/exam-system/my-exams/{id}/attempts — تاريخ محاولات الطالب على الامتحان ده. */
     public function indexForExam(Request $request, $examId)
     {

@@ -351,6 +351,7 @@ Route::prefix('v1')->group(function () {
         // الطالب فوق، ده سطح طالب مش مدرس. attempts/{id}/* بعد كده مستقلة
         // عن exam id (المحاولة نفسها هي المرجع، زي StudentExamApiController
         // بيتحقق من الملكية عبر ExamAttemptRepository::findOwned() مش exam).
+        Route::get('active-attempt', [ExamAttemptApiController::class, 'activeAttempt']);
         Route::get('my-exams/{id}/attempts', [ExamAttemptApiController::class, 'indexForExam'])->where('id', '[0-9]+');
         Route::post('my-exams/{id}/attempts', [ExamAttemptApiController::class, 'start'])->where('id', '[0-9]+');
 
@@ -1494,7 +1495,7 @@ Route::prefix('v1')->group(function () {
 // /messages/{id}/... و /attachments/{id}/... لازم تتسجل بعد الراوتس
 // الثابتة (status/search) زي كل مجموعة تانية في المشروع.
 Route::prefix('v1')->group(function () {
-    Route::prefix('ai-assistant')->middleware('uip.auth')->group(function () {
+    Route::prefix('ai-assistant')->middleware(['uip.auth', 'uip.exam_lock'])->group(function () {
         Route::get('/status', [AiAssistantController::class, 'status']);
 
         Route::get('/conversations', [AiAssistantController::class, 'conversations']);

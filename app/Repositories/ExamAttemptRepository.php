@@ -58,6 +58,22 @@ class ExamAttemptRepository
             ->first();
     }
 
+    /**
+     * أي محاولة شغالة للطالب على أي امتحان (مش امتحان بعينه) — أساس "وضع قفل الامتحان":
+     * الفرونت بيمنع التنقل/الـ sidebar، والـ AI Assistant بيتقفل من السيرفر طول ما فيه واحدة.
+     * المحاولة اللي وقتها عدى مش بتتحسب (هتتحوّل auto_submitted عند أول enforceTimer/sweep).
+     */
+    public function activeAttemptForStudent($studentId): ?ExamAttempt
+    {
+        return ExamAttempt::where('student_id', $studentId)
+            ->whereIn('status', ExamAttempt::ACTIVE_STATUSES)
+            ->where(function ($q) {
+                $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->orderByDesc('started_at')
+            ->first();
+    }
+
     public function countFinishedForStudentAndExam($studentId, $examId): int
     {
         return ExamAttempt::where('student_id', $studentId)
