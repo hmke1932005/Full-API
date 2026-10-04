@@ -10,6 +10,7 @@ use App\Repositories\ProjectLinkRepository;
 use App\Repositories\ProjectRepository;
 use App\Repositories\ProjectTeamMemberRepository;
 use App\Repositories\UniversityRepository;
+use App\Services\MessagingService;
 use App\Services\ProjectAnalyticsService;
 use Illuminate\Http\Request;
 
@@ -28,8 +29,9 @@ use Illuminate\Http\Request;
  *   بقت متسجّلة هنا فعليًا (تاب Analytics بيشتغل)، لكن الفرونت
  *   (ProjectDetail.jsx) بيروح على الرابط الخام مباشرة مش عبر /go/
  *   متتبّع، فمفيش داعي فعلي للـ redirect endpoints دي دلوقتي.
- * - contact() — الفرونت (ProjectDetail.jsx) مُعطّل من ناحيته أصلًا
- *   (بيعرض note بدل فورم شغال)، فمفيش endpoint هنا يستقبله.
+ * - contact() — اتبنى: POST /public/projects/{slug}/contact (محتاج
+ *   uip.auth)، بيفتح/يكمّل محادثة مباشرة مع صاحب المشروع عبر
+ *   MessagingService::startConversation()، فنفس قيود المراسلة بتتطبق.
  * - verifyCertificate() كانت بترجع result: null دايمًا لحد بند 14
  *   (Graduation)؛ دلوقتي بتقرا فعليًا من GraduationRecordRepository::
  *   findByCertificateNumber() — شهادة ملغاة لسه بترجع (status:'revoked'
@@ -48,7 +50,8 @@ class PublicApiController extends Controller
         private ProjectTeamMemberRepository $team,
         private ProjectAnalyticsService $analytics,
         private \App\Repositories\GraduationRecordRepository $graduationRecords,
-        private UniversityRepository $universities
+        private UniversityRepository $universities,
+        private MessagingService $messaging
     ) {
     }
 
@@ -139,6 +142,49 @@ class PublicApiController extends Controller
             'links'        => array_map(fn ($l) => $l->toRowArray(), $this->links->forProject($row['id'])),
             'team_members' => array_map(fn ($m) => $m->toRowArray(), $this->team->forProject($row['id'])),
         ], 'Project retrieved successfully.');
+    }
+
+    /**
+     * POST /api/v1/public/projects/{slug}/contact — body: message (≤ 2000).
+     * محتاج مستخدم مسجّل (uip.auth على الراوت). بيبعت لصاحب المشروع المنشور
+     * من خلال نظام الرسائل نفسه (نفس قيود المراسلة والـ rate limit)،
+     * وإيميل المالك عمره ما بيطلع للفرونت. بيرجع conversation_id.
+     */
+    public function contact(Request $request, string $slug)
+    {
+        $row = $this->projects->findPublishedBySlugOrUuid($slug);
+        if (!$row) {
+            return $this->apiError('Project not found.', null, 404);
+        }
+
+        $senderId = (int) $request->attributes->get('uip_user_id');
+        if ($senderId === (int) $row['owner_id']) {
+            return $this->apiError('This is your own project.', null, 422);
+        }
+
+        $message = trim((string) $request->input('message', ''));
+        if ($message === '') {
+            return $this->apiError('The message field is required.', ['message' => ['The message field is required.']], 422);
+        }
+        if (mb_strlen($message) > 2000) {
+            return $this->apiError('The message may not be greater than 2000 characters.', ['message' => ['The message may not be greater than 2000 characters.']], 422);
+        }
+
+        $owner = User::find((int) $row['owner_id']);
+        if (!$owner) {
+            return $this->apiError('Project not found.', null, 404);
+        }
+
+        $title = trim((string) ($row['title_en'] ?? '')) ?: trim((string) ($row['title_ar'] ?? ''));
+        $body = $title !== '' ? "[{$title}]\n\n{$message}" : $message;
+
+        try {
+            $conversationId = $this->messaging->startConversation($senderId, (string) $owner->email, $body);
+        } catch (\RuntimeException | \InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        return $this->apiSuccess(['conversation_id' => $conversationId], 'Message sent to the project team.', 201);
     }
 
     /**

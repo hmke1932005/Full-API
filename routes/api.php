@@ -1421,6 +1421,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/verify-certificate', [PublicApiController::class, 'verifyCertificate']);
         Route::get('/projects', [PublicApiController::class, 'projects']);
         Route::get('/projects/{slug}', [PublicApiController::class, 'projectShow']);
+        // تواصل مع فريق المشروع — الوحيد في المجموعة دي اللي محتاج تسجيل دخول.
+        Route::post('/projects/{slug}/contact', [PublicApiController::class, 'contact'])->middleware('uip.auth');
 
         // -- Public portfolio share link (/p/{uuid} في الفرونت، من غير
         // auth خالص) — بيعيد استخدام PortfoliosApiController::show نفسها
