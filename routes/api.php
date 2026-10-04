@@ -307,6 +307,8 @@ Route::prefix('v1')->group(function () {
 
         Route::post('exams/{id}/questions', [ExamSystemApiController::class, 'addExamQuestion'])->where('id', '[0-9]+');
         Route::patch('exams/{id}/questions/reorder', [ExamSystemApiController::class, 'reorderExamQuestions'])->where('id', '[0-9]+');
+        Route::patch('exams/{id}/questions/{examQuestionId}', [ExamSystemApiController::class, 'updateExamQuestionMarks'])->where('id', '[0-9]+')->where('examQuestionId', '[0-9]+');
+        Route::put('exams/{id}/marks', [ExamSystemApiController::class, 'distributeExamMarks'])->where('id', '[0-9]+');
         Route::delete('exams/{id}/questions/{examQuestionId}', [ExamSystemApiController::class, 'removeExamQuestion'])->where('id', '[0-9]+')->where('examQuestionId', '[0-9]+');
 
         // Round 7 — Question Pool configs on an exam (Phases 6-7). زي

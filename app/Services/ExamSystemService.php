@@ -743,6 +743,65 @@ class ExamSystemService
         return $ok;
     }
 
+    /** تعديل درجة سؤال معين (marks_override) — الإجمالي بيتحسب تاني تلقائيًا. */
+    public function setQuestionMarks(Exam $exam, $examQuestionId, float $marks): bool
+    {
+        $this->assertMarksEditable($exam);
+        if ($marks < 0.25) {
+            throw new \InvalidArgumentException('Question marks must be at least 0.25.');
+        }
+        $ok = $this->exams->setMarksOverride($exam->id, $examQuestionId, $marks);
+        if ($ok) {
+            $this->recalculateTotalMarks($exam);
+        }
+        return $ok;
+    }
+
+    /**
+     * يحدد إجمالي الدرجات ويوزّعه بالتساوي على الأسئلة اليدوية (بعد خصم
+     * درجات أقسام الـ pools الثابتة). باقي القسمة بيروح لآخر سؤال عشان
+     * مجموع الدرجات يطلع مطابق للإجمالي بالظبط. بعدها الموظف يقدر يعدّل
+     * درجة أي سؤال لوحده (setQuestionMarks).
+     */
+    public function distributeTotalMarks(Exam $exam, float $total): void
+    {
+        $this->assertMarksEditable($exam);
+
+        $manual = $this->exams->manualQuestionsFor($exam->id);
+        $count = count($manual);
+        if ($count === 0) {
+            throw new \InvalidArgumentException('Add questions first, then set the total points.');
+        }
+
+        $poolTotal = 0.0;
+        foreach ($this->exams->poolConfigsFor($exam->id) as $config) {
+            $poolTotal += (float) $config->questions_to_select * (float) $config->marks_per_question;
+        }
+
+        $remaining = round($total - $poolTotal, 2);
+        if ($remaining < 0.25 * $count) {
+            throw new \InvalidArgumentException('Total points is too low: each question needs at least 0.25 points.');
+        }
+
+        $each = floor(($remaining / $count) * 100) / 100;
+        $used = 0.0;
+        foreach ($manual as $i => $pivot) {
+            $marks = $i === $count - 1 ? round($remaining - $used, 2) : $each;
+            $this->exams->setMarksOverride($exam->id, $pivot->id, $marks);
+            $used += $marks;
+        }
+
+        $this->recalculateTotalMarks($exam);
+    }
+
+    /** بعد ما طالب يبدأ محاولة، تغيير الدرجات هيبوّظ النتايج اللي اتحسبت. */
+    private function assertMarksEditable(Exam $exam): void
+    {
+        if (\App\Models\ExamAttempt::where('exam_id', $exam->id)->exists()) {
+            throw new \InvalidArgumentException('Points cannot be changed after students have started attempts.');
+        }
+    }
+
     public function reorderExamQuestions(Exam $exam, array $orderedExamQuestionIds): void
     {
         $this->exams->reorder($exam->id, $orderedExamQuestionIds);

@@ -697,6 +697,73 @@ class ExamSystemApiController extends Controller
         return $this->apiSuccess($this->examSystem->examDetail($exam->fresh()), 'Question removed from exam successfully.');
     }
 
+    /** PATCH /api/v1/exam-system/exams/{id}/questions/{examQuestionId} — body: marks. بيعدّل درجة سؤال واحد. */
+    public function updateExamQuestionMarks(Request $request, $id, $examQuestionId)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+
+        $exam = $this->examSystem->findOwnedExam($id, $staff->id);
+        if (!$exam) {
+            return $this->apiError('Exam not found.', null, 404);
+        }
+
+        $validator = Validator::make($request->all(), ['marks' => 'required|numeric|min:0.25|max:1000']);
+        if ($validator->fails()) {
+            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+
+        try {
+            $found = $this->examSystem->setQuestionMarks($exam, $examQuestionId, (float) $request->input('marks'));
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+        if (!$found) {
+            return $this->apiError('Question is not part of this exam.', null, 404);
+        }
+
+        $this->auditLog->record($staff->user_id, 'academic_staff.exam_system.exam_question_marks_updated', 'Exam', $exam->id, null, ['exam_question_id' => (int) $examQuestionId, 'marks' => (float) $request->input('marks')]);
+
+        return $this->apiSuccess($this->examSystem->examDetail($exam->fresh()), 'Question points updated successfully.');
+    }
+
+    /** PUT /api/v1/exam-system/exams/{id}/marks — body: total_marks. بيوزّع الإجمالي بالتساوي على الأسئلة. */
+    public function distributeExamMarks(Request $request, $id)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+
+        $exam = $this->examSystem->findOwnedExam($id, $staff->id);
+        if (!$exam) {
+            return $this->apiError('Exam not found.', null, 404);
+        }
+
+        $validator = Validator::make($request->all(), ['total_marks' => 'required|numeric|min:0.25|max:100000']);
+        if ($validator->fails()) {
+            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+
+        try {
+            $this->examSystem->distributeTotalMarks($exam, (float) $request->input('total_marks'));
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        $this->auditLog->record($staff->user_id, 'academic_staff.exam_system.exam_marks_distributed', 'Exam', $exam->id, null, ['total_marks' => (float) $request->input('total_marks')]);
+
+        return $this->apiSuccess($this->examSystem->examDetail($exam->fresh()), 'Total points distributed across the questions.');
+    }
+
     /** PATCH /api/v1/exam-system/exams/{id}/questions/reorder (body: {order: [examQuestionId, ...]}) */
     public function reorderExamQuestions(Request $request, $id)
     {

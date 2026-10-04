@@ -99,6 +99,17 @@ class ExamRepository
         return true;
     }
 
+    public function setMarksOverride($examId, $examQuestionId, float $marks): bool
+    {
+        $pivot = $this->findPivot($examId, $examQuestionId);
+        if (!$pivot) {
+            return false;
+        }
+        $pivot->marks_override = round($marks, 2);
+        $pivot->save();
+        return true;
+    }
+
     public function reorder($examId, array $orderedExamQuestionIds): void
     {
         foreach ($orderedExamQuestionIds as $i => $examQuestionId) {
