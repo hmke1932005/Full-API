@@ -606,6 +606,8 @@ class ExamSystemService
     /** @param array{university_id:int,faculty_id:?int,department_id:?int} $scope */
     public function createExam($academicStaffId, array $scope, array $data): Exam
     {
+        $course = $this->resolveCourse($data['course_id'] ?? null, $scope['university_id']);
+
         return $this->exams->create([
             'university_id'                => $scope['university_id'],
             'faculty_id'                    => $scope['faculty_id'] ?? null,
@@ -614,7 +616,8 @@ class ExamSystemService
             'created_by_academic_staff_id'  => $academicStaffId,
             'title'                         => trim($data['title']),
             'description'                   => $data['description'] ?? null,
-            'subject'                       => $data['subject'] ?? null,
+            'subject'                       => $course ? $course->name_en : ($data['subject'] ?? null),
+            'course_id'                     => $course?->id,
             'exam_type'                     => $data['exam_type'] ?? 'midterm',
             'academic_year'                 => $data['academic_year'] ?? null,
             'semester'                      => $data['semester'] ?? null,
@@ -654,9 +657,26 @@ class ExamSystemService
                 $fillable[$k] = $this->toAppTimezone($fillable[$k]);
             }
         }
+        // Linking an exam to a course: the course name becomes the exam's subject label.
+        if (array_key_exists('course_id', $data)) {
+            $course = $this->resolveCourse($data['course_id'], $exam->university_id);
+            $fillable['course_id'] = $course?->id;
+            if ($course) {
+                $fillable['subject'] = $course->name_en;
+            }
+        }
         $exam->fill($fillable);
         $exam->save();
         return $exam;
+    }
+
+    /** A course of this university (or null) — invalid / foreign ids are ignored. */
+    private function resolveCourse($courseId, $universityId): ?\App\Models\Course
+    {
+        if ($courseId === null || $courseId === '') {
+            return null;
+        }
+        return \App\Models\Course::where('university_id', $universityId)->find((int) $courseId);
     }
 
     /**

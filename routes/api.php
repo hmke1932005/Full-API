@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\AnnouncementsApiController;
 use App\Http\Controllers\Api\FeedApiController;
 use App\Http\Controllers\Api\StudentsApiController;
 use App\Http\Controllers\Api\BulkApiController;
+use App\Http\Controllers\Api\CourseApiController;
 use App\Http\Controllers\Api\AccountLinkApiController;
 use App\Http\Controllers\Api\StudentSettingsApiController;
 use App\Http\Controllers\Api\AcademicStaffSettingsApiController;
@@ -879,6 +880,25 @@ Route::prefix('v1')->group(function () {
         Route::delete('/{id}', [StudentsApiController::class, 'delete']);
         Route::post('/{id}/resend', [StudentsApiController::class, 'resend']);
         Route::patch('/{id}/password', [StudentsApiController::class, 'setPassword'])->where('id', '[0-9]+');
+    });
+
+    // Courses (المواد): university / faculty / doctor manage them, students enrol, doctors see the roster.
+    Route::prefix('courses')->middleware('uip.auth')->group(function () {
+        Route::get('/', [CourseApiController::class, 'index']);
+        Route::post('/', [CourseApiController::class, 'store']);
+        Route::get('/meta', [CourseApiController::class, 'meta']);
+        Route::get('/{id}', [CourseApiController::class, 'show'])->where('id', '[0-9]+');
+        Route::patch('/{id}', [CourseApiController::class, 'update'])->where('id', '[0-9]+');
+        Route::post('/{id}/archive', [CourseApiController::class, 'archive'])->where('id', '[0-9]+');
+        Route::post('/{id}/restore', [CourseApiController::class, 'restore'])->where('id', '[0-9]+');
+        Route::post('/{id}/staff', [CourseApiController::class, 'assignStaff'])->where('id', '[0-9]+');
+        Route::delete('/{id}/staff/{staffId}', [CourseApiController::class, 'removeStaff'])->where(['id' => '[0-9]+', 'staffId' => '[0-9]+']);
+        Route::get('/{id}/students', [CourseApiController::class, 'roster'])->where('id', '[0-9]+');
+        Route::get('/{id}/students/candidates', [CourseApiController::class, 'candidates'])->where('id', '[0-9]+');
+        Route::post('/{id}/students', [CourseApiController::class, 'addStudents'])->where('id', '[0-9]+');
+        Route::delete('/{id}/students/{studentId}', [CourseApiController::class, 'removeStudent'])->where(['id' => '[0-9]+', 'studentId' => '[0-9]+']);
+        Route::post('/{id}/enroll', [CourseApiController::class, 'enroll'])->where('id', '[0-9]+');
+        Route::delete('/{id}/enroll', [CourseApiController::class, 'unenroll'])->where('id', '[0-9]+');
     });
 
     // Link accounts that already exist on the platform to a university/faculty (instead of inviting new ones).
