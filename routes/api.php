@@ -39,6 +39,7 @@ use App\Http\Controllers\Api\AnnouncementsApiController;
 use App\Http\Controllers\Api\FeedApiController;
 use App\Http\Controllers\Api\StudentsApiController;
 use App\Http\Controllers\Api\BulkApiController;
+use App\Http\Controllers\Api\AccountLinkApiController;
 use App\Http\Controllers\Api\StudentSettingsApiController;
 use App\Http\Controllers\Api\AcademicStaffSettingsApiController;
 use App\Http\Controllers\Api\ContactsApiController;
@@ -875,6 +876,14 @@ Route::prefix('v1')->group(function () {
         Route::delete('/{id}', [StudentsApiController::class, 'delete']);
         Route::post('/{id}/resend', [StudentsApiController::class, 'resend']);
         Route::patch('/{id}/password', [StudentsApiController::class, 'setPassword'])->where('id', '[0-9]+');
+    });
+
+    // Link accounts that already exist on the platform to a university/faculty (instead of inviting new ones).
+    Route::prefix('people')->middleware('uip.auth')->group(function () {
+        Route::get('/lookup', [AccountLinkApiController::class, 'lookup']);
+        Route::post('/link/student', [AccountLinkApiController::class, 'linkStudent']);
+        Route::post('/link/academic-staff', [AccountLinkApiController::class, 'linkAcademicStaff']);
+        Route::post('/link/supervisor', [AccountLinkApiController::class, 'linkSupervisor']);
     });
 
     // Bulk student actions (CSV/XLSX import, move to group) — called by the university/faculty students pages.

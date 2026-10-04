@@ -184,7 +184,7 @@ class AcademicStaffManagementService
     public function resendInvite($id, $universityId, $actingUserId, ?string $password = null, string $locale = 'ar', $facultyId = null): array
     {
         $staff = $this->staff->findOwnedByUniversity($id, $universityId, $facultyId);
-        if (!$staff || $staff->invitation_status === 'accepted') {
+        if (!$staff || $staff->invitation_status === 'accepted' || !$staff->invited_at) {
             return ['success' => false, 'message' => $locale === 'ar' ? 'غير متاح لهذا العضو.' : 'Not available for this staff member.'];
         }
 
@@ -240,6 +240,12 @@ class AcademicStaffManagementService
             return ['success' => false, 'message' => $locale === 'ar'
                 ? 'كلمة المرور يجب ألا تقل عن 8 أحرف.'
                 : 'Password must be at least 8 characters.'];
+        }
+
+        if (!$staff->invited_at) {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'هذا حساب مرتبط يملكه صاحبه — لا يمكن تغيير كلمة سره من هنا.'
+                : 'This is a linked account owned by its user — its password cannot be changed from here.'];
         }
 
         $newPassword = $password !== null && trim($password) !== '' ? trim($password) : $this->generateTempPassword();

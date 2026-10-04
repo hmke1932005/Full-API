@@ -187,7 +187,9 @@ class StudentManagementService
             // A manually-set password means the admin hands the credentials over themselves:
             // no invitation flow (no "Invite pending/expired" badge, nothing to resend).
             'invitation_status'         => $manualPassword ? null : 'pending',
-            'invited_at'                => $manualPassword ? null : date('Y-m-d H:i:s'),
+            // invited_at doubles as "this login was created by the university" — only such logins
+            // may have their password managed by the university (linked/self-registered ones may not).
+            'invited_at'                => date('Y-m-d H:i:s'),
             'expires_at'                => $manualPassword ? null : date('Y-m-d H:i:s', strtotime('+' . self::INVITE_EXPIRY_DAYS . ' days')),
         ]);
         $student->save();
@@ -231,6 +233,12 @@ class StudentManagementService
         $user = $student ? User::find($student->user_id) : null;
         if (!$student || !$user) {
             return ['success' => false, 'message' => $locale === 'ar' ? 'الطالب غير موجود.' : 'Student not found.'];
+        }
+
+        if (!$student->invited_at) {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'هذا حساب مرتبط يملكه صاحبه — لا يمكن تغيير كلمة سره من هنا.'
+                : 'This is a linked account owned by its user — its password cannot be changed from here.'];
         }
 
         $password = $password !== null ? trim($password) : '';

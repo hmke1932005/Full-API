@@ -130,6 +130,11 @@ class SupervisorManagementService
         if (!$supervisor || !$user) {
             return ['success' => false, 'message' => $locale === 'ar' ? 'المشرف غير موجود.' : 'Supervisor not found.'];
         }
+        if (!$supervisor->invited_at) {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'هذا حساب مرتبط يملكه صاحبه — لا يمكن تغيير كلمة سره من هنا.'
+                : 'This is a linked account owned by its user — its password cannot be changed from here.'];
+        }
         $password = $password !== null ? trim($password) : '';
         if ($password !== '' && mb_strlen($password) < 8) {
             return ['success' => false, 'message' => $locale === 'ar'

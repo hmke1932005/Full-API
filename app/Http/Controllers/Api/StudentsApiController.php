@@ -825,6 +825,7 @@ class StudentsApiController extends Controller
             'group_name'               => $s['group_name'] ?? null,
             'account_status'           => $s['account_status'],
             'invitation_status'        => $s['effective_invitation_status'] ?? null,
+            'can_manage_password'      => !empty($s['invited_at']),
             'projects_count'           => (int) ($s['projects_count'] ?? 0),
             'published_projects_count' => (int) ($s['published_count'] ?? 0),
             'created_at'               => $s['created_at'] ?? null,
