@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\AcademicStaffApiController;
 use App\Http\Controllers\Api\ExamAnalyticsApiController;
 use App\Http\Controllers\Api\ExamAppealApiController;
 use App\Http\Controllers\Api\ExamCopyApiController;
+use App\Http\Controllers\Api\ExamQuestionQualityApiController;
 use App\Http\Controllers\Api\ExamSimilarityApiController;
 use App\Http\Controllers\Api\ExamAttemptApiController;
 use App\Http\Controllers\Api\ExamGradingApiController;
@@ -428,6 +429,9 @@ Route::prefix('v1')->group(function () {
         // مش أرقام، فمفيش تعارض فعلي مع exams/{id} — مسجلة هنا بس عشان
         // تفضل مجمّعة مع باقي exam-system/* منطقيًا.
         Route::get('exams/{id}/analytics', [ExamAnalyticsApiController::class, 'examAnalytics'])->where('id', '[0-9]+');
+        // بند 11 — تحليل جودة الأسئلة (صعوبة + قدرة تمييز + مشتتات). صاحب الامتحان/البنك بس.
+        Route::get('exams/{id}/question-quality', [ExamQuestionQualityApiController::class, 'forExam'])->where('id', '[0-9]+');
+        Route::get('question-banks/{id}/question-quality', [ExamQuestionQualityApiController::class, 'forBank'])->where('id', '[0-9]+');
         Route::get('dashboard/instructor', [ExamAnalyticsApiController::class, 'instructorDashboard']);
         Route::get('dashboard/student', [ExamAnalyticsApiController::class, 'studentDashboard']);
         Route::get('faculty/exams', [ExamAnalyticsApiController::class, 'facultyExams']);
