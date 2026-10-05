@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\GuardsExamSession;
 use App\Http\Controllers\Controller;
 use App\Repositories\AcademicStaffRepository;
 use App\Repositories\ExamAttemptRepository;
 use App\Repositories\StudentRepository;
 use App\Services\ExamAttemptService;
+use App\Services\ExamProctoringService;
+use App\Services\ExamSessionService;
 use App\Services\ExamSecurityService;
 use App\Services\ExamSystemService;
 use Illuminate\Http\Request;
@@ -29,13 +32,17 @@ use Illuminate\Support\Facades\Validator;
  */
 class ExamSecurityApiController extends Controller
 {
+    use GuardsExamSession;
+
     public function __construct(
         private ExamSecurityService $security,
         private ExamAttemptService $examAttempts,
         private ExamAttemptRepository $attemptsRepo,
         private StudentRepository $students,
         private ExamSystemService $examSystem,
-        private AcademicStaffRepository $staffRepo
+        private AcademicStaffRepository $staffRepo,
+        private ExamSessionService $sessions,
+        private ExamProctoringService $proctoring
     ) {
     }
 
@@ -70,6 +77,9 @@ class ExamSecurityApiController extends Controller
         if (!$attempt) {
             return $this->apiError('Attempt not found.', null, 404);
         }
+        if ($guard = $this->sessionGuard($request, $attempt, $this->sessions)) {
+            return $guard;
+        }
 
         $validator = Validator::make($request->all(), [
             'event_type' => 'required|string|in:' . implode(',', ExamSecurityService::CLIENT_EVENTS),
@@ -80,7 +90,10 @@ class ExamSecurityApiController extends Controller
         }
 
         try {
-            $result = $this->security->recordClientEvent($attempt, $request->input('metadata'), $request->input('event_type'));
+            // الكاميرا الإجبارية: رفضها/إيقافها بيتحسب مخالفة (الاختيارية والمعفي منها: إعلامي بس).
+            $exam = $attempt->exam ?? $attempt->exam()->first();
+            $cameraRequired = $exam && $this->proctoring->effectiveMode($exam, $student->id) === 'required';
+            $result = $this->security->recordClientEvent($attempt, $request->input('metadata'), $request->input('event_type'), $cameraRequired);
         } catch (\InvalidArgumentException $e) {
             return $this->apiError($e->getMessage(), null, 422);
         }

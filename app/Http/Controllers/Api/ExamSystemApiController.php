@@ -581,6 +581,11 @@ class ExamSystemApiController extends Controller
             // سياسة التسليم المتأخر — الدكتور بيحددها وقت إنشاء الامتحان: فترة سماح بالدقايق + نسبة خصم من الدرجة.
             'late_grace_minutes'     => 'nullable|integer|min:0|max:120',
             'late_penalty_percent'   => 'nullable|numeric|min:0|max:100',
+            // جلسة واحدة + كاميرا/تحقق هوية.
+            'single_session_enabled'    => 'nullable|boolean',
+            'proctoring_mode'           => 'nullable|in:off,optional,required',
+            'identity_check_required'   => 'nullable|boolean',
+            'snapshot_interval_seconds' => 'nullable|integer|min:15|max:600',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
@@ -652,6 +657,11 @@ class ExamSystemApiController extends Controller
             // سياسة التسليم المتأخر — الدكتور بيحددها وقت إنشاء الامتحان: فترة سماح بالدقايق + نسبة خصم من الدرجة.
             'late_grace_minutes'     => 'nullable|integer|min:0|max:120',
             'late_penalty_percent'   => 'nullable|numeric|min:0|max:100',
+            // جلسة واحدة + كاميرا/تحقق هوية.
+            'single_session_enabled'    => 'nullable|boolean',
+            'proctoring_mode'           => 'nullable|in:off,optional,required',
+            'identity_check_required'   => 'nullable|boolean',
+            'snapshot_interval_seconds' => 'nullable|integer|min:15|max:600',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);

@@ -642,6 +642,11 @@ class ExamSystemService
             'late_grace_minutes'            => $graceMinutes = (int) ($data['late_grace_minutes'] ?? 0),
             // خصم من غير فترة سماح ملوش معنى (الامتحان بيقفل فجأة)، فبيتصفّر.
             'late_penalty_percent'          => $graceMinutes > 0 ? (float) ($data['late_penalty_percent'] ?? 0) : 0,
+            // جلسة واحدة + كاميرا/هوية. تحقق الهوية بيرفع وضع الكاميرا لـ required.
+            'single_session_enabled'        => $data['single_session_enabled'] ?? true,
+            'identity_check_required'       => $identity = (bool) ($data['identity_check_required'] ?? false),
+            'proctoring_mode'               => $identity ? 'required' : $this->normalizeProctoringMode($data['proctoring_mode'] ?? 'off'),
+            'snapshot_interval_seconds'     => $this->normalizeSnapshotInterval($data['snapshot_interval_seconds'] ?? 60),
             'status'                        => 'draft',
         ]);
     }
@@ -655,7 +660,19 @@ class ExamSystemService
             'program_id', 'secure_mode_enabled', 'max_violations',
             'auto_submit_on_timeout', 'allow_back_navigation', 'show_answer_review', 'show_score_only',
             'late_grace_minutes', 'late_penalty_percent',
+            'single_session_enabled', 'proctoring_mode', 'identity_check_required', 'snapshot_interval_seconds',
         ]));
+        if (array_key_exists('proctoring_mode', $fillable)) {
+            $fillable['proctoring_mode'] = $this->normalizeProctoringMode($fillable['proctoring_mode']);
+        }
+        if (array_key_exists('snapshot_interval_seconds', $fillable)) {
+            $fillable['snapshot_interval_seconds'] = $this->normalizeSnapshotInterval($fillable['snapshot_interval_seconds']);
+        }
+        $effectiveIdentity = array_key_exists('identity_check_required', $fillable)
+            ? (bool) $fillable['identity_check_required'] : (bool) $exam->identity_check_required;
+        if ($effectiveIdentity) {
+            $fillable['proctoring_mode'] = 'required';
+        }
         // الخصم مرتبط بفترة السماح: لو فترة السماح بقت صفر (جديدة أو موجودة أصلًا) الخصم بيتصفّر.
         $effectiveGrace = array_key_exists('late_grace_minutes', $fillable) ? (int) $fillable['late_grace_minutes'] : (int) $exam->late_grace_minutes;
         if ($effectiveGrace <= 0) {
@@ -677,6 +694,16 @@ class ExamSystemService
         $exam->fill($fillable);
         $exam->save();
         return $exam;
+    }
+
+    private function normalizeProctoringMode($mode): string
+    {
+        return in_array($mode, ExamProctoringService::MODES, true) ? $mode : 'off';
+    }
+
+    private function normalizeSnapshotInterval($value): int
+    {
+        return max(ExamProctoringService::MIN_INTERVAL, min(ExamProctoringService::MAX_INTERVAL, (int) ($value ?: 60)));
     }
 
     /** A course of this university (or null) — invalid / foreign ids are ignored. */

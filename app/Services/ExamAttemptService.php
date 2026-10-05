@@ -53,19 +53,25 @@ class ExamAttemptService
         private ExamTargetRepository $targets,
         private ExamGradingService $grading,
         private ExamSecurityService $security,
-        private QuestionSelectionService $selection
+        private QuestionSelectionService $selection,
+        private ExamProctoringService $proctoring
     ) {
     }
+
+    /** startAttempt(): الامتحان بيطلب لقطة بدء ومابعتهاش — الكونترولر بيحوّلها لـ 422 code=start_photo_required. */
+    public const ERR_START_PHOTO_REQUIRED = 4101;
 
     // -----------------------------------------------------------------
     // Start / resume
     // -----------------------------------------------------------------
 
     /**
+     * @param array{start_photo?:?\Illuminate\Http\UploadedFile, id_card?:?\Illuminate\Http\UploadedFile, photo_flags?:mixed, ip?:?string} $options
+     *        لو الامتحان بيطلب لقطة بدء ومش معفي الطالب، start_photo إجباري عند إنشاء محاولة **جديدة** (الاستكمال مابيطلبهاش).
      * @return array{attempt: ExamAttempt, resumed: bool}
-     * @throws \InvalidArgumentException لو الامتحان مش موجود/متاح، أو الطالب مش مؤهل، أو تخطى عدد المحاولات.
+     * @throws \InvalidArgumentException لو الامتحان مش متاح/الطالب مش مؤهل/تخطى المحاولات/لقطة البدء ناقصة (code = ERR_START_PHOTO_REQUIRED).
      */
-    public function startAttempt($examId, $studentId, $universityId): array
+    public function startAttempt($examId, $studentId, $universityId, array $options = []): array
     {
         $exam = $this->exams->find($examId);
         if (!$exam) {
@@ -85,12 +91,29 @@ class ExamAttemptService
 
         $this->assertAccessible($exam, $studentId, $universityId);
 
+        // لقطة البدء بتتفحص قبل ما نخلق أي حاجة عشان مايتخلقش صف محاولة يتيم.
+        $startPhoto = $options['start_photo'] ?? null;
+        $idCard = $options['id_card'] ?? null;
+        $photoFlags = $options['photo_flags'] ?? [];
+        if ($this->proctoring->requiresStartPhoto($exam, $studentId)) {
+            if (!$startPhoto) {
+                throw new \InvalidArgumentException('A camera photo is required to start this exam.', self::ERR_START_PHOTO_REQUIRED);
+            }
+            $this->proctoring->inspectImage($startPhoto);
+            if ($idCard) {
+                $this->proctoring->inspectImage($idCard);
+            }
+        } else {
+            $startPhoto = null;
+            $idCard = null;
+        }
+
         $now = now();
 
         // Round 7 — لو سحب الـ pools فشل (مثلاً pool اتقلّص بعد ما اتضاف
         // للامتحان ومبقاش كافي)، مينفعش نسيب صف exam_attempts يتيم من
         // غير أسئلة خالص — transaction واحدة تلف الإنشاء + السحب مع بعض.
-        $attempt = DB::transaction(function () use ($exam, $examId, $studentId, $now) {
+        $attempt = DB::transaction(function () use ($exam, $examId, $studentId, $now, $startPhoto, $idCard, $photoFlags, $options) {
             $attempt = $this->attempts->create([
                 'exam_id'          => $exam->id,
                 'student_id'       => $studentId,
@@ -106,10 +129,17 @@ class ExamAttemptService
             // QuestionSelectionService::resolveForAttempt()). ثابت بعد كده.
             $this->selection->resolveForAttempt($exam, $attempt);
 
+            if ($startPhoto) {
+                $this->proctoring->storeStartPhotos($attempt, $exam, $startPhoto, $idCard, $photoFlags, $options['ip'] ?? null);
+            }
+
             return $attempt;
         });
 
         $this->security->logSystemEvent($attempt, 'exam_started');
+        if ($startPhoto) {
+            $this->proctoring->logStartEvents($attempt, $exam, $photoFlags);
+        }
 
         return ['attempt' => $attempt, 'resumed' => false];
     }
@@ -228,7 +258,11 @@ class ExamAttemptService
                 'auto_submit_on_timeout' => (bool) $exam->auto_submit_on_timeout,
                 'late_grace_minutes'    => (int) $exam->late_grace_minutes,
                 'late_penalty_percent'  => (float) $exam->late_penalty_percent,
+                'single_session_enabled' => (bool) $exam->single_session_enabled,
             ],
+            // كاميرا/هوية للطالب ده (effective: بيراعي الإعفاء).
+            'proctoring'             => $this->proctoring->studentConfig($exam, $attempt->student_id),
+            'identity_status'        => $attempt->identity_status ?: 'none',
             'questions'              => $questions,
         ];
     }

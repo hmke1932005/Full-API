@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\AcademicStaffApiController;
 use App\Http\Controllers\Api\ExamAnalyticsApiController;
 use App\Http\Controllers\Api\ExamAttemptApiController;
 use App\Http\Controllers\Api\ExamGradingApiController;
+use App\Http\Controllers\Api\ExamIntegrityApiController;
 use App\Http\Controllers\Api\ExamResultsExportApiController;
 use App\Http\Controllers\Api\ExamSecurityApiController;
 use App\Http\Controllers\Api\ExamSystemApiController;
@@ -359,6 +360,9 @@ Route::prefix('v1')->group(function () {
         Route::put('attempts/{id}/answers/{examQuestionId}', [ExamAttemptApiController::class, 'saveAnswer'])->where('id', '[0-9]+')->where('examQuestionId', '[0-9]+');
         Route::delete('attempts/{id}/answers/{examQuestionId}', [ExamAttemptApiController::class, 'deleteAnswer'])->where('id', '[0-9]+')->where('examQuestionId', '[0-9]+');
         Route::post('attempts/{id}/submit', [ExamAttemptApiController::class, 'submit'])->where('id', '[0-9]+');
+        // جلسة واحدة + كاميرا: heartbeat بيثبّت الجلسة الحية، snapshots لقطات الكاميرا الدورية (multipart).
+        Route::post('attempts/{id}/heartbeat', [ExamAttemptApiController::class, 'heartbeat'])->where('id', '[0-9]+');
+        Route::post('attempts/{id}/snapshots', [ExamAttemptApiController::class, 'uploadSnapshot'])->where('id', '[0-9]+');
 
         // Round 4 — Grading Core (Phases 17/22/24). النتيجة للطالب —
         // /result مش /show تاني عشان الفصل واضح: attemptDetail() (Round 3)
@@ -405,6 +409,12 @@ Route::prefix('v1')->group(function () {
         // Round 5 — سطح المدرس بتاع التايم لاين (نفس منطق ملكية exams/{id}/
         // attempts/{attemptId} فوق بالظبط، راجع ExamSecurityApiController::timeline).
         Route::get('exams/{id}/attempts/{attemptId}/security-events', [ExamSecurityApiController::class, 'timeline'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
+
+        // نزاهة الامتحان (سطح المدرس): سجل الجلسات + لقطات الكاميرا + مراجعة الهوية + إعفاء طالب من الكاميرا.
+        Route::get('exams/{id}/attempts/{attemptId}/integrity', [ExamIntegrityApiController::class, 'show'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
+        Route::get('exams/{id}/attempts/{attemptId}/snapshots/{snapshotId}', [ExamIntegrityApiController::class, 'snapshot'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+')->where('snapshotId', '[0-9]+');
+        Route::post('exams/{id}/attempts/{attemptId}/identity-review', [ExamIntegrityApiController::class, 'reviewIdentity'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
+        Route::put('exams/{id}/students/{studentId}/proctoring-waiver', [ExamIntegrityApiController::class, 'setWaiver'])->where('id', '[0-9]+')->where('studentId', '[0-9]+');
 
         Route::post('exams/{id}/publish-results', [ExamGradingApiController::class, 'publishResults'])->where('id', '[0-9]+');
         Route::post('exams/{id}/unpublish-results', [ExamGradingApiController::class, 'unpublishResults'])->where('id', '[0-9]+');

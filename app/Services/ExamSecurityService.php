@@ -32,12 +32,28 @@ class ExamSecurityService
         'tab_switch', 'window_blur', 'window_focus',
         'copy_attempt', 'paste_attempt', 'cut_attempt',
         'question_changed', 'time_expired',
+        // الكاميرا (browser-level): الطالب رفضها / اتقفلت وقت الامتحان / اشتغلت.
+        'camera_denied', 'camera_started', 'camera_stopped',
     ];
+
+    /**
+     * أحداث نظامية (السيرفر بس يسجلها، عمرها ما تتقبل من العميل): session_takeover (مخالفة)، session_conflict،
+     * proctoring_flag، proctoring_gap، identity_submitted/approved/rejected.
+     */
+    public const SYSTEM_EVENTS = [
+        'session_takeover', 'session_conflict', 'proctoring_flag', 'proctoring_gap',
+        'identity_submitted', 'identity_approved', 'identity_rejected',
+    ];
+
+    /** الكاميرا: الأحداث دي مخالفة بس لما الكاميرا إجبارية على الطالب. */
+    public const CAMERA_VIOLATION_EVENTS = ['camera_denied', 'camera_stopped'];
 
     /** الأحداث اللي فعليًا بتزوّد exam_attempts.violations_count وبتتحسب في حد الـ max_violations — الباقي (fullscreen_entered/window_focus/question_changed/time_expired) إعلامي بحت. */
     public const VIOLATION_EVENTS = [
         'fullscreen_exited', 'tab_switch', 'window_blur',
         'copy_attempt', 'paste_attempt', 'cut_attempt',
+        // الاستحواذ على جلسة جهاز تاني شغال = مخالفة.
+        'session_takeover',
     ];
 
     public function __construct(
@@ -57,7 +73,7 @@ class ExamSecurityService
      * @throws \InvalidArgumentException لو event_type مش من CLIENT_EVENTS، أو المحاولة خلصت أصلاً.
      * @return array{event: ExamSecurityEvent, violations_count: int, max_violations: ?int, threshold_exceeded: bool}
      */
-    public function recordClientEvent(ExamAttempt $attempt, ?array $metadata, string $eventType): array
+    public function recordClientEvent(ExamAttempt $attempt, ?array $metadata, string $eventType, bool $cameraRequired = false): array
     {
         if (!in_array($eventType, self::CLIENT_EVENTS, true)) {
             throw new \InvalidArgumentException('Invalid security event type.');
@@ -66,8 +82,28 @@ class ExamSecurityService
             throw new \InvalidArgumentException('This attempt is no longer in progress.');
         }
 
-        $isViolation = in_array($eventType, self::VIOLATION_EVENTS, true);
+        $isViolation = in_array($eventType, self::VIOLATION_EVENTS, true)
+            || ($cameraRequired && in_array($eventType, self::CAMERA_VIOLATION_EVENTS, true));
 
+        return $this->persistEvent($attempt, $metadata, $eventType, $isViolation);
+    }
+
+    /**
+     * حدث نظامي بيتحسب "مخالفة" (session_takeover) — نفس شكل رد recordClientEvent().
+     *
+     * @return array{event: ExamSecurityEvent, violations_count: int, max_violations: ?int, threshold_exceeded: bool}
+     */
+    public function recordSystemViolation(ExamAttempt $attempt, string $eventType, ?array $metadata = null): array
+    {
+        if (!in_array($eventType, self::SYSTEM_EVENTS, true) || !in_array($eventType, self::VIOLATION_EVENTS, true)) {
+            throw new \InvalidArgumentException('Invalid system violation type.');
+        }
+
+        return $this->persistEvent($attempt, $metadata, $eventType, true);
+    }
+
+    private function persistEvent(ExamAttempt $attempt, ?array $metadata, string $eventType, bool $isViolation): array
+    {
         $event = $this->events->create([
             'exam_attempt_id' => $attempt->id,
             'exam_id'         => $attempt->exam_id,

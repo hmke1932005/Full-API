@@ -575,6 +575,10 @@ class ExamGradingService
             'cancelled_at'    => $row->cancelled_at,
             'cancel_reason'   => $row->cancel_reason,
             'student_attempts_used'  => $usedByStudent[$row->student_id] ?? 0,
+            'identity_status' => $row->identity_status ?: 'none',
+            'proctoring_flags_count' => (int) $row->proctoring_flags_count,
+            'session_claims_count' => (int) $row->session_claims_count,
+            'student_proctoring_waived' => isset($overrides[$row->student_id]) && (bool) $overrides[$row->student_id]->proctoring_waived,
             'student_extra_attempts' => isset($overrides[$row->student_id]) ? (int) $overrides[$row->student_id]->extra_attempts : 0,
             'student_available_until' => isset($overrides[$row->student_id]) ? $overrides[$row->student_id]->available_until : null,
         ], $rows);

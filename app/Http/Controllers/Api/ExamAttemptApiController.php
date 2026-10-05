@@ -2,10 +2,14 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\GuardsExamSession;
 use App\Http\Controllers\Controller;
 use App\Repositories\ExamAttemptRepository;
 use App\Repositories\StudentRepository;
 use App\Services\ExamAttemptService;
+use App\Services\ExamProctoringService;
+use App\Services\ExamSecurityService;
+use App\Services\ExamSessionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
@@ -23,10 +27,18 @@ use Illuminate\Support\Facades\Validator;
  */
 class ExamAttemptApiController extends Controller
 {
+    use GuardsExamSession;
+
+    /** الفرونت بيبعت heartbeat كل كام ثانية (لازم أقل بكتير من ExamSessionService::LIVE_TTL_SECONDS). */
+    private const HEARTBEAT_SECONDS = 30;
+
     public function __construct(
         private ExamAttemptService $examAttempts,
         private ExamAttemptRepository $attemptsRepo,
-        private StudentRepository $students
+        private StudentRepository $students,
+        private ExamSessionService $sessions,
+        private ExamProctoringService $proctoring,
+        private ExamSecurityService $security
     ) {
     }
 
@@ -106,13 +118,58 @@ class ExamAttemptApiController extends Controller
             return $err;
         }
 
+        // multipart (لقطة البدء/الكارنيه) أو JSON عادي. تفاصيل الصور بتتفحص في ExamProctoringService.
+        $validator = Validator::make($request->all(), [
+            'start_photo' => 'nullable|file|max:1500',
+            'id_card'     => 'nullable|file|max:1500',
+            'photo_flags' => 'nullable',
+            'takeover'    => 'nullable|boolean',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+
         try {
-            $result = $this->examAttempts->startAttempt($examId, $student->id, $student->university_id);
+            $result = $this->examAttempts->startAttempt($examId, $student->id, $student->university_id, [
+                'start_photo' => $request->file('start_photo'),
+                'id_card'     => $request->file('id_card'),
+                'photo_flags' => $request->input('photo_flags', []),
+                'ip'          => $request->ip(),
+            ]);
         } catch (\InvalidArgumentException $e) {
+            if ($e->getCode() === ExamAttemptService::ERR_START_PHOTO_REQUIRED) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'data'    => ['code' => 'start_photo_required'],
+                    'errors'  => null,
+                    'meta'    => (object) [],
+                ], 422);
+            }
             return $this->apiError($e->getMessage(), null, 422);
         }
 
-        $detail = $this->examAttempts->attemptDetail($result['attempt']);
+        // الجهاز ده لازم ياخد الجلسة قبل ما نرجّع أي سؤال.
+        $attempt = $result['attempt'];
+        $claim = $this->sessions->claim($attempt, $this->sessionContext($request), $request->boolean('takeover'));
+        if ($claim['status'] === 'conflict') {
+            return $this->sessionErrorResponse('session_conflict', null, ['can_takeover' => true]);
+        }
+        if ($claim['takeover']) {
+            // الاستحواذ على جلسة جهاز شغال = مخالفة (ممكن توصّل لحد الـ auto-submit).
+            $violation = $this->security->recordSystemViolation($attempt, 'session_takeover', ['ip' => $request->ip()]);
+            if ($violation['threshold_exceeded']) {
+                $this->examAttempts->autoSubmitDueToViolations($attempt);
+            }
+        }
+
+        $detail = $this->examAttempts->attemptDetail($attempt);
+        $detail['session'] = [
+            'enforced'          => $this->sessions->enforced($attempt->exam ?? $attempt->exam()->first()),
+            'token'             => $claim['token'],
+            'heartbeat_seconds' => self::HEARTBEAT_SECONDS,
+            'takeover'          => $claim['takeover'],
+        ];
         $message = $result['resumed'] ? 'Resuming your existing attempt.' : 'Exam attempt started.';
 
         return $this->apiSuccess($detail, $message, $result['resumed'] ? 200 : 201);
@@ -130,6 +187,9 @@ class ExamAttemptApiController extends Controller
         if (!$attempt) {
             return $this->apiError('Attempt not found.', null, 404);
         }
+        if ($guard = $this->sessionGuard($request, $attempt, $this->sessions)) {
+            return $guard;
+        }
 
         return $this->apiSuccess($this->examAttempts->attemptDetail($attempt), 'Attempt retrieved successfully.');
     }
@@ -145,6 +205,9 @@ class ExamAttemptApiController extends Controller
         $attempt = $this->findOwnedAttempt($id, $student->id);
         if (!$attempt) {
             return $this->apiError('Attempt not found.', null, 404);
+        }
+        if ($guard = $this->sessionGuard($request, $attempt, $this->sessions)) {
+            return $guard;
         }
 
         $validator = Validator::make($request->all(), [
@@ -183,6 +246,9 @@ class ExamAttemptApiController extends Controller
         if (!$attempt) {
             return $this->apiError('Attempt not found.', null, 404);
         }
+        if ($guard = $this->sessionGuard($request, $attempt, $this->sessions)) {
+            return $guard;
+        }
 
         try {
             $attempt = $this->examAttempts->deleteAnswer($attempt, $examQuestionId);
@@ -210,6 +276,9 @@ class ExamAttemptApiController extends Controller
         if (!$attempt) {
             return $this->apiError('Attempt not found.', null, 404);
         }
+        if ($guard = $this->sessionGuard($request, $attempt, $this->sessions)) {
+            return $guard;
+        }
 
         $attempt = $this->examAttempts->submitAttempt($attempt);
 
@@ -230,6 +299,69 @@ class ExamAttemptApiController extends Controller
         }
 
         return $this->apiSuccess($this->examAttempts->studentResult($attempt), 'Result retrieved successfully.');
+    }
+
+    /** POST /api/v1/exam-system/attempts/{id}/heartbeat — بيثبّت الجلسة الحية وبيكشف بسرعة لو جهاز تاني استولى عليها. */
+    public function heartbeat(Request $request, $id)
+    {
+        [$student, $err] = $this->resolveStudent($request);
+        if ($err) {
+            return $err;
+        }
+
+        $attempt = $this->findOwnedAttempt($id, $student->id);
+        if (!$attempt) {
+            return $this->apiError('Attempt not found.', null, 404);
+        }
+        if ($guard = $this->sessionGuard($request, $attempt, $this->sessions)) {
+            return $guard;
+        }
+
+        $attempt = $this->examAttempts->enforceTimer($attempt);
+
+        return $this->apiSuccess([
+            'status'                  => $attempt->status,
+            'time_remaining_seconds'  => $attempt->remainingSeconds(),
+            'in_grace'                => $attempt->inGrace(),
+            'grace_remaining_seconds' => $attempt->graceRemainingSeconds(),
+            'expires_at'              => $attempt->expires_at,
+        ], 'OK');
+    }
+
+    /** POST /api/v1/exam-system/attempts/{id}/snapshots — لقطة كاميرا دورية (multipart: photo + flags). */
+    public function uploadSnapshot(Request $request, $id)
+    {
+        [$student, $err] = $this->resolveStudent($request);
+        if ($err) {
+            return $err;
+        }
+
+        $attempt = $this->findOwnedAttempt($id, $student->id);
+        if (!$attempt) {
+            return $this->apiError('Attempt not found.', null, 404);
+        }
+        if ($guard = $this->sessionGuard($request, $attempt, $this->sessions)) {
+            return $guard;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'photo' => 'required|file|max:1500',
+            'flags' => 'nullable',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+
+        $attempt = $this->examAttempts->enforceTimer($attempt);
+        $exam = $attempt->exam ?? $attempt->exam()->first();
+
+        try {
+            $result = $this->proctoring->uploadPeriodic($attempt, $exam, $request->file('photo'), $request->input('flags', []), $request->ip());
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        return $this->apiSuccess($result, $result['stored'] ? 'Snapshot saved.' : 'Snapshot skipped.');
     }
 
     private function findOwnedAttempt($id, $studentId)

@@ -14,11 +14,12 @@ class ExamStudentOverride extends Model
 {
     protected $table = 'exam_student_overrides';
 
-    protected $fillable = ['exam_id', 'student_id', 'extra_attempts', 'available_until', 'granted_by', 'reason'];
+    protected $fillable = ['exam_id', 'student_id', 'extra_attempts', 'available_until', 'granted_by', 'reason', 'proctoring_waived'];
 
     protected $casts = [
         'available_until' => 'datetime',
         'extra_attempts'  => 'integer',
+        'proctoring_waived' => 'boolean',
     ];
 
     /** النافذة الخاصة مفتوحة لو مفيش available_until (يعني مفيش تقييد زمني إضافي) أو لسه ماعدّاش. */

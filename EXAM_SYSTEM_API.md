@@ -244,3 +244,49 @@ Run `php artisan migrate` (new migration `2026_10_05_200000_...`).
 `GET /exams/{id}/eligible-students?q=&without_attempts=1&limit=50` — بحث بالاسم/الإيميل/الرقم الجامعي، و`without_attempts=1` بيرجّع الغايبين بس (من غير أي محاولة). كل صف: `id, student_number, name, email, attempts_used, extra_attempts, available_until`. بعدها `retake/bulk` مع `available_until` بيفتح الامتحان للطالب حتى بعد إغلاقه.
 
 > كل الـ endpoints دي للمدرس صاحب الامتحان فقط: دور غلط → `403`، امتحان مش بتاعه → `404`.
+
+---
+
+## جلسة واحدة للطالب + مراقبة الكاميرا/تحقق الهوية
+
+### إعدادات الامتحان (`POST /exams` و `PATCH /exams/{id}`)
+| الحقل | النوع | ملاحظات |
+|---|---|---|
+| `single_session_enabled` | boolean (افتراضي `true`) | منع فتح نفس المحاولة من جهازين في نفس الوقت. |
+| `proctoring_mode` | `off` \| `optional` \| `required` (افتراضي `off`) | لقطات الكاميرا. `required` = لقطة إجبارية عند البدء + لقطات دورية، ورفض/إيقاف الكاميرا مخالفة. |
+| `identity_check_required` | boolean | سيلفي (+ كارنيه اختياري) قبل البدء، والمدرس بيراجعها. بيرفع `proctoring_mode` لـ `required` تلقائيًا. |
+| `snapshot_interval_seconds` | integer 15..600 (افتراضي 60) | الفاصل بين اللقطات الدورية. |
+
+### الجلسة الواحدة (الطالب)
+- `POST my-exams/{id}/attempts` بيرجّع جوه `data.session`: `{ enforced, token, heartbeat_seconds, takeover }`. الـ `token` بيظهر مرة واحدة (السيرفر بيخزّن hash).
+- كل request بعد كده على المحاولة (`GET attempts/{id}`, `PUT/DELETE answers`, `submit`, `security-events`, `heartbeat`, `snapshots`) لازم يبعت `X-Exam-Session: <token>` و`X-Device-Id: <معرّف ثابت للمتصفح>`.
+- `POST attempts/{id}/heartbeat` (كل ~30 ثانية). الجلسة تعتبر ميتة بعد 90 ثانية من غير نشاط.
+- أخطاء `409` بتحمل `data.code`:
+  - `session_conflict` (عند `POST my-exams/{id}/attempts`): مفتوحة على جهاز تاني حي. الرد فيه `can_takeover: true` ومفيش أسئلة. إعادة الطلب بـ `takeover=true` بتاخد الجلسة **وبتتسجل مخالفة** `session_takeover` تتحسب في `max_violations`.
+  - `session_required` / `session_replaced`: الـ token ناقص أو اتبدّل. الحل: `POST my-exams/{id}/attempts` تاني (بيكمل نفس المحاولة).
+- نفس `X-Device-Id` بيكمل بدون حجب؛ جهاز مختلف بعد انقطاع أكتر من 90 ثانية بياخد الجلسة بدون مخالفة.
+- المحاولات الخالصة مابتتفحصش. محاولة اتبدأت قبل التحديث (من غير جلسة مسجلة) مابتتحجبش لحد أول claim.
+- السجل: `exam_attempt_sessions` + `exam_attempts.session_claims_count`.
+
+### الكاميرا (الطالب)
+- `POST my-exams/{id}/attempts` بـ `multipart/form-data` لما الكاميرا إجبارية: `start_photo` (jpeg/png/webp ≤ 1.5MB)، `id_card?`، `photo_flags?` (JSON array). من غير `start_photo`: `422` و`data.code = start_photo_required` ومفيش محاولة بتتخلق.
+- الرد فيه `proctoring: { mode, snapshot_interval_seconds, identity_check_required, waived }` و`identity_status`.
+- `POST attempts/{id}/snapshots` (multipart: `photo`, `flags?`) — فاصل أدنى نص الـ interval، حد أقصى 500 لقطة؛ الرد `{ stored, throttled, flagged }`.
+- `flags`: `too_dark`, `blank`, `no_face`, `multiple_faces` (بتتحسب في المتصفح — **مؤشر مساعد مش دليل**، ومابتتحسبش مخالفة تلقائيًا).
+- أحداث `security-events` الجديدة: `camera_denied`, `camera_stopped`, `camera_started` — مخالفة بس لو الكاميرا `required` على الطالب.
+- أحداث نظامية (السيرفر بس): `session_takeover` (مخالفة), `session_conflict`, `proctoring_flag`, `proctoring_gap`, `identity_submitted/approved/rejected`.
+
+### سطح المدرس (صاحب الامتحان فقط — دور غلط `403`، مش بتاعه `404`)
+| Endpoint | الوصف |
+|---|---|
+| `GET exams/{id}/attempts/{attemptId}/integrity` | الجلسة (IP/جهاز/سجل) + الهوية + قايمة اللقطات (metadata). |
+| `GET exams/{id}/attempts/{attemptId}/snapshots/{snapshotId}` | الصورة (binary، `Cache-Control: private, no-store`). |
+| `POST exams/{id}/attempts/{attemptId}/identity-review` | `decision: approve\|reject`, `note?` (إجباري مع reject). |
+| `PUT exams/{id}/students/{studentId}/proctoring-waiver` | `waived: bool`, `reason?` — إعفاء من الكاميرا، مابيمنحش محاولات إضافية. |
+
+قائمة محاولات المدرس بقت فيها: `identity_status`, `proctoring_flags_count`, `session_claims_count`, `student_proctoring_waived`.
+
+### حدود صريحة
+- `X-Device-Id` بييجي من المتصفح (localStorage) — مش دليل قاطع على الجهاز.
+- مفيش مطابقة وجه بين السيلفي والكارنيه: المراجعة بشرية. رفض الهوية بيسجّل الحالة بس؛ الإلغاء/الإعادة قرار المدرس.
+- الصور على disk `local` الخاص ومابتتقدّمش إلا عبر endpoint المدرس صاحب الامتحان. لسه مفيش سياسة احتفاظ/حذف (محتاجة قرار حسب لوائح الجامعة).

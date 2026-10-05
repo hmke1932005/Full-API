@@ -21,7 +21,13 @@ class ExamAttempt extends Model
         'auto_submitted', 'violations_count', 'score', 'percentage',
         'cancelled_at', 'cancelled_by', 'cancel_reason',
         'extra_time_minutes', 'is_late', 'late_penalty_percent', 'score_before_penalty',
+        'session_token_hash', 'session_last_seen_at', 'session_ip', 'session_user_agent', 'session_device_id',
+        'session_claims_count', 'identity_status', 'identity_reviewed_by', 'identity_reviewed_at',
+        'identity_review_note', 'proctoring_flags_count',
     ];
+
+    /** hash الـ token بتاع الجلسة عمره ما يطلع في أي response (toArray/JSON). */
+    protected $hidden = ['session_token_hash'];
 
     protected $casts = [
         'started_at'       => 'datetime',
@@ -29,6 +35,10 @@ class ExamAttempt extends Model
         'expires_at'       => 'datetime',
         'submitted_at'     => 'datetime',
         'cancelled_at'     => 'datetime',
+        'session_last_seen_at' => 'datetime',
+        'identity_reviewed_at' => 'datetime',
+        'session_claims_count' => 'integer',
+        'proctoring_flags_count' => 'integer',
         'auto_submitted'   => 'boolean',
         'is_late'          => 'boolean',
         'extra_time_minutes' => 'integer',

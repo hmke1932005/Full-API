@@ -175,6 +175,7 @@ class ExamAttemptRepository
                 'a.started_at', 'a.submitted_at', 'a.score', 'a.percentage', 'a.auto_submitted', 'a.violations_count',
                 'a.cancelled_at', 'a.cancel_reason',
                 'a.is_late', 'a.extra_time_minutes', 'a.late_penalty_percent', 'a.score_before_penalty',
+                'a.identity_status', 'a.proctoring_flags_count', 'a.session_claims_count',
                 's.student_number', 'u.id as user_id', 'u.full_name', 'u.email'
             )
             ->orderByDesc('a.submitted_at')

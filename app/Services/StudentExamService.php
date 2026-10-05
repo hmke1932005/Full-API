@@ -130,6 +130,10 @@ class StudentExamService
             // سياسة التسليم المتأخر — الطالب لازم يعرفها قبل ما يبدأ.
             'late_grace_minutes'   => (int) $exam->late_grace_minutes,
             'late_penalty_percent' => (float) $exam->late_penalty_percent,
+            // الكاميرا/الهوية/الجلسة الواحدة — الطالب يعرفها قبل البدء (الإعفاء الفردي بيتحدد وقت البدء).
+            'proctoring_mode'         => $exam->identity_check_required ? 'required' : (string) ($exam->proctoring_mode ?: 'off'),
+            'identity_check_required' => (bool) $exam->identity_check_required,
+            'single_session_enabled'  => (bool) $exam->single_session_enabled,
             'attempts_used'      => count($mine),
             'last_attempt'       => $last ? [
                 'id'         => $last->id,
