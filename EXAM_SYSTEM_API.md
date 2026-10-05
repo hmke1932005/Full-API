@@ -163,13 +163,14 @@ underlying fact becomes true (not re-derived in a controller):
 | `exam_assigned` | `ExamSystemService::replaceExamTargets()`, on an already-published/scheduled exam | Newly-eligible students only |
 | `exam_result_published` | `ExamGradingService::publishResults()` | Students with a `graded` attempt |
 | `exam_grade_changed` | `ExamGradingService::gradeManually()`, on a genuine override with results already visible | The affected student |
-| `exam_starts_soon` | `php artisan exams:notify-upcoming` (scheduled sweep, next 24h window) | All eligible students |
-| `exam_deadline_approaching` | `php artisan exams:notify-upcoming` (scheduled sweep, next 24h window) | All eligible students |
+| `exam_starts_soon` | `ExamReminderService::sweep()` via `php artisan exams:notify-upcoming` — 24h and 1h before `start_at` | All eligible students |
+| `exam_deadline_approaching` | same sweep — 24h and 1h before `end_at` | Eligible students who still have attempts left and no attempt in progress |
 
-`exams:notify-upcoming` is registered but **not** auto-scheduled (matching the existing
-`exams:auto-submit-expired` convention in this codebase) — add it to the real server
-crontab or to `routes/console.php`'s `Schedule::command(...)` to activate it; see that
-command's docblock for the exact line.
+`exams:notify-upcoming` is scheduled in `routes/console.php` (every 5 minutes), so the server
+needs only the standard Laravel cron entry: `* * * * * php artisan schedule:run`. Each
+(exam, student, reminder, open/close time) is sent once (`exam_reminders_sent`); changing an
+exam's start/end time allows a fresh reminder. Only the closest stage is sent when a sweep runs late.
+Notification `link_url` is `/student/my-exams/{examId}`.
 
 ### Audit Trail (Phase 42)
 

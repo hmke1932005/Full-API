@@ -152,6 +152,28 @@ class ExamTargetRepository
         return array_map(fn ($r) => (int) $r->id, $rows);
     }
 
+    /**
+     * زي userIdsForExamSaved() بس بترجّع كمان student_id (التذكيرات بتحتاجه عشان تستبعد اللي خلّص محاولاته).
+     * @return array<int,array{user_id:int,student_id:int}>
+     */
+    public function recipientsForExamSaved($examId, $universityId): array
+    {
+        [$sql, $params] = $this->eligibilityWhereGroups($this->rowsAsArrays($this->forExam($examId)));
+        if ($sql === null) {
+            return [];
+        }
+
+        $rows = DB::select(
+            "SELECT u.id AS user_id, s.id AS student_id
+             FROM students s
+             INNER JOIN users u ON u.id = s.user_id
+             WHERE s.university_id = ? AND u.status = 'active' AND $sql",
+            array_merge([$universityId], $params)
+        );
+
+        return array_map(fn ($r) => ['user_id' => (int) $r->user_id, 'student_id' => (int) $r->student_id], $rows);
+    }
+
     /** الامتحان ده الطالب ده مؤهل يشوفه؟ (وقت فتح تفاصيل امتحان بعينه من "امتحاناتي"). */
     public function studentIsEligibleForExam($examId, $studentId): bool
     {

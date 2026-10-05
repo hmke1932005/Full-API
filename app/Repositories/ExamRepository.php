@@ -253,4 +253,28 @@ class ExamRepository
             ->get()
             ->all();
     }
+
+    /**
+     * @return Exam[] امتحانات لسه ما بدأتش وهتفتح بين $from و $to. status بيفضل 'scheduled' (أو 'published') لحد ما
+     * الامتحان يخلص — مفيش حاجة بتقلبه وقت start_at — فبنبص على الاتنين.
+     */
+    public function opensBetween($from, $to): array
+    {
+        return Exam::whereIn('status', ['scheduled', 'published'])
+            ->whereNotNull('start_at')
+            ->where('start_at', '>', $from)
+            ->where('start_at', '<=', $to)
+            ->get()->all();
+    }
+
+    /** @return Exam[] امتحانات مفتوحة فعلًا (بدأت) وهتقفل بين $from و $to. */
+    public function closesBetween($from, $to): array
+    {
+        return Exam::whereIn('status', ['scheduled', 'published', 'active'])
+            ->whereNotNull('end_at')
+            ->where('end_at', '>', $from)
+            ->where('end_at', '<=', $to)
+            ->where(fn ($q) => $q->whereNull('start_at')->orWhere('start_at', '<=', $from))
+            ->get()->all();
+    }
 }
