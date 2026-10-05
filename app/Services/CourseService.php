@@ -246,6 +246,12 @@ class CourseService
         return ['success' => true, 'id' => $course->id, 'message' => $this->ar($locale) ? 'تمت إضافة المادة.' : 'Course added.'];
     }
 
+    /** نفس manageable() بس public — للـ gradebook. بترجع Course أو array فيها success=false. */
+    public function manageableCourse(array $scope, $id, string $locale)
+    {
+        return $this->manageable($scope, $id, $locale);
+    }
+
     private function manageable(array $scope, $id, string $locale)
     {
         $c = Course::where('university_id', $scope['universityId'])->find((int) $id);

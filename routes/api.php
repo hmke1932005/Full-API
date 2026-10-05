@@ -84,6 +84,7 @@ use App\Http\Controllers\Api\AcademicStaffApiController;
 use App\Http\Controllers\Api\ExamAnalyticsApiController;
 use App\Http\Controllers\Api\ExamAppealApiController;
 use App\Http\Controllers\Api\ExamCopyApiController;
+use App\Http\Controllers\Api\CourseGradebookApiController;
 use App\Http\Controllers\Api\ExamQuestionQualityApiController;
 use App\Http\Controllers\Api\ExamSimilarityApiController;
 use App\Http\Controllers\Api\ExamAttemptApiController;
@@ -946,6 +947,11 @@ Route::prefix('v1')->group(function () {
         Route::delete('/{id}/students/{studentId}', [CourseApiController::class, 'removeStudent'])->where(['id' => '[0-9]+', 'studentId' => '[0-9]+']);
         Route::post('/{id}/enroll', [CourseApiController::class, 'enroll'])->where('id', '[0-9]+');
         Route::delete('/{id}/enroll', [CourseApiController::class, 'unenroll'])->where('id', '[0-9]+');
+
+        // بند 12 — دفتر درجات المقرر (أوزان الامتحانات → درجة المقرر). المدرس/الكلية/الجامعة اللي بيديروا المقرر؛ الطالب درجته هو بس.
+        Route::get('/{id}/gradebook', [CourseGradebookApiController::class, 'show'])->where('id', '[0-9]+');
+        Route::put('/{id}/gradebook/items', [CourseGradebookApiController::class, 'saveItems'])->where('id', '[0-9]+')->middleware('throttle:30,1');
+        Route::get('/{id}/my-grade', [CourseGradebookApiController::class, 'mine'])->where('id', '[0-9]+');
     });
 
     // Link accounts that already exist on the platform to a university/faculty (instead of inviting new ones).
