@@ -286,6 +286,8 @@ Route::prefix('v1')->group(function () {
         Route::post('question-banks/{bankId}/questions/ai-edit', [ExamSystemApiController::class, 'reviseQuestionsWithAi'])->where('bankId', '[0-9]+');
         Route::patch('questions/{id}', [ExamSystemApiController::class, 'updateQuestion'])->where('id', '[0-9]+');
         Route::delete('questions/{id}', [ExamSystemApiController::class, 'destroyQuestion'])->where('id', '[0-9]+');
+        Route::post('questions/{id}/image', [ExamSystemApiController::class, 'uploadQuestionImage'])->where('id', '[0-9]+');
+        Route::delete('questions/{id}/image', [ExamSystemApiController::class, 'removeQuestionImage'])->where('id', '[0-9]+');
         Route::get('questions/{id}/versions', [ExamSystemApiController::class, 'showQuestionVersions'])->where('id', '[0-9]+');
 
         // Round 6 — Rubrics (Phase 19). rubric واحد بالظبط لكل سؤال —

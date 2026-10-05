@@ -602,6 +602,7 @@ class ExamGradingService
                 'exam_question_id' => $pivot->id,
                 'type'             => $question->type,
                 'prompt'           => $question->prompt,
+                'image_url'        => $question->image_url,
                 'max_marks'        => (float) ($pivot->marks_override ?? $question->marks),
                 'options'          => $question->optionsForDisplay(),
                 'correct_answer'   => $question->type === 'true_false' ? $question->correct_answer : null,
@@ -767,6 +768,7 @@ class ExamGradingService
             return [
                 'exam_question_id' => $pivot->id,
                 'prompt'           => $question->prompt,
+                'image_url'        => $question->image_url,
                 'max_marks'        => (float) ($pivot->marks_override ?? $question->marks),
                 'options'          => $question->optionsForDisplay(),
                 'my_answer'        => $answer ? [

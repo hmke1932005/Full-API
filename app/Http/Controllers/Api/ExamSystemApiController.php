@@ -424,6 +424,60 @@ class ExamSystemApiController extends Controller
         return $this->apiSuccess($data, 'Question version history retrieved.');
     }
 
+    /** POST questions/{id}/image — multipart field "image" (jpg/png/webp/gif، حد أقصى 5MB). */
+    public function uploadQuestionImage(Request $request, $id)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+
+        $question = $this->examSystem->findOwnedQuestion($id, $staff->id);
+        if (!$question) {
+            return $this->apiError('Question not found.', null, 404);
+        }
+
+        try {
+            $question = $this->examSystem->setQuestionImage($question, $request->file('image'), $staff->id);
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        $data = $question->toArray();
+        $data['options'] = $question->optionsForDisplay();
+
+        $this->auditLog->record($staff->user_id, 'academic_staff.exam_system.question_image_set', 'Question', (int) $id);
+
+        return $this->apiSuccess($data, 'Question image saved.');
+    }
+
+    public function removeQuestionImage(Request $request, $id)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+
+        $question = $this->examSystem->findOwnedQuestion($id, $staff->id);
+        if (!$question) {
+            return $this->apiError('Question not found.', null, 404);
+        }
+
+        $question = $this->examSystem->removeQuestionImage($question, $staff->id);
+        $data = $question->toArray();
+        $data['options'] = $question->optionsForDisplay();
+
+        $this->auditLog->record($staff->user_id, 'academic_staff.exam_system.question_image_removed', 'Question', (int) $id);
+
+        return $this->apiSuccess($data, 'Question image removed.');
+    }
+
     public function destroyQuestion(Request $request, $id)
     {
         if ($err = $this->requireAcademicStaff($request)) {

@@ -27,11 +27,14 @@ class Question extends Model
     protected $table = 'questions';
 
     protected $fillable = [
-        'question_bank_id', 'type', 'prompt', 'marks', 'difficulty', 'topic', 'tags',
+        'question_bank_id', 'type', 'prompt', 'image_path', 'marks', 'difficulty', 'topic', 'tags',
         'correct_answer', 'accepted_answers', 'case_sensitive',
         'model_answer', 'expected_concepts', 'keywords', 'grading_instructions', 'ai_grading_enabled',
         'explanation', 'status', 'created_by_academic_staff_id',
     ];
+
+    /** image_url بيتضاف تلقائيًا لأي toArray()/JSON للسؤال (والـ version snapshot). */
+    protected $appends = ['image_url'];
 
     protected $casts = [
         'tags'               => 'array',
@@ -48,6 +51,13 @@ class Question extends Model
 
     /** Round 6 — الأنواع اللي ممكن يتفعّلها AI grading عليها (essay/short_answer). فتحت للإنشاء من هنا. */
     public const AI_GRADABLE_TYPES = ['short_answer', 'essay'];
+
+    /** مسار root-relative (/uploads/...) — بيمشي على نفس proxy الـ /uploads بتاع الفرونت. */
+    public function getImageUrlAttribute(): ?string
+    {
+        $path = $this->attributes['image_path'] ?? null;
+        return $path ? '/' . ltrim($path, '/') : null;
+    }
 
     public function bank()
     {

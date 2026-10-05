@@ -30,6 +30,8 @@ return [
         'avatars'   => ['jpg', 'jpeg', 'png', 'webp'],
         'projects'  => ['pdf', 'doc', 'docx', 'zip', 'ppt', 'pptx'],
         'logos'     => ['jpg', 'jpeg', 'png', 'webp', 'svg'],
+        // صورة السؤال التوضيحية — بدون svg عن قصد (XSS من نفس الأوريجن).
+        'question_images' => ['jpg', 'jpeg', 'png', 'webp', 'gif'],
         // Graduation Projects (Research Projects + Team Collaboration) —
         // spec's "Documents" section: Documents/Images/Videos as supporting
         // files on a research project. This key was missing entirely, which
@@ -149,6 +151,7 @@ return [
         'projects'  => 'uploads/projects',
         'reports'   => 'uploads/reports',
         'logos'     => 'uploads/logos',
+        'question_images' => 'uploads/question-images',
         'incident_evidence' => 'uploads/incident_evidence',
         'security_reports'  => 'uploads/security_reports',
         'data_analysis_reports' => 'uploads/data_analysis_reports',

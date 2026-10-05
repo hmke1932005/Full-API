@@ -20,6 +20,7 @@ use App\Repositories\QuestionRepository;
 use App\Repositories\StudentGroupRepository;
 use App\Repositories\StudentRepository;
 use App\Services\NotificationService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -63,7 +64,8 @@ class ExamSystemService
         private StudentRepository $students,
         private QuestionPoolRepository $pools,
         private NotificationService $notifications,
-        private ExamQuestionVersionRepository $questionVersions
+        private ExamQuestionVersionRepository $questionVersions,
+        private FileUploadService $uploads
     ) {
     }
 
@@ -204,6 +206,39 @@ class ExamSystemService
         if ($question->type === 'mcq' && isset($data['options'])) {
             $this->validateMcqOptions($data['options']);
             $this->questions->replaceOptions($question->id, $data['options']);
+        }
+
+        return $question->fresh();
+    }
+
+    /**
+     * بيرفع/بيستبدل الصورة التوضيحية للسؤال. بيسجّل version snapshot قبل التغيير
+     * وبيمسح الملف القديم بعد نجاح الحفظ.
+     * @throws \RuntimeException لو الملف مش صالح (رسالتها آمنة للعرض).
+     */
+    public function setQuestionImage(Question $question, ?UploadedFile $file, $academicStaffId = null): Question
+    {
+        $stored = $this->uploads->store($file, 'question_images', (string) $question->question_bank_id, 5120);
+
+        $this->questionVersions->snapshot($question, $academicStaffId, 'updated');
+        $old = $question->getAttributes()['image_path'] ?? null;
+        $question->image_path = $stored['stored_path'];
+        $question->save();
+        if ($old) {
+            $this->uploads->delete($old);
+        }
+
+        return $question->fresh();
+    }
+
+    public function removeQuestionImage(Question $question, $academicStaffId = null): Question
+    {
+        $old = $question->getAttributes()['image_path'] ?? null;
+        if ($old) {
+            $this->questionVersions->snapshot($question, $academicStaffId, 'updated');
+            $question->image_path = null;
+            $question->save();
+            $this->uploads->delete($old);
         }
 
         return $question->fresh();
@@ -754,6 +789,7 @@ class ExamSystemService
                 'question_id'      => $q->id,
                 'type'             => $q->type,
                 'prompt'           => $q->prompt,
+                'image_url'        => $q->image_url,
                 'difficulty'       => $q->difficulty,
                 'marks'            => (float) ($pivot->marks_override ?? $q->marks),
                 'marks_override'   => $pivot->marks_override !== null ? (float) $pivot->marks_override : null,

@@ -216,6 +216,7 @@ class ExamAttemptService
                 'question_id'      => $question->id,
                 'type'             => $question->type,
                 'prompt'           => $question->prompt,
+                'image_url'        => $question->image_url,
                 'marks'            => (float) ($pivot->marks_override ?? $question->marks),
                 'sort_order'       => $i,
                 'options'          => $this->safeOptions($question, $attempt, $exam),
