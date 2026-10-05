@@ -82,6 +82,8 @@ use App\Http\Controllers\Api\SupervisorSettingsApiController;
 use App\Http\Controllers\Api\SupervisorDashboardApiController;
 use App\Http\Controllers\Api\AcademicStaffApiController;
 use App\Http\Controllers\Api\ExamAnalyticsApiController;
+use App\Http\Controllers\Api\ExamAppealApiController;
+use App\Http\Controllers\Api\ExamSimilarityApiController;
 use App\Http\Controllers\Api\ExamAttemptApiController;
 use App\Http\Controllers\Api\ExamGradingApiController;
 use App\Http\Controllers\Api\ExamIntegrityApiController;
@@ -435,6 +437,20 @@ Route::prefix('v1')->group(function () {
         // Round 8 (Phase 43 — Export). Results export لامتحان واحد؛
         // نفس ownership check بتاع باقي exams/{id}/* (findOwnedExam()).
         Route::get('exams/{id}/results/export', [ExamResultsExportApiController::class, 'exportExamResults'])->where('id', '[0-9]+');
+
+        // كشف التشابه بين إجابات المقالي (سطح المدرس، ownership بتاع findOwnedExam). إشارات للمراجعة البشرية بس.
+        Route::get('exams/{id}/similarity', [ExamSimilarityApiController::class, 'index'])->where('id', '[0-9]+');
+        Route::post('exams/{id}/similarity/analyze', [ExamSimilarityApiController::class, 'analyze'])->where('id', '[0-9]+')->middleware('throttle:6,1');
+        Route::patch('exams/{id}/similarity/{flagId}', [ExamSimilarityApiController::class, 'review'])->where('id', '[0-9]+')->where('flagId', '[0-9]+');
+
+        // تظلم الطالب على الدرجة. الطالب: my-appeals + attempts/{id}/appeals. المدرس: exams/{id}/appeals + appeal-settings.
+        Route::get('my-appeals', [ExamAppealApiController::class, 'mine']);
+        Route::get('attempts/{id}/appeals', [ExamAppealApiController::class, 'indexForAttempt'])->where('id', '[0-9]+');
+        Route::post('attempts/{id}/appeals', [ExamAppealApiController::class, 'store'])->where('id', '[0-9]+')->middleware('throttle:20,1');
+        Route::post('attempts/{id}/appeals/{appealId}/withdraw', [ExamAppealApiController::class, 'withdraw'])->where('id', '[0-9]+')->where('appealId', '[0-9]+');
+        Route::get('exams/{id}/appeals', [ExamAppealApiController::class, 'index'])->where('id', '[0-9]+');
+        Route::post('exams/{id}/appeals/{appealId}/resolve', [ExamAppealApiController::class, 'resolve'])->where('id', '[0-9]+')->where('appealId', '[0-9]+');
+        Route::put('exams/{id}/appeal-settings', [ExamAppealApiController::class, 'settings'])->where('id', '[0-9]+');
     });
 
     // Integrated Meeting & Collaboration Platform — Round 1 (Foundation).

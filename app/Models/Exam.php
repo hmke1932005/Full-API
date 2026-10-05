@@ -33,6 +33,7 @@ class Exam extends Model
         'auto_submit_on_timeout', 'allow_back_navigation', 'show_answer_review', 'show_score_only',
         'late_grace_minutes', 'late_penalty_percent',
         'single_session_enabled', 'proctoring_mode', 'identity_check_required', 'snapshot_interval_seconds',
+        'appeals_enabled', 'appeal_window_days',
     ];
 
     protected $casts = [
@@ -50,6 +51,8 @@ class Exam extends Model
         'single_session_enabled'  => 'boolean',
         'identity_check_required' => 'boolean',
         'snapshot_interval_seconds' => 'integer',
+        'appeals_enabled'        => 'boolean',
+        'appeal_window_days'     => 'integer',
         'late_penalty_percent'   => 'decimal:2',
         'passing_score'        => 'decimal:2',
         'total_marks'          => 'decimal:2',
