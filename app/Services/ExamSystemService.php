@@ -787,6 +787,7 @@ class ExamSystemService
             return [
                 'exam_question_id' => $pivot->id,
                 'question_id'      => $q->id,
+                'question_bank_id' => $q->question_bank_id,
                 'type'             => $q->type,
                 'prompt'           => $q->prompt,
                 'image_url'        => $q->image_url,
@@ -833,6 +834,27 @@ class ExamSystemService
             $this->recalculateTotalMarks($exam);
         }
         return $ok;
+    }
+
+    /**
+     * يشيل مجموعة أسئلة يدوية من الامتحان مرة واحدة (حذف جماعي من صفحة الامتحان).
+     * بيفصل السؤال عن الامتحان بس — السؤال نفسه بيفضل في بنك الأسئلة.
+     *
+     * @param  int[] $examQuestionIds
+     * @return int عدد الأسئلة اللي اتشالت فعليًا (الـ ids الغريبة عن الامتحان بتتجاهل)
+     */
+    public function removeQuestionsFromExam(Exam $exam, array $examQuestionIds): int
+    {
+        $removed = 0;
+        foreach (array_unique(array_map('intval', $examQuestionIds)) as $eqId) {
+            if ($this->exams->detachQuestion($exam->id, $eqId)) {
+                $removed++;
+            }
+        }
+        if ($removed > 0) {
+            $this->recalculateTotalMarks($exam);
+        }
+        return $removed;
     }
 
     /** تعديل درجة سؤال معين (marks_override) — الإجمالي بيتحسب تاني تلقائيًا. */

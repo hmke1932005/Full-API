@@ -317,6 +317,7 @@ Route::prefix('v1')->group(function () {
         Route::delete('exams/{id}', [ExamSystemApiController::class, 'destroyExam'])->where('id', '[0-9]+');
 
         Route::post('exams/{id}/questions', [ExamSystemApiController::class, 'addExamQuestion'])->where('id', '[0-9]+');
+        Route::post('exams/{id}/questions/bulk-remove', [ExamSystemApiController::class, 'bulkRemoveExamQuestions'])->where('id', '[0-9]+');
         Route::patch('exams/{id}/questions/reorder', [ExamSystemApiController::class, 'reorderExamQuestions'])->where('id', '[0-9]+');
         Route::patch('exams/{id}/questions/{examQuestionId}', [ExamSystemApiController::class, 'updateExamQuestionMarks'])->where('id', '[0-9]+')->where('examQuestionId', '[0-9]+');
         Route::put('exams/{id}/marks', [ExamSystemApiController::class, 'distributeExamMarks'])->where('id', '[0-9]+');

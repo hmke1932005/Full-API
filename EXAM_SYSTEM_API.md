@@ -42,6 +42,7 @@ Role: `academic_staff`
 | POST | `exams/{id}/questions` | Attach a manual question to an exam. |
 | PATCH | `exams/{id}/questions/reorder` | Reorder an exam's manual questions. |
 | DELETE | `exams/{id}/questions/{examQuestionId}` | Detach a manual question from an exam. |
+| POST | `exams/{id}/questions/bulk-remove` | Detach many manual questions at once. Body: `exam_question_ids[]`. Questions stay in the bank. |
 
 ## Round 6 — Rubrics (Question-level, AI-gradable types only)
 

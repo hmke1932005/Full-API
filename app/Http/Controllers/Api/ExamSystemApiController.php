@@ -815,6 +815,37 @@ class ExamSystemApiController extends Controller
         return $this->apiSuccess($this->examSystem->examDetail($exam->fresh()), 'Question removed from exam successfully.');
     }
 
+    /** POST /api/v1/exam-system/exams/{id}/questions/bulk-remove — body: exam_question_ids[]. بيشيل أسئلة كتير من الامتحان مرة واحدة (الأسئلة نفسها تفضل في البنك). */
+    public function bulkRemoveExamQuestions(Request $request, $id)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return $err;
+        }
+
+        $exam = $this->examSystem->findOwnedExam($id, $staff->id);
+        if (!$exam) {
+            return $this->apiError('Exam not found.', null, 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'exam_question_ids'   => 'required|array|min:1|max:500',
+            'exam_question_ids.*' => 'integer',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+
+        $removed = $this->examSystem->removeQuestionsFromExam($exam, $request->input('exam_question_ids'));
+
+        $this->auditLog->record($staff->user_id, 'academic_staff.exam_system.exam_questions_bulk_removed', 'Exam', $exam->id, null, ['exam_question_ids' => $request->input('exam_question_ids'), 'removed' => $removed]);
+
+        return $this->apiSuccess($this->examSystem->examDetail($exam->fresh()), $removed . ' question(s) removed from exam successfully.');
+    }
+
     /** PATCH /api/v1/exam-system/exams/{id}/questions/{examQuestionId} — body: marks. بيعدّل درجة سؤال واحد. */
     public function updateExamQuestionMarks(Request $request, $id, $examQuestionId)
     {
