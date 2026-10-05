@@ -208,3 +208,39 @@ Attempt rows in `GET /exams/{id}/attempts` now include `cancelled_at`, `cancel_r
 Student `my-exams` payloads now include `extra_attempts`, `max_attempts_effective`, `retake_allowed`, `retake_available_until`.
 Audit actions: `exam.attempt_cancelled`, `exam.retake_granted`, `exam.retake_revoked`. Student notifications: `exam_attempt_cancelled`, `exam_retake_granted`, `exam_retake_revoked`.
 Run `php artisan migrate` (new migration `2026_10_05_200000_...`).
+
+---
+
+## تحديث: التسليم المتأخر، الوقت الإضافي، الإجراءات الجماعية، بحث الطلاب الغايبين
+
+### سياسة التسليم المتأخر (يحددها الدكتور وقت إنشاء/تعديل الامتحان)
+حقول جديدة في `POST /exams` و`PATCH /exams/{id}`:
+
+| الحقل | النوع | ملاحظات |
+|---|---|---|
+| `late_grace_minutes` | integer 0..120 | فترة السماح بعد انتهاء الوقت. `0` = الامتحان بيقفل فجأة (السلوك القديم). |
+| `late_penalty_percent` | numeric 0..100 | نسبة الخصم من الدرجة لو التسليم جوه فترة السماح. بتتصفّر لو `late_grace_minutes = 0`. |
+
+- جوه فترة السماح المحاولة بتفضل `in_progress`، الطالب يقدر يحفظ ويسلّم. أي تسليم بعد `expires_at` بيتعلّم `is_late = true` وبيتاخد snapshot من نسبة الخصم في `exam_attempts.late_penalty_percent`.
+- الخصم بيتطبق في `ExamGradingService::recomputeAttemptTotals()` من الدرجة الخام كل مرة (تعديل درجة سؤال بعد كده مش بيخصم مرتين). الدرجة الخام في `score_before_penalty`.
+- بعد انتهاء فترة السماح: `enforceTimer()` / أمر `exams:auto-submit-expired` بيسلّمها أوتوماتيك. لو الطالب كان شغال جوه فترة السماح بتتعلّم متأخرة، غير كده تسليم عادي على وقت الانتهاء.
+- `GET attempts/{id}` بيرجّع: `in_grace`, `grace_remaining_seconds`, `grace_ends_at`, `extra_time_minutes`, `is_late`. نتيجة الطالب فيها `is_late`, `late_penalty_percent`, `score_before_penalty`. قائمة المدرس فيها `is_late`, `late_penalty_percent`, `score_before_penalty`, `extra_time_minutes`.
+
+### وقت إضافي لمحاولة شغالة
+`POST /exams/{id}/attempts/{attemptId}/extra-time` — body: `minutes` (1..240، مطلوب), `reason?`. بتزوّد `expires_at`، حد أقصى 600 دقيقة إجمالًا للمحاولة. بترفض المحاولة المخلصة أو اللي وقتها (وسماحها) خلص. بتتسجل في audit وبتوصل للطالب كإشعار.
+
+### إجراءات جماعية (حد أقصى 200 عنصر في الطلب)
+كلها بترجّع `{ succeeded: [ids], failed: [{ id, error }] }` — فشل عنصر لا يوقف الباقي. `200` لو في نجاح واحد على الأقل، `422` (والبنية نفسها تحت `errors`) لو كله فشل.
+
+| Endpoint | Body |
+|---|---|
+| `POST /exams/{id}/attempts/bulk-cancel` | `attempt_ids[]`, `reason?`, `allow_retake?`, `available_until?` |
+| `POST /exams/{id}/retake/bulk` | `student_ids[]`, `extra_attempts?`, `available_until?`, `reason?` |
+| `POST /exams/{id}/attempts/bulk-extra-time` | `attempt_ids[]`, `minutes`, `reason?` |
+
+محاولة تابعة لامتحان تاني بتظهر في `failed` كـ `Attempt not found.` ومبتتلمسش.
+
+### بحث الطلاب المؤهلين (إدّي فرصة لطالب ماجاش)
+`GET /exams/{id}/eligible-students?q=&without_attempts=1&limit=50` — بحث بالاسم/الإيميل/الرقم الجامعي، و`without_attempts=1` بيرجّع الغايبين بس (من غير أي محاولة). كل صف: `id, student_number, name, email, attempts_used, extra_attempts, available_until`. بعدها `retake/bulk` مع `available_until` بيفتح الامتحان للطالب حتى بعد إغلاقه.
+
+> كل الـ endpoints دي للمدرس صاحب الامتحان فقط: دور غلط → `403`، امتحان مش بتاعه → `404`.

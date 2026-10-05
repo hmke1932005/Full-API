@@ -73,6 +73,7 @@ class ExamAttemptApiController extends Controller
             'exam_id'    => $attempt->exam_id,
             'title'      => $attempt->exam?->title,
             'expires_at' => $attempt->expires_at,
+            'in_grace'   => $attempt->inGrace(),
         ], 'Active attempt retrieved successfully.');
     }
 
@@ -165,6 +166,8 @@ class ExamAttemptApiController extends Controller
             'deleted'                => $result['deleted'],
             'status'                 => $result['attempt']->status,
             'time_remaining_seconds' => $result['attempt']->remainingSeconds(),
+            'in_grace'               => $result['attempt']->inGrace(),
+            'grace_remaining_seconds' => $result['attempt']->graceRemainingSeconds(),
         ], $result['deleted'] ? 'Answer cleared.' : 'Answer saved.');
     }
 
@@ -190,6 +193,8 @@ class ExamAttemptApiController extends Controller
         return $this->apiSuccess([
             'status'                 => $attempt->status,
             'time_remaining_seconds' => $attempt->remainingSeconds(),
+            'in_grace'               => $attempt->inGrace(),
+            'grace_remaining_seconds' => $attempt->graceRemainingSeconds(),
         ], 'Answer cleared.');
     }
 

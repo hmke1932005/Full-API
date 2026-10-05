@@ -66,13 +66,30 @@ class ExamAttemptRepository
      */
     public function activeAttemptForStudent($studentId): ?ExamAttempt
     {
-        return ExamAttempt::where('student_id', $studentId)
+        // المحاولة جوه فترة السماح لسه شغالة (الطالب لسه يقدر يسلّم) — بتتستبعد بس لما الوقت + السماح يخلصوا.
+        return ExamAttempt::with('exam')
+            ->where('student_id', $studentId)
             ->whereIn('status', ExamAttempt::ACTIVE_STATUSES)
-            ->where(function ($q) {
-                $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
             ->orderByDesc('started_at')
-            ->first();
+            ->get()
+            ->first(fn (ExamAttempt $a) => !$a->isHardExpired());
+    }
+
+    /** @return int[] ids الطلاب اللي ليهم محاولة واحدة على الأقل على الامتحان ده (أي حالة). */
+    public function studentIdsWithAttempts($examId): array
+    {
+        return ExamAttempt::where('exam_id', $examId)->distinct()->pluck('student_id')->map(fn ($i) => (int) $i)->all();
+    }
+
+    /** @return array<int,int> student_id => عدد المحاولات على الامتحان ده. */
+    public function attemptCountsByStudent($examId, array $studentIds): array
+    {
+        if ($studentIds === []) {
+            return [];
+        }
+        return ExamAttempt::where('exam_id', $examId)->whereIn('student_id', $studentIds)
+            ->selectRaw('student_id, COUNT(*) as c')->groupBy('student_id')
+            ->pluck('c', 'student_id')->map(fn ($c) => (int) $c)->all();
     }
 
     public function countFinishedForStudentAndExam($studentId, $examId): int
@@ -157,6 +174,7 @@ class ExamAttemptRepository
                 'a.id', 'a.student_id', 'a.attempt_number', 'a.status',
                 'a.started_at', 'a.submitted_at', 'a.score', 'a.percentage', 'a.auto_submitted', 'a.violations_count',
                 'a.cancelled_at', 'a.cancel_reason',
+                'a.is_late', 'a.extra_time_minutes', 'a.late_penalty_percent', 'a.score_before_penalty',
                 's.student_number', 'u.id as user_id', 'u.full_name', 'u.email'
             )
             ->orderByDesc('a.submitted_at')
@@ -167,9 +185,13 @@ class ExamAttemptRepository
     /** @return ExamAttempt[] كل المحاولات in_progress اللي وقتها عدى — للـ auto-submit sweep (command + lazy enforceTimer). */
     public function allExpiredInProgress(): array
     {
-        return ExamAttempt::whereIn('status', ExamAttempt::ACTIVE_STATUSES)
+        // expires_at <= now هو الفلتر الخشن في الـ SQL، وبعدين بنستبعد اللي لسه جوه فترة السماح.
+        return ExamAttempt::with('exam')
+            ->whereIn('status', ExamAttempt::ACTIVE_STATUSES)
             ->where('expires_at', '<=', now())
             ->get()
+            ->filter(fn (ExamAttempt $a) => $a->isHardExpired())
+            ->values()
             ->all();
     }
 

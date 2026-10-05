@@ -20,6 +20,7 @@ class ExamAttempt extends Model
         'started_at', 'last_activity_at', 'expires_at', 'submitted_at',
         'auto_submitted', 'violations_count', 'score', 'percentage',
         'cancelled_at', 'cancelled_by', 'cancel_reason',
+        'extra_time_minutes', 'is_late', 'late_penalty_percent', 'score_before_penalty',
     ];
 
     protected $casts = [
@@ -29,6 +30,10 @@ class ExamAttempt extends Model
         'submitted_at'     => 'datetime',
         'cancelled_at'     => 'datetime',
         'auto_submitted'   => 'boolean',
+        'is_late'          => 'boolean',
+        'extra_time_minutes' => 'integer',
+        'late_penalty_percent' => 'decimal:2',
+        'score_before_penalty' => 'decimal:2',
         'score'            => 'decimal:2',
         'percentage'       => 'decimal:2',
     ];
@@ -69,9 +74,43 @@ class ExamAttempt extends Model
         return in_array($this->status, self::ACTIVE_STATUSES, true);
     }
 
+    /** الموعد المعدّل (expires_at) عدى — بغض النظر عن فترة السماح. */
     public function isExpired(): bool
     {
         return $this->expires_at !== null && now()->greaterThanOrEqualTo($this->expires_at);
+    }
+
+    /** فترة السماح بالدقايق (سياسة التسليم المتأخر بتاعة الامتحان). 0 = مفيش. */
+    public function graceMinutes(): int
+    {
+        return max(0, (int) ($this->exam?->late_grace_minutes ?? 0));
+    }
+
+    /** آخر لحظة يقدر الطالب يسلّم فيها (expires_at + فترة السماح). */
+    public function graceEndsAt()
+    {
+        return $this->expires_at?->copy()->addMinutes($this->graceMinutes());
+    }
+
+    /** الوقت الأساسي خلص بس لسه جوه فترة السماح — المحاولة لسه شغالة والتسليم دلوقتي متأخر. */
+    public function inGrace(): bool
+    {
+        return $this->isActive()
+            && $this->graceMinutes() > 0
+            && $this->isExpired()
+            && now()->lessThan($this->graceEndsAt());
+    }
+
+    /** الوقت + فترة السماح خلصوا كلهم — المحاولة لازم تتسلّم أوتوماتيك. */
+    public function isHardExpired(): bool
+    {
+        return $this->expires_at !== null && now()->greaterThanOrEqualTo($this->graceEndsAt());
+    }
+
+    /** ثواني فترة السماح المتبقية (0 لو مش جوه فترة سماح). */
+    public function graceRemainingSeconds(): int
+    {
+        return $this->inGrace() ? max(0, (int) floor(now()->diffInSeconds($this->graceEndsAt(), false))) : 0;
     }
 
     /** ثواني متبقية (0 لو خلصت أو الوقت عدى) — دايمًا محسوبة من ساعة السيرفر. */
@@ -80,6 +119,6 @@ class ExamAttempt extends Model
         if (!$this->isActive() || $this->expires_at === null) {
             return 0;
         }
-        return max(0, now()->diffInSeconds($this->expires_at, false));
+        return max(0, (int) floor(now()->diffInSeconds($this->expires_at, false)));
     }
 }

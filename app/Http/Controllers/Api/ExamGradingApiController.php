@@ -256,6 +256,186 @@ class ExamGradingApiController extends Controller
         ], 'Retake revoked successfully.');
     }
 
+    /** @return array{0:?\App\Models\Exam,1:?\Illuminate\Http\JsonResponse} دور المدرس + ملكية الامتحان في خطوة واحدة. */
+    private function ownedExamOrError(Request $request, $examId): array
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return [null, $err];
+        }
+        [$staff, $err] = $this->resolveStaff($request);
+        if ($err) {
+            return [null, $err];
+        }
+        return $this->resolveOwnedExam($request, $examId, $staff);
+    }
+
+    /** رد العمليات الجماعية: 200 لو في نجاح واحد على الأقل، 422 لو كله فشل. */
+    private function bulkResponse(array $result, string $okMessage)
+    {
+        if ($result['succeeded'] === [] && $result['failed'] !== []) {
+            return $this->apiError('No item could be processed.', $result, 422);
+        }
+        return $this->apiSuccess($result, $okMessage);
+    }
+
+    // -----------------------------------------------------------------
+    // Extra time — POST /exams/{id}/attempts/{attemptId}/extra-time  { minutes, reason? }
+    // -----------------------------------------------------------------
+
+    public function addExtraTime(Request $request, $examId, $attemptId)
+    {
+        [$exam, $err] = $this->ownedExamOrError($request, $examId);
+        if ($err) {
+            return $err;
+        }
+        [$attempt, $err] = $this->resolveAttemptForExam($attemptId, $exam);
+        if ($err) {
+            return $err;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'minutes' => 'required|integer|min:1|max:' . ExamAttemptManagementService::MAX_EXTRA_MINUTES,
+            'reason'  => 'nullable|string|max:1000',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError('Validation failed.', $validator->errors()->toArray(), 422);
+        }
+
+        try {
+            $updated = $this->management->addExtraTime(
+                $exam, $attempt, (int) $request->input('minutes'),
+                (int) $request->attributes->get('uip_user_id'), $request->input('reason')
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        return $this->apiSuccess([
+            'id'                 => $updated->id,
+            'expires_at'         => $updated->expires_at,
+            'extra_time_minutes' => (int) $updated->extra_time_minutes,
+        ], 'Extra time added successfully.');
+    }
+
+    // -----------------------------------------------------------------
+    // Bulk actions — انقطاع نت/سيرفر: إجراء واحد على أكتر من طالب.
+    // الرد: {succeeded: [ids], failed: [{id, error}]}
+    // -----------------------------------------------------------------
+
+    /** POST /exams/{id}/attempts/bulk-cancel  { attempt_ids[], reason?, allow_retake?, available_until? } */
+    public function bulkCancel(Request $request, $examId)
+    {
+        [$exam, $err] = $this->ownedExamOrError($request, $examId);
+        if ($err) {
+            return $err;
+        }
+        $validator = Validator::make($request->all(), [
+            'attempt_ids'     => 'required|array|min:1|max:' . ExamAttemptManagementService::MAX_BULK,
+            'attempt_ids.*'   => 'integer',
+            'reason'          => 'nullable|string|max:1000',
+            'allow_retake'    => 'nullable|boolean',
+            'available_until' => 'nullable|date',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError('Validation failed.', $validator->errors()->toArray(), 422);
+        }
+
+        try {
+            $result = $this->management->bulkCancel(
+                $exam, $request->input('attempt_ids'), (int) $request->attributes->get('uip_user_id'),
+                $request->input('reason'), $request->boolean('allow_retake'), $this->parseUntil($request->input('available_until'))
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+        return $this->bulkResponse($result, 'Attempts processed.');
+    }
+
+    /** POST /exams/{id}/retake/bulk  { student_ids[], extra_attempts?, available_until?, reason? } */
+    public function bulkGrantRetake(Request $request, $examId)
+    {
+        [$exam, $err] = $this->ownedExamOrError($request, $examId);
+        if ($err) {
+            return $err;
+        }
+        $validator = Validator::make($request->all(), [
+            'student_ids'     => 'required|array|min:1|max:' . ExamAttemptManagementService::MAX_BULK,
+            'student_ids.*'   => 'integer',
+            'extra_attempts'  => 'nullable|integer|min:1|max:' . ExamAttemptManagementService::MAX_EXTRA_ATTEMPTS,
+            'available_until' => 'nullable|date',
+            'reason'          => 'nullable|string|max:1000',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError('Validation failed.', $validator->errors()->toArray(), 422);
+        }
+
+        try {
+            $result = $this->management->bulkGrantRetake(
+                $exam, $request->input('student_ids'), (int) $request->input('extra_attempts', 1),
+                $this->parseUntil($request->input('available_until')), (int) $request->attributes->get('uip_user_id'),
+                $request->input('reason')
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+        return $this->bulkResponse($result, 'Retakes processed.');
+    }
+
+    /** POST /exams/{id}/attempts/bulk-extra-time  { attempt_ids[], minutes, reason? } */
+    public function bulkAddExtraTime(Request $request, $examId)
+    {
+        [$exam, $err] = $this->ownedExamOrError($request, $examId);
+        if ($err) {
+            return $err;
+        }
+        $validator = Validator::make($request->all(), [
+            'attempt_ids'   => 'required|array|min:1|max:' . ExamAttemptManagementService::MAX_BULK,
+            'attempt_ids.*' => 'integer',
+            'minutes'       => 'required|integer|min:1|max:' . ExamAttemptManagementService::MAX_EXTRA_MINUTES,
+            'reason'        => 'nullable|string|max:1000',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError('Validation failed.', $validator->errors()->toArray(), 422);
+        }
+
+        try {
+            $result = $this->management->bulkAddExtraTime(
+                $exam, $request->input('attempt_ids'), (int) $request->input('minutes'),
+                (int) $request->attributes->get('uip_user_id'), $request->input('reason')
+            );
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+        return $this->bulkResponse($result, 'Extra time processed.');
+    }
+
+    // -----------------------------------------------------------------
+    // Student search — GET /exams/{id}/eligible-students?q=&without_attempts=1&limit=
+    // -----------------------------------------------------------------
+
+    public function searchEligibleStudents(Request $request, $examId)
+    {
+        [$exam, $err] = $this->ownedExamOrError($request, $examId);
+        if ($err) {
+            return $err;
+        }
+        $validator = Validator::make($request->query(), [
+            'q'                => 'nullable|string|max:100',
+            'without_attempts' => 'nullable|boolean',
+            'limit'            => 'nullable|integer|min:1|max:200',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError('Validation failed.', $validator->errors()->toArray(), 422);
+        }
+
+        return $this->apiSuccess(
+            $this->management->searchEligibleStudents(
+                $exam, $request->query('q'), $request->boolean('without_attempts'), (int) $request->query('limit', 50)
+            ),
+            'Students retrieved successfully.'
+        );
+    }
+
     // -----------------------------------------------------------------
     // Manual grading — /exams/{id}/attempts/{attemptId}/grades/{examQuestionId}
     // -----------------------------------------------------------------

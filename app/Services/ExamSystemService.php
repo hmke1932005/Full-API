@@ -639,6 +639,9 @@ class ExamSystemService
             'allow_back_navigation'         => $data['allow_back_navigation'] ?? false,
             'show_answer_review'            => $data['show_answer_review'] ?? false,
             'show_score_only'               => $data['show_score_only'] ?? false,
+            'late_grace_minutes'            => $graceMinutes = (int) ($data['late_grace_minutes'] ?? 0),
+            // خصم من غير فترة سماح ملوش معنى (الامتحان بيقفل فجأة)، فبيتصفّر.
+            'late_penalty_percent'          => $graceMinutes > 0 ? (float) ($data['late_penalty_percent'] ?? 0) : 0,
             'status'                        => 'draft',
         ]);
     }
@@ -651,7 +654,13 @@ class ExamSystemService
             'instructions', 'randomize_questions', 'randomize_options', 'result_visibility',
             'program_id', 'secure_mode_enabled', 'max_violations',
             'auto_submit_on_timeout', 'allow_back_navigation', 'show_answer_review', 'show_score_only',
+            'late_grace_minutes', 'late_penalty_percent',
         ]));
+        // الخصم مرتبط بفترة السماح: لو فترة السماح بقت صفر (جديدة أو موجودة أصلًا) الخصم بيتصفّر.
+        $effectiveGrace = array_key_exists('late_grace_minutes', $fillable) ? (int) $fillable['late_grace_minutes'] : (int) $exam->late_grace_minutes;
+        if ($effectiveGrace <= 0) {
+            $fillable['late_penalty_percent'] = 0;
+        }
         foreach (['start_at', 'end_at'] as $k) {
             if (array_key_exists($k, $fillable)) {
                 $fillable[$k] = $this->toAppTimezone($fillable[$k]);

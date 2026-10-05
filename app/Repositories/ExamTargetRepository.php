@@ -78,6 +78,45 @@ class ExamTargetRepository
         );
     }
 
+    /**
+     * الطلاب المؤهلين لامتحان محفوظ، مع بحث نصي اختياري (اسم / إيميل / رقم جامعي). بيشغّل شاشة
+     * "اختيار طالب ماجاش للامتحان" عند المدرس. $onlyWithoutAttempts=true بيستبعد أي طالب ليه محاولة على الامتحان
+     * (يعني الغايب بس).
+     * @return array<int,object>
+     */
+    public function searchForExamSaved($examId, $universityId, ?string $query = null, bool $onlyWithoutAttempts = false, int $limit = 50): array
+    {
+        [$sql, $params] = $this->eligibilityWhereGroups($this->rowsAsArrays($this->forExam($examId)));
+        if ($sql === null) {
+            return [];
+        }
+
+        $where = '';
+        $bindings = array_merge([$universityId], $params);
+        $query = $query !== null ? trim($query) : '';
+        if ($query !== '') {
+            // '!' كحرف escape عشان نفس الجملة تشتغل على MySQL وSQLite بنفس المعنى (الباك-سلاش بيختلف بينهم).
+            $like = '%' . str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $query) . '%';
+            $where .= " AND (u.full_name LIKE ? ESCAPE '!' OR u.email LIKE ? ESCAPE '!' OR s.student_number LIKE ? ESCAPE '!')";
+            array_push($bindings, $like, $like, $like);
+        }
+        if ($onlyWithoutAttempts) {
+            $where .= ' AND s.id NOT IN (SELECT a.student_id FROM exam_attempts a WHERE a.exam_id = ?)';
+            $bindings[] = $examId;
+        }
+        $limit = max(1, min(200, $limit));
+
+        return DB::select(
+            "SELECT s.id, s.student_number, u.full_name, u.email
+             FROM students s
+             INNER JOIN users u ON u.id = s.user_id
+             WHERE s.university_id = ? AND u.status = 'active' AND $sql $where
+             ORDER BY u.full_name
+             LIMIT $limit",
+            $bindings
+        );
+    }
+
     public function countForExamSaved($examId, $universityId): int
     {
         return $this->countMatching($universityId, $this->rowsAsArrays($this->forExam($examId)));

@@ -578,6 +578,9 @@ class ExamSystemApiController extends Controller
             'allow_back_navigation'  => 'nullable|boolean',
             'show_answer_review'     => 'nullable|boolean',
             'show_score_only'        => 'nullable|boolean',
+            // سياسة التسليم المتأخر — الدكتور بيحددها وقت إنشاء الامتحان: فترة سماح بالدقايق + نسبة خصم من الدرجة.
+            'late_grace_minutes'     => 'nullable|integer|min:0|max:120',
+            'late_penalty_percent'   => 'nullable|numeric|min:0|max:100',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
@@ -646,6 +649,9 @@ class ExamSystemApiController extends Controller
             'allow_back_navigation'  => 'nullable|boolean',
             'show_answer_review'     => 'nullable|boolean',
             'show_score_only'        => 'nullable|boolean',
+            // سياسة التسليم المتأخر — الدكتور بيحددها وقت إنشاء الامتحان: فترة سماح بالدقايق + نسبة خصم من الدرجة.
+            'late_grace_minutes'     => 'nullable|integer|min:0|max:120',
+            'late_penalty_percent'   => 'nullable|numeric|min:0|max:100',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);

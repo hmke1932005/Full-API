@@ -505,7 +505,18 @@ class ExamGradingService
 
         if ($fullyGraded) {
             $exam = $this->exams->find($attempt->exam_id);
-            $score = $this->grades->sumAwarded($attempt->id);
+            $raw = (float) $this->grades->sumAwarded($attempt->id);
+            // سياسة التسليم المتأخر: نسبة الخصم اللي اتلقطت وقت التسليم بتتخصم من المجموع، والدرجة الخام
+            // بتتحفظ في score_before_penalty عشان الطالب والمدرس يشوفوا الفرق. بتتحسب من الصفر في كل مرة
+            // (تعديل درجة سؤال بعد كده مش بيخصم مرتين).
+            $penalty = $attempt->is_late ? (float) ($attempt->late_penalty_percent ?? 0) : 0.0;
+            if ($penalty > 0) {
+                $attempt->score_before_penalty = $raw;
+                $score = round($raw * (1 - min(100.0, $penalty) / 100), 2);
+            } else {
+                $attempt->score_before_penalty = null;
+                $score = $raw;
+            }
             $attempt->score = $score;
             $attempt->percentage = $exam && (float) $exam->total_marks > 0
                 ? round(($score / (float) $exam->total_marks) * 100, 2)
@@ -555,6 +566,10 @@ class ExamGradingService
             'score'           => $row->score !== null ? (float) $row->score : null,
             'percentage'      => $row->percentage !== null ? (float) $row->percentage : null,
             'violations_count' => (int) $row->violations_count,
+            'is_late'         => (bool) $row->is_late,
+            'extra_time_minutes' => (int) $row->extra_time_minutes,
+            'late_penalty_percent' => $row->is_late && $row->late_penalty_percent !== null ? (float) $row->late_penalty_percent : null,
+            'score_before_penalty' => $row->score_before_penalty !== null ? (float) $row->score_before_penalty : null,
             'graded_count'    => $gradedCounts[$row->id] ?? 0,
             'total_questions' => $questionCounts[$row->id] ?? 0,
             'cancelled_at'    => $row->cancelled_at,
@@ -621,6 +636,10 @@ class ExamGradingService
             'percentage'     => $attempt->percentage !== null ? (float) $attempt->percentage : null,
             'started_at'     => $attempt->started_at,
             'submitted_at'   => $attempt->submitted_at,
+            'is_late'        => (bool) $attempt->is_late,
+            'late_penalty_percent' => $attempt->is_late && $attempt->late_penalty_percent !== null ? (float) $attempt->late_penalty_percent : null,
+            'score_before_penalty' => $attempt->score_before_penalty !== null ? (float) $attempt->score_before_penalty : null,
+            'extra_time_minutes'   => (int) $attempt->extra_time_minutes,
             // Round 5/6 — the instructor grading screen (header + security
             // card + AI review) needs the exam's title/secure-mode settings
             // and the student's display name alongside the attempt itself,
@@ -714,11 +733,15 @@ class ExamGradingService
             'review_allowed' => (bool) $exam->show_answer_review && !$exam->show_score_only,
             'passing_score' => $exam->passing_score !== null ? (float) $exam->passing_score : null,
             'total_marks' => (float) $exam->total_marks,
+            'is_late' => (bool) $attempt->is_late,
         ];
 
         if (!$visible) {
             return $base;
         }
+        // التسليم المتأخر: الطالب لازم يعرف إن في خصم اتطبّق وقبل كام (بس لما النتيجة تكون ظاهرة له).
+        $base['late_penalty_percent'] = $attempt->is_late && (float) $attempt->late_penalty_percent > 0 ? (float) $attempt->late_penalty_percent : null;
+        $base['score_before_penalty'] = $attempt->score_before_penalty !== null ? (float) $attempt->score_before_penalty : null;
 
         // Round 7 — attempt-scoped.
         $pivotRows = $this->attempts->questionsForAttempt($attempt->id);

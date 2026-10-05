@@ -206,6 +206,12 @@ class ExamAttemptService
             'expires_at'             => $attempt->expires_at,
             'submitted_at'           => $attempt->submitted_at,
             'time_remaining_seconds' => $attempt->remainingSeconds(),
+            // سياسة التسليم المتأخر: جوه فترة السماح time_remaining_seconds=0 وgrace_remaining_seconds هو العد التنازلي.
+            'in_grace'               => $attempt->inGrace(),
+            'grace_remaining_seconds' => $attempt->graceRemainingSeconds(),
+            'grace_ends_at'          => $attempt->graceMinutes() > 0 ? $attempt->graceEndsAt() : null,
+            'extra_time_minutes'     => (int) $attempt->extra_time_minutes,
+            'is_late'                => (bool) $attempt->is_late,
             'violations_count'       => $attempt->violations_count,
             'violations_remaining'   => $exam->max_violations !== null ? max(0, (int) $exam->max_violations - $attempt->violations_count) : null,
             'exam'                   => [
@@ -220,6 +226,8 @@ class ExamAttemptService
                 'max_violations'        => $exam->max_violations !== null ? (int) $exam->max_violations : null,
                 'allow_back_navigation' => (bool) $exam->allow_back_navigation,
                 'auto_submit_on_timeout' => (bool) $exam->auto_submit_on_timeout,
+                'late_grace_minutes'    => (int) $exam->late_grace_minutes,
+                'late_penalty_percent'  => (float) $exam->late_penalty_percent,
             ],
             'questions'              => $questions,
         ];
@@ -365,6 +373,9 @@ class ExamAttemptService
             return $attempt;
         }
 
+        // سياسة التسليم المتأخر: التسليم بعد الموعد (المعدّل) وجوه فترة السماح = متأخر.
+        $this->markLate($attempt, $attempt->inGrace());
+
         $attempt->status = 'submitted';
         $attempt->submitted_at = now();
         $attempt->auto_submitted = false;
@@ -376,16 +387,34 @@ class ExamAttemptService
         return $attempt;
     }
 
-    /** بتفحص لو المحاولة عدى وقتها، وبتحوّلها auto_submitted لو كده. بترجع المحاولة (معدّلة أو زي ما هي). */
+    /**
+     * بتفحص لو المحاولة عدى وقتها (الوقت + فترة السماح)، وبتحوّلها auto_submitted لو كده. بترجع المحاولة (معدّلة أو زي ما هي).
+     * جوه فترة السماح المحاولة بتفضل in_progress — الطالب لسه يقدر يحفظ ويسلّم (والتسليم بيتعلّم متأخر).
+     */
     public function enforceTimer(ExamAttempt $attempt): ExamAttempt
     {
-        if ($attempt->isActive() && $attempt->isExpired()) {
-            // submitted_at = لحظة انتهاء الوقت النظرية (expires_at)، مش وقت
-            // تشغيل enforceTimer() الفعلي — نفس السلوك الأصلي من Round 3،
-            // عشان submitted_at يعكس نهاية المحاولة الحقيقية مش تأخير الـ lazy check.
-            $this->performAutoSubmit($attempt, $attempt->expires_at, ['reason' => 'time_expired']);
+        if ($attempt->isActive() && $attempt->isHardExpired()) {
+            // submitted_at = لحظة انتهاء الوقت النظرية، مش وقت تشغيل enforceTimer() الفعلي — عشان submitted_at
+            // يعكس نهاية المحاولة الحقيقية مش تأخير الـ lazy check. لو الطالب كان لسه بيشتغل جوه فترة السماح
+            // (آخر نشاط بعد expires_at) بنعتبره تسليم متأخر وبنحسب النهاية من آخر نشاط (بحد أقصى نهاية السماح).
+            $submittedAt = $attempt->expires_at;
+            $late = false;
+            if ($attempt->graceMinutes() > 0 && $attempt->last_activity_at && $attempt->last_activity_at->greaterThan($attempt->expires_at)) {
+                $graceEnd = $attempt->graceEndsAt();
+                $submittedAt = $attempt->last_activity_at->lessThan($graceEnd) ? $attempt->last_activity_at : $graceEnd;
+                $late = true;
+            }
+            $this->markLate($attempt, $late);
+            $this->performAutoSubmit($attempt, $submittedAt, ['reason' => 'time_expired']);
         }
         return $attempt;
+    }
+
+    /** بتعلّم المحاولة متأخرة وبتاخد snapshot لنسبة الخصم من الامتحان (الخصم الفعلي بيتحسب في ExamGradingService). */
+    private function markLate(ExamAttempt $attempt, bool $late): void
+    {
+        $attempt->is_late = $late;
+        $attempt->late_penalty_percent = $late ? (float) ($attempt->exam?->late_penalty_percent ?? 0) : null;
     }
 
     /**
@@ -398,6 +427,7 @@ class ExamAttemptService
     public function autoSubmitDueToViolations(ExamAttempt $attempt): ExamAttempt
     {
         if ($attempt->isActive()) {
+            $this->markLate($attempt, $attempt->inGrace());
             $this->performAutoSubmit($attempt, now(), ['reason' => 'max_violations_exceeded', 'violations_count' => $attempt->violations_count]);
         }
         return $attempt;

@@ -127,6 +127,9 @@ class StudentExamService
             'auto_submit_on_timeout' => (bool) $exam->auto_submit_on_timeout,
             'show_answer_review' => (bool) $exam->show_answer_review,
             'show_score_only'    => (bool) $exam->show_score_only,
+            // سياسة التسليم المتأخر — الطالب لازم يعرفها قبل ما يبدأ.
+            'late_grace_minutes'   => (int) $exam->late_grace_minutes,
+            'late_penalty_percent' => (float) $exam->late_penalty_percent,
             'attempts_used'      => count($mine),
             'last_attempt'       => $last ? [
                 'id'         => $last->id,

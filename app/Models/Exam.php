@@ -31,6 +31,7 @@ class Exam extends Model
         'instructions', 'randomize_questions', 'randomize_options', 'result_visibility', 'results_published_at', 'status',
         'secure_mode_enabled', 'max_violations',
         'auto_submit_on_timeout', 'allow_back_navigation', 'show_answer_review', 'show_score_only',
+        'late_grace_minutes', 'late_penalty_percent',
     ];
 
     protected $casts = [
@@ -44,6 +45,8 @@ class Exam extends Model
         'allow_back_navigation'  => 'boolean',
         'show_answer_review'     => 'boolean',
         'show_score_only'        => 'boolean',
+        'late_grace_minutes'     => 'integer',
+        'late_penalty_percent'   => 'decimal:2',
         'passing_score'        => 'decimal:2',
         'total_marks'          => 'decimal:2',
     ];

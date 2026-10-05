@@ -382,6 +382,13 @@ Route::prefix('v1')->group(function () {
         Route::get('exams/{id}/attempts/{attemptId}', [ExamGradingApiController::class, 'showAttempt'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
         // إدارة محاولات الطلاب (صلاحيات المدرس): إلغاء محاولة، وإعادة الامتحان لطالب معيّن.
         Route::post('exams/{id}/attempts/{attemptId}/cancel', [ExamGradingApiController::class, 'cancelAttempt'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
+        // وقت إضافي / إجراءات جماعية / بحث طالب غايب. المسارات الثابتة (bulk-*) قبل {attemptId} عمدًا،
+        // وكل واحد بيتحقق من ملكية الامتحان قبل أي حاجة.
+        Route::post('exams/{id}/attempts/bulk-cancel', [ExamGradingApiController::class, 'bulkCancel'])->where('id', '[0-9]+');
+        Route::post('exams/{id}/attempts/bulk-extra-time', [ExamGradingApiController::class, 'bulkAddExtraTime'])->where('id', '[0-9]+');
+        Route::post('exams/{id}/attempts/{attemptId}/extra-time', [ExamGradingApiController::class, 'addExtraTime'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
+        Route::post('exams/{id}/retake/bulk', [ExamGradingApiController::class, 'bulkGrantRetake'])->where('id', '[0-9]+');
+        Route::get('exams/{id}/eligible-students', [ExamGradingApiController::class, 'searchEligibleStudents'])->where('id', '[0-9]+');
         Route::post('exams/{id}/students/{studentId}/retake', [ExamGradingApiController::class, 'grantRetake'])->where('id', '[0-9]+')->where('studentId', '[0-9]+');
         Route::delete('exams/{id}/students/{studentId}/retake', [ExamGradingApiController::class, 'revokeRetake'])->where('id', '[0-9]+')->where('studentId', '[0-9]+');
         Route::post('exams/{id}/attempts/{attemptId}/auto-grade', [ExamGradingApiController::class, 'autoGrade'])->where('id', '[0-9]+')->where('attemptId', '[0-9]+');
