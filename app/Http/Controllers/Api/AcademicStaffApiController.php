@@ -10,7 +10,9 @@ use App\Repositories\FacultyRepository;
 use App\Repositories\StaffAssignmentRepository;
 use App\Repositories\UniversityRepository;
 use App\Services\AcademicStaffManagementService;
+use App\Models\User;
 use App\Services\AuditLogService;
+use App\Services\FileUploadService;
 use Illuminate\Http\Request;
 
 /**
@@ -53,7 +55,8 @@ class AcademicStaffApiController extends Controller
         private StaffAssignmentRepository $staffAssignments,
         private AcademicStaffManagementService $management,
         private AcademicRankRepository $ranks,
-        private AuditLogService $auditLog
+        private AuditLogService $auditLog,
+        private FileUploadService $uploads
     ) {
     }
 
@@ -75,8 +78,46 @@ class AcademicStaffApiController extends Controller
 
         return $this->apiSuccess([
             'staff'      => $staff->toArray(),
+            // اسم/إيميل/صورة/رتبة/كلية/قسم مدموجين — لصفحة /academic-staff/profile.
+            'profile'    => $this->staff->withProfileDetailsByUserId((int) $request->attributes->get('uip_user_id')),
             'leadership' => $this->staffAssignments->historyForStaff($staff->id),
         ], 'Academic staff profile retrieved successfully.');
+    }
+
+    /**
+     * POST /api/v1/academic-staff/me/avatar — صورة الحساب الشخصية لعضو هيئة
+     * التدريس نفسه (users.avatar_path)، نفس منطق FacultyApiController::
+     * uploadAvatar(). الـ user محلول من uip_user_id، أبدًا id من العميل.
+     */
+    public function uploadAvatar(Request $request)
+    {
+        if ($request->attributes->get('uip_role') !== 'academic_staff') {
+            return $this->apiError('Only academic staff accounts can update this profile photo.', null, 403);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $user = User::find($userId);
+        if (!$user) {
+            return $this->apiError('User not found.', null, 404);
+        }
+
+        try {
+            $stored = $this->uploads->store($request->file('avatar'), 'avatars', (string) $user->id);
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        if ($user->avatar_path) {
+            $this->uploads->delete($user->avatar_path);
+        }
+
+        $before = ['avatar_path' => $user->avatar_path];
+        $user->fill(['avatar_path' => $stored['stored_path']]);
+        $user->save();
+
+        $this->auditLog->record($userId, 'academic_staff.avatar_update', 'User', $user->id, $before, ['avatar_path' => $stored['stored_path']]);
+
+        return $this->apiSuccess(['avatar_path' => $stored['stored_path']], 'Profile photo updated successfully.');
     }
 
     // -- الدليل ------------------------------------------------------------

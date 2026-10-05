@@ -236,6 +236,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/import', [AcademicStaffApiController::class, 'import']);
 
         Route::get('/me', [AcademicStaffApiController::class, 'me']);
+        Route::post('/me/avatar', [AcademicStaffApiController::class, 'uploadAvatar']);
         Route::get('/ranks', [AcademicStaffApiController::class, 'ranks']);
         Route::post('/ranks', [AcademicStaffApiController::class, 'storeRank']);
 
