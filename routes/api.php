@@ -83,6 +83,7 @@ use App\Http\Controllers\Api\SupervisorDashboardApiController;
 use App\Http\Controllers\Api\AcademicStaffApiController;
 use App\Http\Controllers\Api\ExamAnalyticsApiController;
 use App\Http\Controllers\Api\ExamAppealApiController;
+use App\Http\Controllers\Api\ExamCopyApiController;
 use App\Http\Controllers\Api\ExamSimilarityApiController;
 use App\Http\Controllers\Api\ExamAttemptApiController;
 use App\Http\Controllers\Api\ExamGradingApiController;
@@ -451,6 +452,10 @@ Route::prefix('v1')->group(function () {
         Route::get('exams/{id}/appeals', [ExamAppealApiController::class, 'index'])->where('id', '[0-9]+');
         Route::post('exams/{id}/appeals/{appealId}/resolve', [ExamAppealApiController::class, 'resolve'])->where('id', '[0-9]+')->where('appealId', '[0-9]+');
         Route::put('exams/{id}/appeal-settings', [ExamAppealApiController::class, 'settings'])->where('id', '[0-9]+');
+
+        // نسخ امتحان + قوالب (المدرس صاحب الامتحان بس).
+        Route::post('exams/{id}/duplicate', [ExamCopyApiController::class, 'duplicate'])->where('id', '[0-9]+')->middleware('throttle:30,1');
+        Route::put('exams/{id}/template', [ExamCopyApiController::class, 'template'])->where('id', '[0-9]+');
     });
 
     // Integrated Meeting & Collaboration Platform — Round 1 (Foundation).

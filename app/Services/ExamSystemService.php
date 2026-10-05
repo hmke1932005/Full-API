@@ -1037,6 +1037,9 @@ class ExamSystemService
      */
     public function publishExam(Exam $exam): Exam
     {
+        if ($exam->is_template) {
+            throw new \InvalidArgumentException('A template cannot be published. Duplicate it to create an exam from it.');
+        }
         if (!in_array($exam->status, ['draft', 'scheduled'], true)) {
             throw new \InvalidArgumentException('Only a draft or scheduled exam can be published.');
         }
