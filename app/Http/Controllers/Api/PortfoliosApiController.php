@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\FileUploadService;
 use App\Services\PortfolioService;
 use App\Services\RoleService;
 use Illuminate\Http\Request;
@@ -33,7 +34,7 @@ use Illuminate\Support\Facades\DB;
  */
 class PortfoliosApiController extends Controller
 {
-    public function __construct(private PortfolioService $portfolios, private RoleService $roles)
+    public function __construct(private PortfolioService $portfolios, private RoleService $roles, private FileUploadService $uploads)
     {
     }
 
@@ -52,6 +53,7 @@ class PortfoliosApiController extends Controller
             'featured_projects' => $data['featuredProjects'],
             'share_url'         => $this->publicBaseUrl() . '/p/' . ($user->uuid ?? ''),
             'role'              => $this->roles->primaryRoleFor($userId),
+            'avatar_path'       => $user->avatar_path ?: null,
         ], 'Portfolio retrieved successfully.');
     }
 
@@ -90,6 +92,8 @@ class PortfoliosApiController extends Controller
                 'full_name' => $user->full_name,
                 'uuid'      => $user->uuid,
                 'role'      => $role,
+                // صورة الحساب (users.avatar_path) — بتظهر بدل الحرف الأول في الصفحة العامة.
+                'avatar_path' => $user->avatar_path ?: null,
                 // profile: معلومات عامة آمنة خاصة بالدور (جهة/قسم/رتبة) — من غير إيميل أو أي بيانات داخلية.
                 'profile'   => $this->publicRoleProfile((int) $user->id, $role),
             ],
@@ -173,6 +177,47 @@ class PortfoliosApiController extends Controller
             $this->portfolios->forOwner($userId)['portfolio']->toArray(),
             'Portfolio updated.'
         );
+    }
+
+    // -- Cover image (خلفية الهيرو في الصفحة العامة) -------------------------
+
+    /** POST /api/v1/portfolios/me/cover — multipart `cover` (jpg/png/webp). بيستبدل القديمة. */
+    public function uploadCover(Request $request)
+    {
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $file = $request->file('cover');
+        if (!$file) {
+            return $this->apiError('cover file is required.', null, 422);
+        }
+
+        try {
+            $stored = $this->uploads->store($file, 'avatars', 'covers/' . $userId);
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        $portfolio = $this->portfolios->forOwner($userId)['portfolio'];
+        if ($portfolio->cover_path) {
+            $this->uploads->delete($portfolio->cover_path);
+        }
+        $portfolio->fill(['cover_path' => $stored['stored_path']]);
+        $portfolio->save();
+
+        return $this->apiSuccess(['cover_path' => $stored['stored_path']], 'Cover image updated.');
+    }
+
+    /** DELETE /api/v1/portfolios/me/cover — يرجّع الغلاف الافتراضي المتدرّج. */
+    public function deleteCover(Request $request)
+    {
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $portfolio = $this->portfolios->forOwner($userId)['portfolio'];
+        if ($portfolio->cover_path) {
+            $this->uploads->delete($portfolio->cover_path);
+            $portfolio->fill(['cover_path' => null]);
+            $portfolio->save();
+        }
+
+        return $this->apiSuccess(['cover_path' => null], 'Cover image removed.');
     }
 
     // -- Publish / Unpublish (تبديل الظهور) -----------------------------------

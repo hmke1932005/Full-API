@@ -17,7 +17,7 @@ class Portfolio extends Model
     protected $table = 'portfolios';
 
     protected $fillable = [
-        'user_id', 'headline', 'about', 'is_public', 'theme',
+        'user_id', 'headline', 'about', 'is_public', 'theme', 'cover_path',
     ];
 
     protected $casts = [

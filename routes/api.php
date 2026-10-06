@@ -1446,6 +1446,8 @@ Route::prefix('v1')->group(function () {
     Route::prefix('portfolios')->middleware('uip.auth')->group(function () {
         Route::get('/me', [PortfoliosApiController::class, 'me']);
         Route::patch('/me', [PortfoliosApiController::class, 'update']);
+        Route::post('/me/cover', [PortfoliosApiController::class, 'uploadCover']);
+        Route::delete('/me/cover', [PortfoliosApiController::class, 'deleteCover']);
         Route::post('/publish', [PortfoliosApiController::class, 'publish']);
         Route::post('/unpublish', [PortfoliosApiController::class, 'unpublish']);
         Route::post('/projects/{projectId}/feature', [PortfoliosApiController::class, 'toggleFeature']);
