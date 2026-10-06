@@ -20,9 +20,12 @@
                 "reference": "82944324d1c1bdb2c2618e89978d4e2ad78d69ad",
                 "shasum": ""
             },
-            "require": {
-                "php": "^8.4"
-            },
+           "require": {
+    "php": "^8.4",
+    "laravel/framework": "^13.17",
+    "laravel/reverb": "^1.11",
+    "laravel/tinker": "^3.0"
+},
             "require-dev": {
                 "phpstan/phpstan": "2.1.22",
                 "phpunit/phpunit": "^11.5"
