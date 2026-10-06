@@ -37,7 +37,7 @@ class PdfWriter
                 self::writeTableMpdf($path, $title, $header, $rows);
                 return;
             } catch (\Throwable $e) {
-                self::warn('mPDF table export failed, using the basic PDF writer: ' . $e->getMessage());
+                self::warn('mPDF table export failed, using the basic PDF writer: ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
             }
         }
 
@@ -69,7 +69,7 @@ class PdfWriter
                 self::writeReportMpdf($path, $title, $meta, $sections, $chart);
                 return;
             } catch (\Throwable $e) {
-                self::warn('mPDF report export failed, using the basic PDF writer: ' . $e->getMessage());
+                self::warn('mPDF report export failed, using the basic PDF writer: ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
             }
         }
 
@@ -115,6 +115,8 @@ class PdfWriter
 
     private static function warn(string $message): void
     {
+        // stderr كمان، عشان يظهر في لوج Railway حتى لو Laravel بيكتب في ملف.
+        @error_log('[PdfWriter] ' . $message);
         if (class_exists(\Illuminate\Support\Facades\Log::class)) {
             try {
                 \Illuminate\Support\Facades\Log::warning($message);
