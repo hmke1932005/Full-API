@@ -150,6 +150,38 @@ class ExamExportsApiController extends ExamResultsHubApiController
         return $this->apiSuccess(null, 'Export deleted.');
     }
 
+    /**
+     * POST exports/bulk-delete — {ids: int[]} يحذف المحدد، أو {all: true} يحذف كل تصديراتي.
+     * دايمًا مقيّد بـ academic_staff_id بتاع صاحب الحساب: أي id مش بتاعه بيتجاهل.
+     */
+    public function bulkDestroy(Request $request)
+    {
+        [$staffId, $err] = $this->resolveStaffId($request);
+        if ($err) {
+            return $err;
+        }
+
+        $query = DB::table('exam_exports')->where('academic_staff_id', $staffId);
+        if (!$request->boolean('all')) {
+            $ids = array_values(array_unique(array_filter(array_map('intval', (array) $request->input('ids', [])))));
+            if (!$ids) {
+                return $this->apiError('Select at least one export.', null, 422);
+            }
+            $query->whereIn('id', array_slice($ids, 0, 500));
+        }
+
+        $rows = $query->get(['id', 'file_path']);
+        foreach ($rows as $r) {
+            @unlink(storage_path('app/' . $r->file_path));
+        }
+        $deleted = $rows->isEmpty() ? 0 : DB::table('exam_exports')
+            ->where('academic_staff_id', $staffId)->whereIn('id', $rows->pluck('id')->all())->delete();
+
+        $this->auditLog->record((int) $request->attributes->get('uip_user_id'), 'academic_staff.exam_system.exports_bulk_deleted', 'ExamExport', null, null, ['count' => $deleted, 'all' => $request->boolean('all')], $request->ip());
+
+        return $this->apiSuccess(['deleted' => (int) $deleted], 'Exports deleted.');
+    }
+
     // ---------------------------------------------------------------------
 
     /** @return array{0:?object,1:mixed} */

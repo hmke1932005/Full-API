@@ -462,6 +462,7 @@ Route::prefix('v1')->group(function () {
         Route::post('exports', [ExamExportsApiController::class, 'store'])->middleware('throttle:30,1');
         Route::get('exports/{id}/preview', [ExamExportsApiController::class, 'preview'])->where('id', '[0-9]+');
         Route::get('exports/{id}/download', [ExamExportsApiController::class, 'download'])->where('id', '[0-9]+');
+        Route::post('exports/bulk-delete', [ExamExportsApiController::class, 'bulkDestroy'])->middleware('throttle:30,1');
         Route::delete('exports/{id}', [ExamExportsApiController::class, 'destroy'])->where('id', '[0-9]+');
 
         // كشف التشابه بين إجابات المقالي (سطح المدرس، ownership بتاع findOwnedExam). إشارات للمراجعة البشرية بس.
