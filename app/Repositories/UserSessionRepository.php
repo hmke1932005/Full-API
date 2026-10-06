@@ -52,11 +52,8 @@ class UserSessionRepository
 
     public function revoke($id, $revokedBy): bool
     {
-        $session = UserSession::find($id);
-        if (!$session) {
-            return false;
-        }
-        $session->fill(['is_active' => 0, 'revoked_by' => $revokedBy, 'revoked_at' => now()]);
-        return $session->save();
+        // يلغي الجلسة + الـ refresh token بتاعها، فالمستخدم يتطرد فعلًا
+        // (الـ middleware بيرفض الـ access token لما الجلسة تبقى is_active=0).
+        return app(\App\Services\UserSessionService::class)->end((int) $id, 'revoked_by_security', $revokedBy ? (int) $revokedBy : null);
     }
 }

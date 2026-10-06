@@ -43,6 +43,23 @@ class UipAuthMiddleware
             ], 401);
         }
 
+        // جلسة اتلغت من بورتال الأمان (أو خلصت) => الـ access token بيبطل فورًا.
+        $sid = isset($claims['sid']) ? (int) $claims['sid'] : null;
+        if ($sid) {
+            $sessions = app(\App\Services\UserSessionService::class);
+            if (!$sessions->isActive($sid)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This session was ended. Please log in again.',
+                    'data'    => null,
+                    'errors'  => null,
+                    'meta'    => (object) [],
+                ], 401);
+            }
+            $sessions->touch($sid);
+            $request->attributes->set('uip_session_id', $sid);
+        }
+
         $request->attributes->set('uip_user_id', (int) $claims['sub']);
         $request->attributes->set('uip_role', (string) ($claims['role'] ?? ''));
 

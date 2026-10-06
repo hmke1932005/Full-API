@@ -34,7 +34,8 @@ class LoginController extends Controller
         private RoleService $roles,
         private AccountLockoutService $lockout,
         private TrustedDeviceService $trustedDevice,
-        private SettingRepository $settings
+        private SettingRepository $settings,
+        private \App\Services\SecurityAlertService $alerts
     ) {
     }
 
@@ -75,6 +76,7 @@ class LoginController extends Controller
                 }
             }
             SecurityLog::write('Failed login attempt', ['email' => $data['email'], 'ip' => $request->ip()]);
+            $this->alerts->failedLogin($data['email'], $request->ip(), $user?->id);
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid email or password.',

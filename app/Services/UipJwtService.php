@@ -82,20 +82,40 @@ class UipJwtService
      * راجع نقاش الباگ ده). لسه اختياريين (null لو المستخدم اتمسح بين
      * إصدار التوكن القديم واستخدامه) عشان decode() القديم يفضل متوافق.
      */
-    public static function issueTokenPair(int $userId, string $role): array
+    public static function issueTokenPair(int $userId, string $role, ?int $sessionId = null): array
     {
         $accessTtl  = (int) env('JWT_ACCESS_TTL', 900);
         $refreshTtl = (int) env('JWT_REFRESH_TTL', 1209600);
 
         $user = \App\Models\User::find($userId);
 
-        $accessToken = self::encode([
+        $rawRefresh  = bin2hex(random_bytes(32));
+
+        // جلسة حقيقية في user_sessions: جديدة عند اللوجين، أو نفس الجلسة
+        // (rotation) عند الـ refresh. الـ sid بيتحط في الـ access token عشان
+        // الـ Revoke من بورتال الأمان يطرد المستخدم فعلًا.
+        $sessions = app(\App\Services\UserSessionService::class);
+        try {
+            if ($sessionId) {
+                $sessions->rotate($sessionId, $rawRefresh, $refreshTtl);
+            } else {
+                $sessionId = $sessions->start($userId, $rawRefresh, $refreshTtl);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Session tracking failed: ' . $e->getMessage());
+            $sessionId = null;
+        }
+
+        $claims = [
             'sub'   => $userId,
             'role'  => $role,
             'name'  => $user->full_name ?? null,
             'email' => $user->email ?? null,
-        ], $accessTtl);
-        $rawRefresh  = bin2hex(random_bytes(32));
+        ];
+        if ($sessionId) {
+            $claims['sid'] = $sessionId;
+        }
+        $accessToken = self::encode($claims, $accessTtl);
 
         \App\Models\RefreshToken::create([
             'user_id'      => $userId,

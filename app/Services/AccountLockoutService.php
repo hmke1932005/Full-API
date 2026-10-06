@@ -178,6 +178,12 @@ class AccountLockoutService
             'user_id' => $user->id, 'ip' => $ip, 'permanent' => $permanent, 'locked_until' => $lockedUntil?->toDateTimeString(),
         ]);
 
+        try {
+            app(SecurityAlertService::class)->accountLocked((int) $user->id, (string) $user->email, $ip, $permanent, $lockedUntil?->toDateTimeString());
+        } catch (\Throwable $e) {
+            Log::warning('Lockout alert failed: ' . $e->getMessage());
+        }
+
         if (!empty($policy['notify_email'])) {
             $this->notifyOwnerOfLock($user, $ip, $permanent, $lockedUntil?->toDateTimeString(), $policy, $locale);
         }

@@ -451,10 +451,13 @@ class UserRepository
         if (!$roleId) {
             return false;
         }
-        DB::statement(
+        $inserted = DB::affectingStatement(
             'INSERT IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)',
             [$userId, $roleId]
         );
+        if ($inserted > 0) {
+            app(\App\Services\SecurityAlertService::class)->privilegeGranted((int) $userId, $roleSlug, request()?->attributes->get('uip_user_id'));
+        }
         return true;
     }
 
@@ -507,6 +510,7 @@ class UserRepository
         }
         DB::table('user_roles')->where('user_id', $userId)->delete();
         DB::table('user_roles')->insert(['user_id' => $userId, 'role_id' => $roleId]);
+        app(\App\Services\SecurityAlertService::class)->privilegeGranted((int) $userId, $roleSlug, request()?->attributes->get('uip_user_id'));
         return true;
     }
 }
