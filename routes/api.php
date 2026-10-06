@@ -237,6 +237,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/', [AcademicStaffApiController::class, 'store']);
         Route::post('/import', [AcademicStaffApiController::class, 'import']);
 
+        Route::get('/search', [\App\Http\Controllers\Api\AcademicStaffSearchApiController::class, 'index']);
         Route::get('/me', [AcademicStaffApiController::class, 'me']);
         Route::post('/me/avatar', [AcademicStaffApiController::class, 'uploadAvatar']);
         Route::get('/ranks', [AcademicStaffApiController::class, 'ranks']);
