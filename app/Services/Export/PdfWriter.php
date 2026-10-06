@@ -141,6 +141,8 @@ class PdfWriter
                 @ini_set('memory_limit', '768M');
             }
             @set_time_limit(300);
+            @ini_set('pcre.backtrack_limit', '10000000');
+            @ini_set('pcre.recursion_limit', '1000000');
         }
 
         $mpdf = new \Mpdf\Mpdf([
@@ -156,7 +158,7 @@ class PdfWriter
             'tempDir'           => self::tempDir(),
             'autoScriptToLang'  => true,
             'autoLangToFont'    => true,
-            'useSubstitutions'  => true,
+            'useSubstitutions'  => $rowCount <= 300,   // تقيل جداً على الجداول الكبيرة
         ]);
         if ($rowCount > 300) {
             $mpdf->simpleTables = true;   // أسرع وأخف بكتير على الجداول الطويلة
@@ -259,13 +261,13 @@ class PdfWriter
         return $cols;
     }
 
-    private static function tableHtml(array $header, array $rows): string
+    private static function tableHtml(array $header, array $rows, ?array $numeric = null): string
     {
         $header = array_values($header);
         if (!$header && $rows) {
             $header = array_fill(0, count(array_values(reset($rows))), '');
         }
-        $numeric = self::numericColumns($header, $rows);
+        $numeric ??= self::numericColumns($header, $rows);
 
         $html = '<table class="data" repeat_header="1"><thead><tr>';
         foreach ($header as $i => $h) {
@@ -300,10 +302,19 @@ class PdfWriter
 
         $count = count($rows);
         $mpdf->WriteHTML(self::titleBlock($title, number_format($count) . ($count === 1 ? ' record' : ' records')), \Mpdf\HTMLParserMode::HTML_BODY);
-        $mpdf->WriteHTML(
-            $count === 0 ? '<p class="none">No data.</p>' : self::tableHtml($header, $rows),
-            \Mpdf\HTMLParserMode::HTML_BODY
-        );
+        if ($count === 0) {
+            $mpdf->WriteHTML('<p class="none">No data.</p>', \Mpdf\HTMLParserMode::HTML_BODY);
+        } elseif ($count <= 150) {
+            $mpdf->WriteHTML(self::tableHtml($header, $rows), \Mpdf\HTMLParserMode::HTML_BODY);
+        } else {
+            // جدول HTML واحد بآلاف الصفوف بيفشّل mPDF (حد الـ regex/الذاكرة)،
+            // فبنكتبه على دفعات — كل دفعة جدول بنفس الهيدر.
+            $cleanHeader = array_values($header);
+            $numeric = self::numericColumns($cleanHeader, $rows);
+            foreach (array_chunk($rows, 150) as $chunk) {
+                $mpdf->WriteHTML(self::tableHtml($cleanHeader, $chunk, $numeric), \Mpdf\HTMLParserMode::HTML_BODY);
+            }
+        }
 
         $mpdf->Output($path, \Mpdf\Output\Destination::FILE);
         if (!is_file($path)) {
