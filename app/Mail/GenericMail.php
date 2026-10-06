@@ -43,6 +43,9 @@ class GenericMail extends Mailable
         // نوع الإيميل — بيحدد الألوان والأيقونة والبادج في القالب:
         // invite | reset | security | success | report | notification | test | info
         public string $variant = 'info',
+        // Reply-To مخصّص (مثلاً: إيميل الزائر في فورم التواصل مع فريق المشروع)
+        public ?string $replyToEmail = null,
+        public ?string $replyToName = null,
     ) {
     }
 
@@ -50,9 +53,15 @@ class GenericMail extends Mailable
     {
         $replyTo = config('mail.reply_to_address');
 
+        if ($this->replyToEmail) {
+            $replyToList = [new Address($this->replyToEmail, (string) $this->replyToName)];
+        } else {
+            $replyToList = $replyTo ? [new Address($replyTo)] : [];
+        }
+
         return new Envelope(
             subject: $this->mailSubject,
-            replyTo: $replyTo ? [new Address($replyTo)] : [],
+            replyTo: $replyToList,
         );
     }
 

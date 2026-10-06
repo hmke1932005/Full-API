@@ -55,13 +55,14 @@ class MailService
         string $locale,
         array $meta,
         string $logContext,
-        string $variant = 'info'
+        string $variant = 'info',
+        ?array $replyTo = null
     ): bool {
         $this->lastError = null;
 
         try {
             app(MailConfigService::class)->apply();
-            Mail::to($toEmail)->send(new GenericMail($subject, $heading, $lines, $button, $locale, $meta, $variant));
+            Mail::to($toEmail)->send(new GenericMail($subject, $heading, $lines, $button, $locale, $meta, $variant, $replyTo['email'] ?? null, $replyTo['name'] ?? null));
 
             return true;
         } catch (Throwable $e) {
@@ -151,6 +152,45 @@ class MailService
             ],
             'sendAcademicStaffInvite',
             'invite'
+        );
+    }
+
+    /**
+     * رسالة من زائر (من غير تسجيل) لفريق مشروع منشور — بتتبعت لكل عضو
+     * في إيميل منفصل، والـ Reply-To هو إيميل الزائر عشان الرد يوصله مباشرة.
+     */
+    public function sendProjectInquiry(
+        string $toEmail,
+        string $recipientName,
+        string $projectTitle,
+        string $senderName,
+        string $senderEmail,
+        string $message,
+        ?string $projectUrl,
+        string $locale = 'ar'
+    ): bool {
+        $ar = $locale === 'ar';
+        $subject = $ar ? "رسالة جديدة بخصوص مشروع: {$projectTitle}" : "New message about your project: {$projectTitle}";
+
+        return $this->deliver(
+            $toEmail,
+            $subject,
+            $ar ? "أهلاً {$recipientName}" : "Hi {$recipientName}",
+            [
+                $ar
+                    ? "وصلتك رسالة من زائر لصفحة مشروعك \"{$projectTitle}\" على المنصة. للرد، اضغط Reply على الإيميل ده وهيوصل للمرسل مباشرة."
+                    : "A visitor sent a message through your project page \"{$projectTitle}\". Just hit Reply and your answer goes straight to the sender.",
+                $message,
+            ],
+            $projectUrl ? ['label' => $ar ? 'فتح صفحة المشروع' : 'Open project page', 'url' => $projectUrl] : null,
+            $locale,
+            [
+                ['label' => $ar ? 'الاسم' : 'Name', 'value' => $senderName],
+                ['label' => $ar ? 'البريد الإلكتروني' : 'Email', 'value' => $senderEmail],
+            ],
+            'sendProjectInquiry',
+            'notification',
+            ['email' => $senderEmail, 'name' => $senderName]
         );
     }
 

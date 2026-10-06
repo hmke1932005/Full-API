@@ -13,6 +13,7 @@ use App\Repositories\UniversityRepository;
 use App\Services\MessagingService;
 use App\Services\ProjectAnalyticsService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * منقولة جزئيًا من app/Controllers/PublicProjectController.php +
@@ -141,7 +142,170 @@ class PublicApiController extends Controller
             'media'        => array_map(fn ($f) => $f->toGalleryArray(), $this->files->mediaForProject($row['id'])),
             'links'        => array_map(fn ($l) => $l->toRowArray(), $this->links->forProject($row['id'])),
             'team_members' => array_map(fn ($m) => $m->toRowArray(), $this->team->forProject($row['id'])),
+            // إيميلات وحسابات الفريق ظاهرة للكل (زائر أو مسجّل) — قرار صاحب المنصة.
+            'people'           => $this->buildPeople($row),
+            'contacts_visible' => true,
         ], 'Project retrieved successfully.');
+    }
+
+    private function avatarUrl(?string $path): ?string
+    {
+        return $path ? '/' . ltrim($path, '/') : null;
+    }
+
+    private function jsonArray($value): array
+    {
+        if (is_array($value)) {
+            return $value;
+        }
+        $decoded = json_decode((string) $value, true);
+
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /** المالك + المشرفين/الدكاترة + أعضاء الفريق (المقبولين) بإيميلاتهم. */
+    private function buildPeople(array $row): array
+    {
+        $ownerRow = DB::table('users as u')
+            ->leftJoin('students as st', 'st.user_id', '=', 'u.id')
+            ->where('u.id', $row['owner_id'])
+            ->select('u.full_name', 'u.email', 'u.avatar_path', 'st.student_number', 'st.academic_year', 'st.bio', 'st.skills', 'st.social_links')
+            ->first();
+
+        $owner = $ownerRow ? [
+            'full_name'      => $ownerRow->full_name,
+            'email'          => $ownerRow->email,
+            'avatar_url'     => $this->avatarUrl($ownerRow->avatar_path),
+            'student_number' => $ownerRow->student_number,
+            'academic_year'  => $ownerRow->academic_year,
+            'bio'            => $ownerRow->bio,
+            'skills'         => $this->jsonArray($ownerRow->skills),
+            'social_links'   => array_filter($this->jsonArray($ownerRow->social_links), fn ($u) => is_string($u) && preg_match('#^https?://#i', $u)),
+        ] : null;
+
+        $supervisors = DB::table('supervisor_assignments as sa')
+            ->join('supervisors as s', 's.id', '=', 'sa.supervisor_id')
+            ->leftJoin('users as su', 'su.id', '=', 's.user_id')
+            ->where('sa.project_id', $row['id'])
+            ->select('s.id', 's.full_name', 's.email', 's.title', 's.department', 'su.avatar_path')
+            ->distinct()
+            ->get()
+            ->map(fn ($s) => [
+                'name'       => $s->full_name,
+                'email'      => $s->email,
+                'title'      => $s->title,
+                'department' => $s->department,
+                'avatar_url' => $this->avatarUrl($s->avatar_path),
+                'role'       => 'supervisor',
+            ])->all();
+
+        // مفيش تعيين رسمي؟ نحاول نطابق اسم المشرف المكتوب في المشروع على مشرف الجامعة.
+        if (!$supervisors && !empty($row['supervisor_name'])) {
+            $match = DB::table('supervisors')
+                ->where('university_id', $row['university_id'] ?? 0)
+                ->where('full_name', $row['supervisor_name'])
+                ->first();
+            $supervisors[] = [
+                'name'  => $row['supervisor_name'],
+                'email' => $match->email ?? null,
+                'title' => $match->title ?? null,
+                'role'  => 'supervisor',
+            ];
+        }
+
+        $team = DB::table('project_team_members as m')
+            ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
+            ->where('m.project_id', $row['id'])
+            ->where('m.status', 'accepted')
+            ->select('m.id', 'm.member_name', 'm.role', 'm.academic_year', 'm.student_number', 'm.invited_email', 'm.user_id', 'u.full_name', 'u.email', 'u.avatar_path')
+            ->get()
+            ->filter(fn ($m) => (int) $m->user_id !== (int) $row['owner_id'])
+            ->map(fn ($m) => [
+                'id'             => $m->id,
+                'name'           => $m->member_name ?: ($m->full_name ?: 'Team member'),
+                'email'          => $m->email ?: $m->invited_email,
+                'role'           => $m->role,
+                'academic_year'  => $m->academic_year,
+                'student_number' => $m->student_number,
+                'avatar_url'     => $this->avatarUrl($m->avatar_path),
+            ])->values()->all();
+
+        return ['owner' => $owner, 'supervisors' => $supervisors, 'team' => $team];
+    }
+
+    /**
+     * POST /api/v1/public/projects/{slug}/contact-team — من غير تسجيل.
+     * body: name, email, message (≤ 2000)، وحقل website كـ honeypot ضد البوتات.
+     * بيبعت الرسالة لكل إيميلات الفريق (مالك + مشرفين + أعضاء) في إيميل
+     * منفصل لكل واحد، والـ Reply-To = إيميل المرسل.
+     */
+    public function contactTeam(Request $request, string $slug)
+    {
+        $row = $this->projects->findPublishedBySlugOrUuid($slug);
+        if (!$row) {
+            return $this->apiError('Project not found.', null, 404);
+        }
+
+        // Honeypot: بوت ملأ الحقل المخفي → نرد بنجاح وهمي ومنبعتش حاجة.
+        if (trim((string) $request->input('website', '')) !== '') {
+            return $this->apiSuccess(['sent' => 0], 'Message sent to the project team.', 201);
+        }
+
+        $name    = trim(preg_replace('/[\r\n\t]+/', ' ', (string) $request->input('name', '')));
+        $email   = trim((string) $request->input('email', ''));
+        $message = trim((string) $request->input('message', ''));
+
+        $errors = [];
+        if ($name === '' || mb_strlen($name) > 120) {
+            $errors['name'] = ['Please enter your name (max 120 characters).'];
+        }
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 190) {
+            $errors['email'] = ['Please enter a valid email address.'];
+        }
+        if ($message === '' || mb_strlen($message) > 2000) {
+            $errors['message'] = ['Please write a message (max 2000 characters).'];
+        }
+        if ($errors) {
+            return $this->apiError('Validation failed.', $errors, 422);
+        }
+
+        $people = $this->buildPeople($row);
+        $recipients = [];
+        $add = function (?string $mail, string $recipientName) use (&$recipients) {
+            $mail = strtolower(trim((string) $mail));
+            if ($mail !== '' && filter_var($mail, FILTER_VALIDATE_EMAIL) && !isset($recipients[$mail])) {
+                $recipients[$mail] = $recipientName;
+            }
+        };
+        $add($people['owner']['email'] ?? null, $people['owner']['full_name'] ?? '');
+        foreach ($people['supervisors'] as $s) {
+            $add($s['email'] ?? null, $s['name'] ?? '');
+        }
+        foreach ($people['team'] as $m) {
+            $add($m['email'] ?? null, $m['name'] ?? '');
+        }
+
+        if (!$recipients) {
+            return $this->apiError('No contact emails were provided for this project.', null, 422);
+        }
+
+        $title = trim((string) ($row['title_en'] ?? '')) ?: trim((string) ($row['title_ar'] ?? ''));
+        $base  = rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/');
+        $url   = $base . '/projects/' . ($row['slug'] ?: $row['uuid']);
+        $mailer = app(\App\Services\MailService::class);
+
+        $sent = 0;
+        foreach ($recipients as $to => $recipientName) {
+            if ($mailer->sendProjectInquiry($to, $recipientName ?: $to, $title, $name, $email, $message, $url, 'ar')) {
+                $sent++;
+            }
+        }
+
+        if ($sent === 0) {
+            return $this->apiError('Could not send your message right now. Please try again later.', null, 502);
+        }
+
+        return $this->apiSuccess(['sent' => $sent, 'total' => count($recipients)], 'Message sent to the project team.', 201);
     }
 
     /**
