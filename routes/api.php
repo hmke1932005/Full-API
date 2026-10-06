@@ -92,6 +92,7 @@ use App\Http\Controllers\Api\ExamGradingApiController;
 use App\Http\Controllers\Api\ExamIntegrityApiController;
 use App\Http\Controllers\Api\ExamResultsExportApiController;
 use App\Http\Controllers\Api\ExamResultsHubApiController;
+use App\Http\Controllers\Api\ExamExportsApiController;
 use App\Http\Controllers\Api\ExamSecurityApiController;
 use App\Http\Controllers\Api\ExamSystemApiController;
 use App\Http\Controllers\Api\StudentExamApiController;
@@ -454,6 +455,13 @@ Route::prefix('v1')->group(function () {
         Route::get('results/overview', [ExamResultsHubApiController::class, 'overview']);
         Route::get('results/students', [ExamResultsHubApiController::class, 'students']);
         Route::get('results/students/export', [ExamResultsHubApiController::class, 'exportStudents']);
+
+        // مركز التصدير (Exports): تصديرات محفوظة + Preview + تنزيل + حذف.
+        Route::get('exports', [ExamExportsApiController::class, 'index']);
+        Route::post('exports', [ExamExportsApiController::class, 'store'])->middleware('throttle:30,1');
+        Route::get('exports/{id}/preview', [ExamExportsApiController::class, 'preview'])->where('id', '[0-9]+');
+        Route::get('exports/{id}/download', [ExamExportsApiController::class, 'download'])->where('id', '[0-9]+');
+        Route::delete('exports/{id}', [ExamExportsApiController::class, 'destroy'])->where('id', '[0-9]+');
 
         // كشف التشابه بين إجابات المقالي (سطح المدرس، ownership بتاع findOwnedExam). إشارات للمراجعة البشرية بس.
         Route::get('exams/{id}/similarity', [ExamSimilarityApiController::class, 'index'])->where('id', '[0-9]+');

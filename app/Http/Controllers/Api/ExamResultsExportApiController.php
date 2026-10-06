@@ -55,6 +55,23 @@ class ExamResultsExportApiController extends Controller
         }
 
         $format = $this->resolvedFormat($request);
+        [$title, $meta, $sections] = $this->examResultsPayload($exam);
+
+        return $this->respondExport($request, $format, 'exam_results_' . $exam->id, $title, $meta, $sections, [
+            'action'       => 'academic_staff.exam_system.results_exported',
+            'subject_type' => 'Exam',
+            'subject_id'   => $exam->id,
+        ]);
+    }
+
+    /**
+     * عنوان + meta + sections لنتائج امتحان واحد — مشتركة بين التنزيل المباشر
+     * ومركز التصدير (ExamExportsApiController) عشان الاتنين يطلعوا نفس الأرقام.
+     *
+     * @return array{0:string,1:array<string,string>,2:array}
+     */
+    protected function examResultsPayload($exam): array
+    {
         $rows = $this->attempts->forExamWithStudentInfo($exam->id);
 
         $header = ['Student', 'Student Number', 'Email', 'Attempt #', 'Score', 'Max Marks', 'Percentage', 'Status', 'Submission Time'];
@@ -81,20 +98,59 @@ class ExamResultsExportApiController extends Controller
             'Generated At'   => date('Y-m-d H:i:s'),
         ];
 
-        $section = ['title' => 'Exam Results', 'header' => $header, 'rows' => $dataRows];
-        $filename = 'exam_results_' . $exam->id;
-
-        return $this->respondExport($request, $format, $filename, 'Exam Results - ' . $exam->title, $meta, [$section], [
-            'action'       => 'academic_staff.exam_system.results_exported',
-            'subject_type' => 'Exam',
-            'subject_id'   => $exam->id,
-        ]);
+        return ['Exam Results - ' . $exam->title, $meta, [['title' => 'Exam Results', 'header' => $header, 'rows' => $dataRows]]];
     }
 
     protected function resolvedFormat(Request $request): string
     {
         $format = strtolower((string) $request->input('format', 'csv'));
         return in_array($format, self::FORMATS, true) ? $format : 'csv';
+    }
+
+    /**
+     * يكتب الملف على $path بالصيغة المطلوبة ويرجّع الـ Content-Type.
+     * (اتفصلت من respondExport عشان مركز التصدير يحفظ الملف بدل ما يبعته مباشرة.)
+     *
+     * @throws \RuntimeException
+     */
+    protected function writeExportFile(string $format, string $path, string $title, array $meta, array $sections): string
+    {
+        switch ($format) {
+            case 'xlsx':
+                $header = ['Field', 'Value'];
+                $rows = [];
+                foreach ($meta as $k => $v) {
+                    $rows[] = [$k, $v];
+                }
+                foreach ($sections as $section) {
+                    $rows[] = ['', ''];
+                    $rows[] = ['## ' . $section['title'], ''];
+                    if ($section['header']) {
+                        $rows[] = $section['header'];
+                    }
+                    foreach ($section['rows'] as $r) {
+                        $rows[] = array_pad(array_values($r), count($header), '');
+                    }
+                }
+                $maxCols = max(array_map('count', array_merge([$header], $rows)));
+                $header = array_pad($header, $maxCols, '');
+                SpreadsheetWriter::write($path, $header, $rows);
+                return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+            case 'json':
+                JsonWriter::write($path, ['title' => $title, 'meta' => $meta, 'sections' => $sections]);
+                return 'application/json';
+
+            case 'pdf':
+                PdfWriter::writeReport($path, $title, $meta, $sections, null);
+                return 'application/pdf';
+
+            default: // csv
+                $csvSections = array_map(fn ($s) => ['title' => $s['title'], 'header' => $s['header'], 'rows' => $s['rows']], $sections);
+                array_unshift($csvSections, ['title' => $title, 'header' => array_keys($meta), 'rows' => [array_values($meta)]]);
+                CsvWriter::writeSections($path, $csvSections);
+                return 'text/csv';
+        }
     }
 
     /**
@@ -111,50 +167,7 @@ class ExamResultsExportApiController extends Controller
         $path = $tmpDir . '/' . $filename . '_' . date('Ymd_His') . '.' . $format;
 
         try {
-            switch ($format) {
-                case 'xlsx':
-                    $header = ['Field', 'Value'];
-                    $rows = [];
-                    foreach ($meta as $k => $v) {
-                        $rows[] = [$k, $v];
-                    }
-                    foreach ($sections as $section) {
-                        $rows[] = ['', ''];
-                        $rows[] = ['## ' . $section['title'], ''];
-                        if ($section['header']) {
-                            $rows[] = $section['header'];
-                        }
-                        foreach ($section['rows'] as $r) {
-                            $rows[] = array_pad(array_values($r), count($header), '');
-                        }
-                    }
-                    $maxCols = max(array_map('count', array_merge([$header], $rows)));
-                    $header = array_pad($header, $maxCols, '');
-                    SpreadsheetWriter::write($path, $header, $rows);
-                    $contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-                    break;
-
-                case 'json':
-                    JsonWriter::write($path, [
-                        'title' => $title,
-                        'meta'  => $meta,
-                        'sections' => $sections,
-                    ]);
-                    $contentType = 'application/json';
-                    break;
-
-                case 'pdf':
-                    PdfWriter::writeReport($path, $title, $meta, $sections, null);
-                    $contentType = 'application/pdf';
-                    break;
-
-                default: // csv
-                    $csvSections = array_map(fn ($s) => ['title' => $s['title'], 'header' => $s['header'], 'rows' => $s['rows']], $sections);
-                    array_unshift($csvSections, ['title' => $title, 'header' => array_keys($meta), 'rows' => [array_values($meta)]]);
-                    CsvWriter::writeSections($path, $csvSections);
-                    $contentType = 'text/csv';
-                    break;
-            }
+            $contentType = $this->writeExportFile($format, $path, $title, $meta, $sections);
         } catch (\RuntimeException $e) {
             return $this->apiError($e->getMessage(), null, 422);
         }

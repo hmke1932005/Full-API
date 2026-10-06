@@ -78,7 +78,19 @@ class ExamResultsHubApiController extends ExamResultsExportApiController
             return $err;
         }
         $format = $this->resolvedFormat($request);
-        $list = $this->buildStudentRows($staffId, trim((string) $request->input('q', '')), (int) $request->input('exam_id', 0));
+        [$title, $meta, $sections] = $this->studentsPayload($staffId, trim((string) $request->input('q', '')), (int) $request->input('exam_id', 0));
+
+        return $this->respondExport($request, $format, 'students_results', $title, $meta, $sections, [
+            'action'       => 'academic_staff.exam_system.students_results_exported',
+            'subject_type' => 'AcademicStaff',
+            'subject_id'   => $staffId,
+        ]);
+    }
+
+    /** @return array{0:string,1:array<string,string>,2:array} */
+    protected function studentsPayload(int $staffId, string $q = '', int $examId = 0): array
+    {
+        $list = $this->buildStudentRows($staffId, $q, $examId);
 
         $header = ['Student', 'Student Number', 'Email', 'Exam', 'Attempts', 'Best Score', 'Max Marks', 'Best %', 'Status', 'Last Submission'];
         $rows = [];
@@ -95,18 +107,13 @@ class ExamResultsHubApiController extends ExamResultsExportApiController
             'Generated At' => date('Y-m-d H:i:s'),
         ];
 
-        return $this->respondExport($request, $format, 'students_results', 'Students Results', $meta,
-            [['title' => 'Students Results', 'header' => $header, 'rows' => $rows]], [
-                'action'       => 'academic_staff.exam_system.students_results_exported',
-                'subject_type' => 'AcademicStaff',
-                'subject_id'   => $staffId,
-            ]);
+        return ['Students Results', $meta, [['title' => 'Students Results', 'header' => $header, 'rows' => $rows]]];
     }
 
     // ---------------------------------------------------------------------
 
     /** @return array{0:?int,1:mixed} */
-    private function resolveStaffId(Request $request): array
+    protected function resolveStaffId(Request $request): array
     {
         if ($request->attributes->get('uip_role') !== 'academic_staff') {
             return [null, $this->apiError('Only academic staff accounts can view exam results.', null, 403)];
@@ -140,7 +147,7 @@ class ExamResultsHubApiController extends ExamResultsExportApiController
         return $by;
     }
 
-    private function buildStudentRows(int $staffId, string $q, int $examId): array
+    protected function buildStudentRows(int $staffId, string $q, int $examId): array
     {
         $examQuery = DB::table('exams')->where('created_by_academic_staff_id', $staffId);
         if ($examId > 0) {
