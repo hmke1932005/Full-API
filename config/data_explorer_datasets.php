@@ -11,8 +11,8 @@
  * from any preview/export, and the declared relationships to other
  * datasets in the catalog (for the "Data Relationships" tab).
  *
- * Every `table` value here MUST be one of the six tables already
- * reachable via report_templates.data_source (migration 042) — this is
+ * Every `table` value here MUST be deliberately allow-listed (the original
+ * six plus the exam platform, staff, students and courses tables) — this is
  * a read-only exploration surface, not a generic "browse any table"
  * tool, so the allow-list is deliberately closed.
  * @package UIP
@@ -131,6 +131,246 @@ return [
         'relationships' => [
             ['column' => 'user_id', 'references' => 'users', 'references_column' => 'id',
                 'label' => ['en' => 'User', 'ar' => 'المستخدم']],
+        ],
+    ],
+
+    // ------------------------------------------------------------------
+    // Exam platform + academic staff datasets (read-only analytics).
+    // Answer keys, access passwords, session tokens/IPs and password hashes
+    // are listed in sensitive_columns and are blocked everywhere.
+    // ------------------------------------------------------------------
+
+    'exams' => [
+        'table' => 'exams',
+        'label' => ['en' => 'Exams', 'ar' => 'الامتحانات'],
+        'description' => [
+            'en' => 'Every exam: type, schedule, duration, marks, passing score, status and security settings.',
+            'ar' => 'كل الامتحانات: النوع، الموعد، المدة، الدرجات، درجة النجاح، الحالة وإعدادات الأمان.',
+        ],
+        'icon' => 'note',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => ['access_password'],
+        'relationships' => [
+            ['column' => 'created_by_academic_staff_id', 'references' => 'academic_staff', 'references_column' => 'id',
+                'label' => ['en' => 'Created by (doctor)', 'ar' => 'أنشأه الدكتور']],
+            ['column' => 'course_id', 'references' => 'courses', 'references_column' => 'id',
+                'label' => ['en' => 'Course', 'ar' => 'المقرر']],
+            ['column' => 'id', 'references' => 'exam_attempts', 'references_column' => 'exam_id',
+                'label' => ['en' => 'Student attempts', 'ar' => 'محاولات الطلاب']],
+            ['column' => 'id', 'references' => 'exam_security_events', 'references_column' => 'exam_id',
+                'label' => ['en' => 'Security events', 'ar' => 'الأحداث الأمنية']],
+            ['column' => 'id', 'references' => 'exam_grade_appeals', 'references_column' => 'exam_id',
+                'label' => ['en' => 'Grade appeals', 'ar' => 'تظلمات الدرجات']],
+        ],
+    ],
+
+    'exam_attempts' => [
+        'table' => 'exam_attempts',
+        'label' => ['en' => 'Exam Attempts', 'ar' => 'محاولات الامتحانات'],
+        'description' => [
+            'en' => 'Each student attempt: status, score, percentage, timing, lateness and violation counts.',
+            'ar' => 'كل محاولة طالب: الحالة، الدرجة، النسبة، التوقيت، التأخير وعدد المخالفات.',
+        ],
+        'icon' => 'award',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => ['session_token_hash', 'session_ip', 'session_user_agent', 'session_device_id'],
+        'relationships' => [
+            ['column' => 'exam_id', 'references' => 'exams', 'references_column' => 'id',
+                'label' => ['en' => 'Exam', 'ar' => 'الامتحان']],
+            ['column' => 'student_id', 'references' => 'students', 'references_column' => 'id',
+                'label' => ['en' => 'Student', 'ar' => 'الطالب']],
+            ['column' => 'id', 'references' => 'exam_grades', 'references_column' => 'exam_attempt_id',
+                'label' => ['en' => 'Per-question grades', 'ar' => 'درجات الأسئلة']],
+        ],
+    ],
+
+    'exam_grades' => [
+        'table' => 'exam_grades',
+        'label' => ['en' => 'Exam Grades', 'ar' => 'درجات الأسئلة'],
+        'description' => [
+            'en' => 'Per-question marks awarded (automatic, instructor or AI) with feedback and grader source.',
+            'ar' => 'الدرجة الممنوحة لكل سؤال (تلقائي أو دكتور أو ذكاء اصطناعي) مع الملاحظات ومصدر التصحيح.',
+        ],
+        'icon' => 'check-circle',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'exam_attempt_id', 'references' => 'exam_attempts', 'references_column' => 'id',
+                'label' => ['en' => 'Attempt', 'ar' => 'المحاولة']],
+            ['column' => 'graded_by_academic_staff_id', 'references' => 'academic_staff', 'references_column' => 'id',
+                'label' => ['en' => 'Graded by (doctor)', 'ar' => 'صححه الدكتور']],
+        ],
+    ],
+
+    'exam_security_events' => [
+        'table' => 'exam_security_events',
+        'label' => ['en' => 'Exam Security Events', 'ar' => 'الأحداث الأمنية للامتحانات'],
+        'description' => [
+            'en' => 'Proctoring and secure-mode events (tab switches, violations) recorded during attempts.',
+            'ar' => 'أحداث المراقبة والوضع الآمن (تبديل التبويب، المخالفات) أثناء المحاولات.',
+        ],
+        'icon' => 'shield',
+        'primary_key' => 'id',
+        'default_sort' => 'occurred_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'exam_attempt_id', 'references' => 'exam_attempts', 'references_column' => 'id',
+                'label' => ['en' => 'Attempt', 'ar' => 'المحاولة']],
+            ['column' => 'exam_id', 'references' => 'exams', 'references_column' => 'id',
+                'label' => ['en' => 'Exam', 'ar' => 'الامتحان']],
+            ['column' => 'student_id', 'references' => 'students', 'references_column' => 'id',
+                'label' => ['en' => 'Student', 'ar' => 'الطالب']],
+        ],
+    ],
+
+    'exam_similarity_flags' => [
+        'table' => 'exam_similarity_flags',
+        'label' => ['en' => 'Similarity Flags', 'ar' => 'تنبيهات التشابه'],
+        'description' => [
+            'en' => 'Answer-similarity (possible cheating) flags between two attempts, with review status.',
+            'ar' => 'تنبيهات تشابه الإجابات (غش محتمل) بين محاولتين مع حالة المراجعة.',
+        ],
+        'icon' => 'alert-triangle',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'exam_id', 'references' => 'exams', 'references_column' => 'id',
+                'label' => ['en' => 'Exam', 'ar' => 'الامتحان']],
+            ['column' => 'attempt_a_id', 'references' => 'exam_attempts', 'references_column' => 'id',
+                'label' => ['en' => 'Attempt A', 'ar' => 'المحاولة أ']],
+            ['column' => 'attempt_b_id', 'references' => 'exam_attempts', 'references_column' => 'id',
+                'label' => ['en' => 'Attempt B', 'ar' => 'المحاولة ب']],
+        ],
+    ],
+
+    'exam_grade_appeals' => [
+        'table' => 'exam_grade_appeals',
+        'label' => ['en' => 'Grade Appeals', 'ar' => 'تظلمات الدرجات'],
+        'description' => [
+            'en' => 'Student grade appeals with status, response and score before/after.',
+            'ar' => 'تظلمات الطلاب على الدرجات مع الحالة والرد والدرجة قبل/بعد.',
+        ],
+        'icon' => 'message-square',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'exam_id', 'references' => 'exams', 'references_column' => 'id',
+                'label' => ['en' => 'Exam', 'ar' => 'الامتحان']],
+            ['column' => 'exam_attempt_id', 'references' => 'exam_attempts', 'references_column' => 'id',
+                'label' => ['en' => 'Attempt', 'ar' => 'المحاولة']],
+            ['column' => 'student_id', 'references' => 'students', 'references_column' => 'id',
+                'label' => ['en' => 'Student', 'ar' => 'الطالب']],
+        ],
+    ],
+
+    'questions' => [
+        'table' => 'questions',
+        'label' => ['en' => 'Questions', 'ar' => 'الأسئلة'],
+        'description' => [
+            'en' => 'Question-bank questions: type, difficulty, topic, marks and status (answer keys hidden).',
+            'ar' => 'أسئلة بنوك الأسئلة: النوع، الصعوبة، الموضوع، الدرجة والحالة (مفاتيح الإجابة مخفية).',
+        ],
+        'icon' => 'file',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => ['correct_answer', 'accepted_answers', 'model_answer', 'expected_concepts', 'grading_instructions'],
+        'relationships' => [
+            ['column' => 'question_bank_id', 'references' => 'question_banks', 'references_column' => 'id',
+                'label' => ['en' => 'Question bank', 'ar' => 'بنك الأسئلة']],
+            ['column' => 'created_by_academic_staff_id', 'references' => 'academic_staff', 'references_column' => 'id',
+                'label' => ['en' => 'Author (doctor)', 'ar' => 'كاتب السؤال']],
+        ],
+    ],
+
+    'question_banks' => [
+        'table' => 'question_banks',
+        'label' => ['en' => 'Question Banks', 'ar' => 'بنوك الأسئلة'],
+        'description' => [
+            'en' => 'Question banks by university, faculty, department and owner.',
+            'ar' => 'بنوك الأسئلة حسب الجامعة والكلية والقسم والمالك.',
+        ],
+        'icon' => 'folder',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'created_by_academic_staff_id', 'references' => 'academic_staff', 'references_column' => 'id',
+                'label' => ['en' => 'Owner (doctor)', 'ar' => 'المالك (الدكتور)']],
+            ['column' => 'id', 'references' => 'questions', 'references_column' => 'question_bank_id',
+                'label' => ['en' => 'Questions', 'ar' => 'الأسئلة']],
+        ],
+    ],
+
+    'academic_staff' => [
+        'table' => 'academic_staff',
+        'label' => ['en' => 'Academic Staff (Doctors)', 'ar' => 'أعضاء هيئة التدريس (الدكاترة)'],
+        'description' => [
+            'en' => 'Doctors and teaching staff: university, faculty, department, rank and status.',
+            'ar' => 'الدكاترة وهيئة التدريس: الجامعة والكلية والقسم والرتبة والحالة.',
+        ],
+        'icon' => 'briefcase',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => ['password_encrypted'],
+        'relationships' => [
+            ['column' => 'user_id', 'references' => 'users', 'references_column' => 'id',
+                'label' => ['en' => 'User account', 'ar' => 'حساب المستخدم']],
+            ['column' => 'id', 'references' => 'exams', 'references_column' => 'created_by_academic_staff_id',
+                'label' => ['en' => 'Exams created', 'ar' => 'الامتحانات المنشأة']],
+            ['column' => 'id', 'references' => 'question_banks', 'references_column' => 'created_by_academic_staff_id',
+                'label' => ['en' => 'Question banks', 'ar' => 'بنوك الأسئلة']],
+        ],
+    ],
+
+    'students' => [
+        'table' => 'students',
+        'label' => ['en' => 'Students', 'ar' => 'الطلاب'],
+        'description' => [
+            'en' => 'Student profiles: university, faculty, department, academic year, GPA and status.',
+            'ar' => 'ملفات الطلاب: الجامعة والكلية والقسم والسنة الدراسية والمعدل.',
+        ],
+        'icon' => 'users',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'user_id', 'references' => 'users', 'references_column' => 'id',
+                'label' => ['en' => 'User account', 'ar' => 'حساب المستخدم']],
+            ['column' => 'id', 'references' => 'exam_attempts', 'references_column' => 'student_id',
+                'label' => ['en' => 'Exam attempts', 'ar' => 'محاولات الامتحانات']],
+        ],
+    ],
+
+    'courses' => [
+        'table' => 'courses',
+        'label' => ['en' => 'Courses', 'ar' => 'المقررات'],
+        'description' => [
+            'en' => 'Courses by university, faculty and department, linked to exams.',
+            'ar' => 'المقررات حسب الجامعة والكلية والقسم، مرتبطة بالامتحانات.',
+        ],
+        'icon' => 'layers',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'id', 'references' => 'exams', 'references_column' => 'course_id',
+                'label' => ['en' => 'Exams of this course', 'ar' => 'امتحانات هذا المقرر']],
         ],
     ],
 
