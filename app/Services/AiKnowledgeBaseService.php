@@ -361,6 +361,7 @@ class AiKnowledgeBaseService
             '/data-analysis/dashboard' => 'Data Analysis Dashboard (لوحة التحكم).',
             '/data-analysis/forecasting' => 'Forecasting (التنبؤات).',
             '/data-analysis/data-quality' => 'Data Quality (جودة البيانات).',
+            '/data-analysis/exam-analytics' => 'Exam Analytics (تحليلات الامتحانات): platform-wide exam, grade and student performance analysis.',
             '/data-analysis/advanced-analytics' => 'Advanced Analytics (التحليلات المتقدمة).',
             '/data-analysis/segments' => 'Data Segments (تقسيمات البيانات).',
             '/data-analysis/exports' => 'Exports (التصدير).',

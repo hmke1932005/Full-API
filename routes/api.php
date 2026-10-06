@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\DataAnalysisAdvancedAnalyticsApiController;
 use App\Http\Controllers\Api\DataAnalysisAiInsightsApiController;
 use App\Http\Controllers\Api\DataAnalysisDashboardApiController;
 use App\Http\Controllers\Api\DataAnalysisDataQualityApiController;
+use App\Http\Controllers\Api\DataAnalysisExamsApiController;
 use App\Http\Controllers\Api\DataAnalysisExplorerApiController;
 use App\Http\Controllers\Api\DataAnalysisExportsApiController;
 use App\Http\Controllers\Api\DataAnalysisForecastingApiController;
@@ -1124,6 +1125,14 @@ Route::prefix('v1')->group(function () {
     // explorer, query builder, ...) جاي مع بنودها الفرعية.
     Route::prefix('data-analysis')->middleware('uip.auth')->group(function () {
         Route::get('/dashboard', [DataAnalysisDashboardApiController::class, 'index']);
+
+        // تحليلات الامتحانات والدرجات (قراءة بس) — الروتس الحرفية قبل أي {id}.
+        Route::prefix('exams')->group(function () {
+            Route::get('/filters', [DataAnalysisExamsApiController::class, 'filters']);
+            Route::get('/overview', [DataAnalysisExamsApiController::class, 'overview']);
+            Route::get('/students', [DataAnalysisExamsApiController::class, 'students']);
+            Route::get('/exam/{id}', [DataAnalysisExamsApiController::class, 'showExam'])->where('id', '[0-9]+');
+        });
 
         // بند 24 batch 1 — Saved Dashboards. catalog لازم يتسجل قبل
         // {id} عشان "catalog" متتاخدش على إنها id.
