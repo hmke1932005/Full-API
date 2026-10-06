@@ -253,6 +253,16 @@ Route::prefix('v1')->group(function () {
         Route::patch('/{id}/password', [AcademicStaffApiController::class, 'setPassword'])->where('id', '[0-9]+');
     });
 
+    // مشاريع الطلبة المرتبطة بالدكتور/المعيد (اطلاع + approve/reject/request-changes + تقييم).
+    Route::prefix('academic-staff/projects')->middleware('uip.auth')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'index']);
+        Route::get('/{id}', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'show']);
+        Route::post('/{id}/approve', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'approve']);
+        Route::post('/{id}/reject', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'reject']);
+        Route::post('/{id}/request-changes', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'requestChanges']);
+        Route::post('/{id}/grade', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'saveGrade']);
+    });
+
     // إعدادات حساب عضو هيئة التدريس اللوجن — /api/v1/academic-staff/settings/*.
     // كان ده الـ ACCOUNT_ITEM_OVERRIDES.academic_staff (settings: {built:false})
     // في navConfig.js؛ نفس نمط student/settings و faculty/settings فوق

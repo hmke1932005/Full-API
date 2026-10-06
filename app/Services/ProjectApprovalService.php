@@ -299,6 +299,61 @@ class ProjectApprovalService
         return $ok;
     }
 
+    // -- Academic staff (doctor / TA): قرار على مشروع داخل نطاقهم ------------
+
+    /**
+     * قرار عضو هيئة تدريس على مشروع 'submitted'. الفحص إن المشروع داخل نطاقه
+     * بيتم قبل النداء (AcademicStaffProjectService). نفس سلوك اعتماد الجامعة
+     * (published / rejected / draft + إشعار الطالب + سجل project_approvals).
+     * @param string $action approve|reject|request_changes
+     */
+    public function decideAsStaff(string $uuid, $reviewerId, string $action, ?string $comments, bool $aiAcknowledged = false): bool
+    {
+        $project = $this->projects->findByUuid($uuid);
+        if (!$project || $project->status !== 'submitted') {
+            return false;
+        }
+
+        $snapshot = $this->aiOutputSnapshot((int) $project->id);
+        if ($snapshot !== null && !$aiAcknowledged) {
+            return false;
+        }
+
+        [$newStatus, $decision, $type, $extra] = match ($action) {
+            'approve'         => ['published', 'approved', 'project_approved', ['published_at' => now()->toDateTimeString()]],
+            'reject'          => ['rejected', 'rejected', 'project_rejected', []],
+            'request_changes' => ['draft', 'changes_requested', 'project_changes_requested', []],
+            default           => [null, null, null, []],
+        };
+        if ($newStatus === null) {
+            return false;
+        }
+
+        $ok = $this->projects->updateStatusByUuid($uuid, $newStatus, $extra);
+        if (!$ok) {
+            return false;
+        }
+
+        $this->recordDecision((int) $project->id, $reviewerId, $decision, $comments, $aiAcknowledged, $snapshot);
+        Log::info('Project decision by academic staff', ['project_id' => $project->id, 'action' => $action]);
+
+        $title = $project->title_en ?: $project->title_ar;
+        $headline = match ($action) {
+            'approve' => "\"{$title}\" was approved and published",
+            'reject'  => "\"{$title}\" was rejected",
+            default   => "Changes requested on \"{$title}\"",
+        };
+        $this->notifications->notify(
+            $project->owner_id,
+            $type,
+            $headline,
+            $comments,
+            '/student/projects/' . $project->uuid . ($action === 'request_changes' ? '/edit' : '')
+        );
+
+        return true;
+    }
+
     private function recordDecision(int $projectId, $reviewerId, string $decision, ?string $comments, bool $aiAcknowledged = false, ?array $aiSnapshot = null): void
     {
         ProjectApproval::create([
