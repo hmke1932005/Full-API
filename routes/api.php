@@ -91,6 +91,7 @@ use App\Http\Controllers\Api\ExamAttemptApiController;
 use App\Http\Controllers\Api\ExamGradingApiController;
 use App\Http\Controllers\Api\ExamIntegrityApiController;
 use App\Http\Controllers\Api\ExamResultsExportApiController;
+use App\Http\Controllers\Api\ExamResultsHubApiController;
 use App\Http\Controllers\Api\ExamSecurityApiController;
 use App\Http\Controllers\Api\ExamSystemApiController;
 use App\Http\Controllers\Api\StudentExamApiController;
@@ -447,6 +448,12 @@ Route::prefix('v1')->group(function () {
         // Round 8 (Phase 43 — Export). Results export لامتحان واحد؛
         // نفس ownership check بتاع باقي exams/{id}/* (findOwnedExam()).
         Route::get('exams/{id}/results/export', [ExamResultsExportApiController::class, 'exportExamResults'])->where('id', '[0-9]+');
+
+        // نتائج عضو هيئة التدريس على مستوى كل امتحاناته (سايدبار: النتائج / نتائج الطلبة / التقارير).
+        // مسارات ثابتة (results/*) فمفيش تعارض مع exams/{id}.
+        Route::get('results/overview', [ExamResultsHubApiController::class, 'overview']);
+        Route::get('results/students', [ExamResultsHubApiController::class, 'students']);
+        Route::get('results/students/export', [ExamResultsHubApiController::class, 'exportStudents']);
 
         // كشف التشابه بين إجابات المقالي (سطح المدرس، ownership بتاع findOwnedExam). إشارات للمراجعة البشرية بس.
         Route::get('exams/{id}/similarity', [ExamSimilarityApiController::class, 'index'])->where('id', '[0-9]+');

@@ -33,10 +33,10 @@ class ExamResultsExportApiController extends Controller
     private const FORMATS = ['csv', 'xlsx', 'pdf', 'json'];
 
     public function __construct(
-        private ExamSystemService $examSystem,
-        private ExamAttemptRepository $attempts,
-        private AcademicStaffRepository $staffRepo,
-        private AuditLogService $auditLog
+        protected ExamSystemService $examSystem,
+        protected ExamAttemptRepository $attempts,
+        protected AcademicStaffRepository $staffRepo,
+        protected AuditLogService $auditLog
     ) {
     }
 
@@ -91,7 +91,7 @@ class ExamResultsExportApiController extends Controller
         ]);
     }
 
-    private function resolvedFormat(Request $request): string
+    protected function resolvedFormat(Request $request): string
     {
         $format = strtolower((string) $request->input('format', 'csv'));
         return in_array($format, self::FORMATS, true) ? $format : 'csv';
@@ -102,7 +102,7 @@ class ExamResultsExportApiController extends Controller
      * @param array<int,array{title:string,header:string[],rows:array<int,array<int,mixed>>}> $sections
      * @param array{action:string,subject_type:string,subject_id:mixed} $audit
      */
-    private function respondExport(Request $request, string $format, string $filename, string $title, array $meta, array $sections, array $audit)
+    protected function respondExport(Request $request, string $format, string $filename, string $title, array $meta, array $sections, array $audit)
     {
         $tmpDir = storage_path('app/tmp');
         if (!is_dir($tmpDir)) {
