@@ -195,14 +195,18 @@ class ReportExportWriter
      */
     private static function toPdfBest(array $header, array $rows, string $fullPath, ?string $title): void
     {
-        if (class_exists(\Mpdf\Mpdf::class)) {
+        if (!class_exists(\Mpdf\Mpdf::class)) {
+            @error_log('[PdfWriter] mPDF class not found (vendor/mpdf missing) - using basic PDF writer');
+        } else {
             try {
                 \App\Services\Export\PdfWriter::writeTable($fullPath, $title ?: 'Report', $header, $rows);
                 if (is_file($fullPath) && str_starts_with((string) file_get_contents($fullPath, false, null, 0, 5), '%PDF')) {
+                    @error_log('[PdfWriter] mPDF OK: ' . ($title ?: 'Report'));
                     return;
                 }
-            } catch (\Throwable) {
-                // نكمّل بالكاتب البسيط
+                @error_log('[PdfWriter] mPDF produced no valid PDF - using basic PDF writer');
+            } catch (\Throwable $e) {
+                @error_log('[PdfWriter] mPDF failed in ReportExportWriter: ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
             }
         }
         self::toPdf($header, $rows, $fullPath);
