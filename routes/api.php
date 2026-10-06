@@ -1505,8 +1505,6 @@ Route::prefix('v1')->group(function () {
         Route::get('/projects/{slug}', [PublicApiController::class, 'projectShow']);
         // تواصل مع فريق المشروع — الوحيد في المجموعة دي اللي محتاج تسجيل دخول.
         Route::post('/projects/{slug}/contact', [PublicApiController::class, 'contact'])->middleware('uip.auth');
-        // فورم تواصل عام (من غير تسجيل) — بيبعت إيميل لكل الفريق. throttle ضد السبام.
-        Route::post('/projects/{slug}/contact-team', [PublicApiController::class, 'contactTeam'])->middleware('throttle:5,10');
 
         // -- Public portfolio share link (/p/{uuid} في الفرونت، من غير
         // auth خالص) — بيعيد استخدام PortfoliosApiController::show نفسها
