@@ -31,5 +31,10 @@ return [
     // "آخر تحديث" ظاهر في /privacy-policy — بيتظبط يدويًا لما نص السياسة
     // فعلًا يتغيّر، مش date('Y-m-d') آلي في كل request (ده كان هيدّعي إن
     // المستند اتغيّر النهاردة حتى لو مالمسهوش حد).
+    // إيميلات/لينكات الطلبة والدكاترة في صفحة المشروع العامة بتظهر للضيوف
+    // كمان (قرار صاحب المنصة). الافتراضي true؛ لو عايز ترجّعها للمسجّلين بس
+    // ضيف PROJECT_CONTACTS_PUBLIC=false في الـ env.
+    'project_contacts_public' => (bool) env('PROJECT_CONTACTS_PUBLIC', true),
+
     'privacy_policy_updated_at' => env('PRIVACY_POLICY_UPDATED_AT', '2026-08-13'),
 ];
