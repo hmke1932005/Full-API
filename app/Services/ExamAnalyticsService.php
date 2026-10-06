@@ -77,8 +77,48 @@ class ExamAnalyticsService
             }
         }
 
+        // 10 شرائح × 10% للـ histogram في صفحة التحليلات (100% بتتحسب في آخر شريحة).
+        $bins = array_fill(0, 10, 0);
+        foreach ($percentages as $p) {
+            $bins[min(9, max(0, (int) floor($p / 10)))]++;
+        }
+        $distribution = [];
+        foreach ($bins as $i => $count) {
+            $distribution[] = ['from' => $i * 10, 'to' => ($i + 1) * 10, 'count' => $count];
+        }
+
+        // صف لكل محاولة (غير الملغية) — الفرونت بيفلتر/يرتّب منها جدول الطلاب من غير طلب إضافي.
+        $studentResults = [];
+        foreach ($attemptRows as $r) {
+            if ($r->status === 'cancelled') {
+                continue;
+            }
+            $pct = $r->percentage !== null ? (float) $r->percentage : null;
+            $seconds = ($r->started_at && $r->submitted_at)
+                ? \Carbon\Carbon::parse($r->started_at)->diffInSeconds(\Carbon\Carbon::parse($r->submitted_at))
+                : null;
+            $studentResults[] = [
+                'attempt_id'     => (int) $r->id,
+                'student_id'     => (int) $r->student_id,
+                'full_name'      => $r->full_name,
+                'student_number' => $r->student_number,
+                'attempt_number' => (int) $r->attempt_number,
+                'status'         => $r->status,
+                'score'          => $r->score !== null ? (float) $r->score : null,
+                'percentage'     => $pct,
+                'passed'         => ($r->status === 'graded' && $pct !== null && $passingScore !== null) ? $pct >= $passingScore : null,
+                'time_seconds'   => $seconds,
+                'is_late'        => (bool) ($r->is_late ?? false),
+                'submitted_at'   => $r->submitted_at,
+            ];
+        }
+
         return [
             'exam_id'              => $exam->id,
+            'exam_title'           => $exam->title,
+            'passing_score'        => $passingScore,
+            'score_distribution'   => $distribution,
+            'student_results'      => $studentResults,
             'total_students'       => $totalStudents,
             'total_attempts'       => $totalAttempts,
             'started_count'        => $totalAttempts,
