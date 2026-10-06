@@ -228,6 +228,46 @@ class DataAnalysisExportsApiController extends Controller
         return $addresses;
     }
 
+
+    /**
+     * GET /api/v1/data-analysis/exports/{id}/preview — أول PREVIEW_ROWS صف
+     * من بيانات التصدير (للمعاينة في الموقع قبل التحميل). بيتبني من نفس
+     * buildRows بتاع التصدير نفسه، فمعتمدش على قراءة CSV/XLSX/PDF.
+     */
+    private const PREVIEW_ROWS = 200;
+
+    public function preview(Request $request, $id): JsonResponse
+    {
+        if (!$this->isDataAnalyst($request)) {
+            return $this->apiError('Only Data Analysis Portal staff can preview an export.', null, 403);
+        }
+
+        $userId = $request->attributes->get('uip_user_id');
+        $export = $this->exports->findOwned($id, $userId);
+        if (!$export) {
+            return $this->apiError('Export not found.', null, 404);
+        }
+
+        $type = (string) $export->export_type;
+        if (!in_array($type, self::ALLOWED_TYPES, true)) {
+            return $this->apiError('Unknown export type.', null, 422);
+        }
+
+        [$header, $rows] = $this->buildRows($type);
+        $total = count($rows);
+
+        return $this->apiSuccess([
+            'id'        => $export->id,
+            'type'      => $type,
+            'label'     => self::TYPE_LABELS[$type] ?? $type,
+            'format'    => $export->format,
+            'header'    => array_values($header),
+            'rows'      => array_map('array_values', array_slice($rows, 0, self::PREVIEW_ROWS)),
+            'total'     => $total,
+            'truncated' => $total > self::PREVIEW_ROWS,
+        ], 'Preview retrieved successfully.');
+    }
+
     /** DELETE /api/v1/data-analysis/exports/{id} */
     public function destroy(Request $request, $id): JsonResponse
     {

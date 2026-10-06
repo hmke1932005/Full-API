@@ -1132,6 +1132,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/schedules/{id}/run-now', [DataAnalysisExportsApiController::class, 'scheduleRunNow']);
             Route::delete('/schedules/{id}', [DataAnalysisExportsApiController::class, 'scheduleDelete']);
 
+            Route::get('/{id}/preview', [DataAnalysisExportsApiController::class, 'preview']);
             Route::delete('/{id}', [DataAnalysisExportsApiController::class, 'destroy']);
         });
 
