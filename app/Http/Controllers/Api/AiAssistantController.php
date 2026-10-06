@@ -71,6 +71,7 @@ class AiAssistantController extends Controller
         return $this->apiSuccess([
             'available' => $this->assistant->isAvailable(),
             'portal'    => $this->portalForRole($this->role($request)),
+            'data_access' => $this->assistant->toolsEnabledFor($this->role($request)),
         ], 'Status retrieved successfully.');
     }
 
@@ -347,7 +348,7 @@ class AiAssistantController extends Controller
         }
 
         return $this->sseResponse(function () use ($userId, $conversationId, $prepared, $context) {
-            $this->emitSseTurn($userId, $conversationId, $prepared['assistant_message_id'], $prepared['prompt_messages'], $context['portal'] ?? 'general', $prepared['user_message']);
+            $this->emitSseTurn($userId, $conversationId, $prepared['assistant_message_id'], $prepared['prompt_messages'], $context, $prepared['user_message']);
         });
     }
 
@@ -371,7 +372,7 @@ class AiAssistantController extends Controller
         }
 
         return $this->sseResponse(function () use ($userId, $conversationId, $prepared, $context) {
-            $this->emitSseTurn($userId, $conversationId, $prepared['assistant_message_id'], $prepared['prompt_messages'], $context['portal'] ?? 'general', null);
+            $this->emitSseTurn($userId, $conversationId, $prepared['assistant_message_id'], $prepared['prompt_messages'], $context, null);
         });
     }
 
@@ -427,23 +428,32 @@ class AiAssistantController extends Controller
         return array_map(fn (array $group) => implode('', $group), array_chunk($words, $wordsPerChunk * 2));
     }
 
-    private function emitSseTurn(int $userId, int $conversationId, int $assistantMessageId, array $promptMessages, string $portal, ?array $userMessage): void
+    private function emitSseTurn(int $userId, int $conversationId, int $assistantMessageId, array $promptMessages, array $context, ?array $userMessage): void
     {
-        if ($userMessage !== null) {
-            echo 'data: ' . json_encode(['type' => 'user_message', 'message' => $userMessage], JSON_UNESCAPED_UNICODE) . "\n\n";
+        $portal = (string) ($context['portal'] ?? 'general');
+        $send = function (array $payload): void {
+            echo 'data: ' . json_encode($payload, JSON_UNESCAPED_UNICODE) . "\n\n";
             @flush();
+        };
+
+        if ($userMessage !== null) {
+            $send(['type' => 'user_message', 'message' => $userMessage]);
         }
 
         try {
-            $fullText = $this->assistant->streamAssistantReply($userId, $conversationId, $assistantMessageId, $promptMessages, $portal, function (string $delta) {
-                echo 'data: ' . json_encode(['type' => 'token', 'delta' => $delta], JSON_UNESCAPED_UNICODE) . "\n\n";
-                @flush();
-            });
-            echo 'data: ' . json_encode(['type' => 'done', 'message_id' => $assistantMessageId, 'content' => $fullText], JSON_UNESCAPED_UNICODE) . "\n\n";
+            $fullText = $this->assistant->streamAssistantReply(
+                $userId, $conversationId, $assistantMessageId, $promptMessages, $portal,
+                fn (string $delta) => $send(['type' => 'token', 'delta' => $delta]),
+                // الدور من التوكن (buildContext) — مش من body الطلب.
+                $context['role'] ?? null,
+                // tool = "جاري قراءة بيانات…" / reset = امسح نص ما قبل الأداة. فرونت قديم بيتجاهلهم.
+                fn (string $type, array $payload) => $send(['type' => $type] + $payload),
+                (string) ($context['locale'] ?? 'ar')
+            );
+            $send(['type' => 'done', 'message_id' => $assistantMessageId, 'content' => $fullText]);
         } catch (\Throwable $e) {
-            echo 'data: ' . json_encode(['type' => 'error', 'message_id' => $assistantMessageId, 'message' => $e->getMessage()], JSON_UNESCAPED_UNICODE) . "\n\n";
+            $send(['type' => 'error', 'message_id' => $assistantMessageId, 'message' => $e->getMessage()]);
         }
-        @flush();
     }
 
     /**

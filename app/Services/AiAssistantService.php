@@ -6,6 +6,8 @@ use App\Repositories\AiAssistantRepository;
 use App\Repositories\FaqIntentRepository;
 use App\Repositories\SettingRepository;
 use App\Services\Ai\AIClient;
+use App\Services\Ai\AiPlatformTools;
+use App\Services\Ai\AiToolsUnsupportedException;
 use App\Services\Concerns\ConfiguresAIClient;
 use App\Services\Faq\FaqResolverService;
 use Illuminate\Support\Facades\Log;
@@ -31,6 +33,10 @@ class AiAssistantService
 {
     use ConfiguresAIClient;
 
+    private const MAX_TOOL_ROUNDS = 4;
+    private const MAX_CALLS_PER_ROUND = 5;
+    private const MAX_CALLS_PER_TURN = 10;
+
     private AIClient $client;
 
     public function __construct(
@@ -41,7 +47,8 @@ class AiAssistantService
         private AuditLogService $auditLog,
         private FaqResolverService $faqResolver,
         private FaqIntentRepository $faqRepo,
-        private AiUserContextService $userContext
+        private AiUserContextService $userContext,
+        private AiPlatformTools $tools
     ) {
         $this->client = $client;
         $this->applySettingsOverrides($this->client, $this->settings);
@@ -50,6 +57,15 @@ class AiAssistantService
     public function isAvailable(): bool
     {
         return $this->client->isConfigured();
+    }
+
+    /** المساعد يقدر يقرا بيانات المنصة (tools) لدور اليوزر ده؟ */
+    public function toolsEnabledFor(?string $role): bool
+    {
+        return $role !== null && $role !== ''
+            && $this->client->isConfigured()
+            && $this->adminSettings()['tools_enabled']
+            && $this->tools->namesFor($role) !== [];
     }
 
     // -- Admin AI Controls ---------------------------------------------------
@@ -68,6 +84,7 @@ class AiAssistantService
             'rate_limit_per_min'  => (int) $get('rate_limit_per_min', '15'),
             'logging_enabled'     => $get('logging_enabled', '1') === '1',
             'portal_prompts'      => json_decode((string) $get('portal_prompts', '{}'), true) ?: [],
+            'tools_enabled'       => $get('tools_enabled', '1') !== '0',
         ];
     }
 
@@ -96,6 +113,9 @@ class AiAssistantService
         }
         if (isset($data['logging_enabled'])) {
             $set('logging_enabled', !empty($data['logging_enabled']) ? '1' : '0');
+        }
+        if (isset($data['tools_enabled'])) {
+            $set('tools_enabled', !empty($data['tools_enabled']) ? '1' : '0');
         }
         if (isset($data['portal_prompts']) && is_array($data['portal_prompts'])) {
             $set('portal_prompts', json_encode($data['portal_prompts'], JSON_UNESCAPED_UNICODE));
@@ -295,19 +315,21 @@ class AiAssistantService
      * بيرمي (أبدًا مايختلقش رد) عند فشل المزوّد — الكنترولر بيخزن رسالة
      * status='error' ويظهرها لواجهة الشات.
      */
-    public function streamAssistantReply(int $userId, int $conversationId, int $assistantMessageId, array $promptMessages, string $portal, callable $onToken): string
+    public function streamAssistantReply(int $userId, int $conversationId, int $assistantMessageId, array $promptMessages, string $portal, callable $onToken, ?string $role = null, ?callable $onEvent = null, string $locale = 'ar'): string
     {
         $settings = $this->adminSettings();
         $started = microtime(true);
+        $usedTools = [];
 
         try {
-            $fullText = $this->client->streamChat($promptMessages, $settings['temperature'], $settings['max_tokens'], $onToken);
+            $fullText = $this->runModel($userId, $role, $promptMessages, $settings, $onToken, $onEvent, $locale, $usedTools);
 
             $message = $this->repo->findMessage($assistantMessageId);
             $message->fill(['content' => $fullText, 'status' => 'complete', 'answer_source' => 'ai']);
             $message->save();
 
             $this->logCall($userId, $conversationId, $portal, null, null, (int) round((microtime(true) - $started) * 1000), false, null);
+            $this->auditToolUse($userId, $conversationId, $role, $usedTools);
 
             return $fullText;
         } catch (\Throwable $e) {
@@ -318,6 +340,104 @@ class AiAssistantService
             }
             $this->logCall($userId, $conversationId, $portal, null, null, (int) round((microtime(true) - $started) * 1000), true, $e->getMessage());
             throw $e;
+        }
+    }
+
+    /**
+     * بيستريم رد الموديل، ولو طلب أدوات (قراءة بيانات المنصة) بينفّذها على السيرفر
+     * بهوية اليوزر الموثّقة ويرجّع النتايج للموديل لحد الرد النهائي. لو الأدوات
+     * معطّلة/الدور مالوش أدوات/المزوّد مابيدعمهاش → نفس الشات القديم (streamChat).
+     *
+     * @param string[] $usedTools بتتملي بأسماء الأدوات اللي اتنفّذت
+     */
+    private function runModel(int $userId, ?string $role, array $promptMessages, array $settings, callable $onToken, ?callable $onEvent, string $locale, array &$usedTools): string
+    {
+        $defs = $this->toolsEnabledFor($role) ? $this->tools->definitionsFor($role) : [];
+        if (!$defs) {
+            return $this->client->streamChat($promptMessages, $settings['temperature'], $settings['max_tokens'], $onToken);
+        }
+
+        $messages = $promptMessages;
+        $seen = [];
+        $totalCalls = 0;
+
+        for ($round = 0; $round <= self::MAX_TOOL_ROUNDS; $round++) {
+            $lastRound = $round === self::MAX_TOOL_ROUNDS;
+            $streamedChars = 0;
+            $counting = function (string $delta) use ($onToken, &$streamedChars) {
+                $streamedChars += mb_strlen($delta);
+                $onToken($delta);
+            };
+
+            try {
+                $res = $this->client->streamChatWithTools($messages, $defs, $settings['temperature'], $settings['max_tokens'], $counting, $lastRound ? 'none' : 'auto');
+            } catch (AiToolsUnsupportedException $e) {
+                if ($round > 0) {
+                    throw $e;
+                }
+                Log::notice('AI provider rejected tools; falling back to plain chat', ['error' => $e->getMessage()]);
+                return $this->client->streamChat($promptMessages, $settings['temperature'], $settings['max_tokens'], $onToken);
+            }
+
+            if (!$res['tool_calls'] || $lastRound) {
+                if (trim($res['text']) === '') {
+                    throw new \RuntimeException('AI provider returned an empty completion.');
+                }
+                return $res['text'];
+            }
+
+            if ($streamedChars > 0 && $onEvent) {
+                $onEvent('reset', []);
+            }
+
+            $assistantCalls = [];
+            foreach ($res['tool_calls'] as $call) {
+                $assistantCalls[] = [
+                    'id' => $call['id'], 'type' => 'function',
+                    'function' => ['name' => $call['name'], 'arguments' => $call['arguments'] !== '' ? $call['arguments'] : '{}'],
+                ];
+            }
+            $messages[] = ['role' => 'assistant', 'content' => $res['text'], 'tool_calls' => $assistantCalls];
+
+            foreach ($res['tool_calls'] as $i => $call) {
+                $args = json_decode($call['arguments'] !== '' ? $call['arguments'] : '{}', true);
+                $args = is_array($args) ? $args : [];
+                $fingerprint = $call['name'] . ':' . json_encode($args, JSON_UNESCAPED_UNICODE);
+
+                if ($i >= self::MAX_CALLS_PER_ROUND || $totalCalls >= self::MAX_CALLS_PER_TURN) {
+                    $result = ['error' => 'too_many_tool_calls', 'message' => 'Too many tool calls in one turn; answer with what you already have.'];
+                } elseif (isset($seen[$fingerprint])) {
+                    $result = $seen[$fingerprint];
+                } else {
+                    if ($onEvent) {
+                        $onEvent('tool', ['name' => $call['name'], 'label' => $this->tools->label($call['name'], $locale)]);
+                    }
+                    $result = $this->tools->execute($call['name'], $args, $userId, $role);
+                    $seen[$fingerprint] = $result;
+                    $usedTools[] = $call['name'];
+                    $totalCalls++;
+                }
+
+                $json = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+                $messages[] = ['role' => 'tool', 'tool_call_id' => $call['id'], 'content' => $json !== false ? $json : '{"error":"encoding_failed"}'];
+            }
+        }
+
+        throw new \RuntimeException('AI did not produce a final answer.');
+    }
+
+    /** سجل استخدام الأدوات في الـ audit log (أسماء الأدوات فقط). */
+    private function auditToolUse(int $userId, int $conversationId, ?string $role, array $usedTools): void
+    {
+        if (!$usedTools) {
+            return;
+        }
+        try {
+            $this->auditLog->record($userId, 'ai_assistant.tools_used', 'ai_conversation', $conversationId, null, [
+                'role' => $role, 'tools' => array_values(array_unique($usedTools)), 'calls' => count($usedTools),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('AI tool audit failed', ['error' => $e->getMessage()]);
         }
     }
 
@@ -419,18 +539,15 @@ class AiAssistantService
         $started = microtime(true);
 
         try {
-            $result = $this->client->chat($prepared['prompt_messages'], $settings['temperature'], $settings['max_tokens']);
+            $usedTools = [];
+            $text = $this->runModel($userId, $context['role'] ?? null, $prepared['prompt_messages'], $settings, static function (string $delta): void {
+            }, null, (string) ($context['locale'] ?? 'ar'), $usedTools);
             $message = $this->repo->findMessage($prepared['assistant_message_id']);
-            $message->fill([
-                'content'            => $result['text'],
-                'status'             => 'complete',
-                'answer_source'      => 'ai',
-                'prompt_tokens'      => $result['prompt_tokens'],
-                'completion_tokens'  => $result['completion_tokens'],
-            ]);
+            $message->fill(['content' => $text, 'status' => 'complete', 'answer_source' => 'ai']);
             $message->save();
 
-            $this->logCall($userId, $conversationId, $context['portal'] ?? 'general', $result['prompt_tokens'], $result['completion_tokens'], (int) round((microtime(true) - $started) * 1000), false, null);
+            $this->logCall($userId, $conversationId, $context['portal'] ?? 'general', null, null, (int) round((microtime(true) - $started) * 1000), false, null);
+            $this->auditToolUse($userId, $conversationId, $context['role'] ?? null, $usedTools);
 
             return [
                 'user_message'      => $prepared['user_message'],
@@ -556,6 +673,7 @@ class AiAssistantService
     {
         $settings = $this->adminSettings();
         $portal = $context['portal'] ?? 'general';
+        $toolsOn = $this->toolsEnabledFor($context['role'] ?? null);
 
         $identity = 'You are the UIP AI Assistant, designed specifically to help users across the University '
             . 'Innovation Platform (UIP). UIP was founded in 2026 — if asked when UIP or you were created, '
@@ -567,10 +685,13 @@ class AiAssistantService
             $identity,
             $this->knowledge->founderProfile(),
             $this->knowledge->platformOverview(),
-            $this->knowledge->capabilitiesSummary(),
+            $this->knowledge->capabilitiesSummary($toolsOn),
             $this->knowledge->portalFocus($portal),
-            $this->knowledge->behaviorRules(),
+            $this->knowledge->behaviorRules($toolsOn),
         ];
+        if ($toolsOn) {
+            $parts[] = $this->knowledge->toolUseRules();
+        }
 
         // بروفايل اليوزر الموثّق (من الداتابيز عبر AiUserContextService في الكنترولر).
         $profile = is_array($context['profile'] ?? null) ? $context['profile'] : [];
@@ -606,9 +727,9 @@ class AiAssistantService
 
         $parts[] = 'Respond in the same language the user writes in (Arabic or English) unless asked to switch. '
             . 'Use Markdown formatting (headings, lists, tables, fenced code blocks with a language tag) where it '
-            . 'improves clarity. Never claim to have taken a platform action (sending a message, changing a '
-            . 'setting, approving a project) — you can only advise; if a real action is needed, tell the user how '
-            . 'to do it themselves in the relevant portal.';
+            . 'improves clarity. You are READ-ONLY: never claim to have taken a platform action (sending a message, '
+            . 'changing a setting, approving or rejecting a project, grading) — you can only look things up and advise; '
+            . 'if a real action is needed, tell the user which page to use and offer to draft the text for them.';
 
         if ($settings['system_prompt'] !== '') {
             $parts[] = "[Platform administrator instructions]\n" . $settings['system_prompt'];

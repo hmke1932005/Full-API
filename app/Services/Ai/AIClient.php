@@ -242,6 +242,154 @@ class AIClient
         return $fullText;
     }
 
+    /**
+     * streaming + function calling (OpenAI-compatible). بيستريم النص عبر $onToken
+     * وبيجمّع tool_calls المقطّعة ويرجّعها في الآخر. $toolChoice: 'auto' | 'none'.
+     *
+     * @return array{text:string, tool_calls:array<int,array{id:string,name:string,arguments:string}>}
+     * @throws AiToolsUnsupportedException لو المزوّد رفض الـ tools (HTTP 400/404/422)
+     * @throws \RuntimeException عند نقص الإعداد/فشل النقل/ريسبونس غير 2xx
+     */
+    public function streamChatWithTools(array $messages, ?array $tools, float $temperature, ?int $maxTokens, callable $onToken, string $toolChoice = 'auto'): array
+    {
+        if (!$this->isConfigured()) {
+            throw new \RuntimeException('AI client is not configured (feature flag, base URL, API key, or model missing).');
+        }
+        if (!function_exists('curl_init')) {
+            throw new \RuntimeException('cURL extension is not available.');
+        }
+
+        $payload = ['model' => $this->model, 'messages' => $messages, 'temperature' => $temperature, 'stream' => true];
+        if ($maxTokens !== null) {
+            $payload['max_tokens'] = $maxTokens;
+        }
+        if ($tools) {
+            $payload['tools'] = $tools;
+            $payload['tool_choice'] = $toolChoice;
+        }
+
+        $fullText = '';
+        $buffer = '';
+        $rawHead = '';
+        $sawSseLine = false;
+        $calls = [];
+
+        $consumeDelta = function (array $delta) use (&$fullText, &$calls, $onToken): void {
+            $text = $delta['content'] ?? '';
+            if (is_string($text) && $text !== '') {
+                $fullText .= $text;
+                $onToken($text);
+            }
+            foreach ((array) ($delta['tool_calls'] ?? []) as $tc) {
+                if (!is_array($tc)) {
+                    continue;
+                }
+                if (isset($tc['index'])) {
+                    $idx = (int) $tc['index'];
+                } elseif (!empty($tc['id'])) {
+                    $idx = count($calls);
+                } else {
+                    $idx = $calls ? (int) array_key_last($calls) : 0;
+                }
+                $calls[$idx] ??= ['id' => '', 'name' => '', 'arguments' => ''];
+                if (!empty($tc['id'])) {
+                    $calls[$idx]['id'] = (string) $tc['id'];
+                }
+                if (!empty($tc['function']['name'])) {
+                    $calls[$idx]['name'] .= (string) $tc['function']['name'];
+                }
+                if (isset($tc['function']['arguments']) && is_string($tc['function']['arguments'])) {
+                    $calls[$idx]['arguments'] .= $tc['function']['arguments'];
+                }
+            }
+        };
+
+        $ch = curl_init($this->baseUrl . '/chat/completions');
+        curl_setopt_array($ch, [
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                'Authorization: Bearer ' . $this->apiKey,
+                'Accept: text/event-stream',
+            ],
+            CURLOPT_POSTFIELDS     => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE),
+            CURLOPT_TIMEOUT        => max($this->timeout, 90),
+            CURLOPT_CONNECTTIMEOUT => min(5, $this->timeout),
+            CURLOPT_WRITEFUNCTION  => function ($curlHandle, string $chunk) use (&$buffer, &$rawHead, &$sawSseLine, $consumeDelta) {
+                if (strlen($rawHead) < 2000) {
+                    $rawHead .= substr($chunk, 0, 2000 - strlen($rawHead));
+                }
+                $buffer .= $chunk;
+                while (($pos = strpos($buffer, "\n")) !== false) {
+                    $line = rtrim(substr($buffer, 0, $pos), "\r");
+                    $buffer = substr($buffer, $pos + 1);
+                    if ($line === '' || !str_starts_with($line, 'data:')) {
+                        continue;
+                    }
+                    $sawSseLine = true;
+                    $data = trim(substr($line, 5));
+                    if ($data === '[DONE]') {
+                        continue;
+                    }
+                    $decoded = json_decode($data, true);
+                    if (is_array($decoded) && isset($decoded['choices'][0]['delta']) && is_array($decoded['choices'][0]['delta'])) {
+                        $consumeDelta($decoded['choices'][0]['delta']);
+                    }
+                }
+                return strlen($chunk);
+            },
+        ]);
+
+        curl_exec($ch);
+        $errno = curl_errno($ch);
+        $error = curl_error($ch);
+        $httpStatus = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($errno !== 0) {
+            throw new \RuntimeException('AI request failed: ' . $error);
+        }
+        if ($httpStatus < 200 || $httpStatus >= 300) {
+            if ($tools && in_array($httpStatus, [400, 404, 422], true)) {
+                throw new AiToolsUnsupportedException("AI provider returned HTTP {$httpStatus} for a request with tools: " . substr($rawHead, 0, 300));
+            }
+            throw new \RuntimeException("AI provider returned HTTP {$httpStatus} during streaming.");
+        }
+
+        // المزوّد تجاهل stream:true ورجّع JSON واحد.
+        if (!$sawSseLine && trim($buffer) !== '') {
+            $decoded = json_decode($buffer, true);
+            $message = is_array($decoded) ? ($decoded['choices'][0]['message'] ?? null) : null;
+            if (is_array($message)) {
+                $tcs = [];
+                foreach ((array) ($message['tool_calls'] ?? []) as $i => $tc) {
+                    if (is_array($tc)) {
+                        $tcs[] = ['index' => $i] + $tc;
+                    }
+                }
+                $consumeDelta(['content' => is_string($message['content'] ?? null) ? trim($message['content']) : '', 'tool_calls' => $tcs]);
+            }
+        }
+
+        $toolCalls = [];
+        foreach ($calls as $c) {
+            if ($c['name'] === '') {
+                continue;
+            }
+            $toolCalls[] = [
+                'id'        => $c['id'] !== '' ? $c['id'] : 'call_' . bin2hex(random_bytes(6)),
+                'name'      => $c['name'],
+                'arguments' => $c['arguments'],
+            ];
+        }
+
+        if (trim($fullText) === '' && !$toolCalls) {
+            throw new \RuntimeException('AI provider returned an empty completion.');
+        }
+
+        return ['text' => $fullText, 'tool_calls' => $toolCalls];
+    }
+
     /** نقل مشترك غير-streaming لـ chat() — complete() فاضلة بنسختها الخاصة عشان تفضل أبسط استدعاء منفرد. */
     private function rawRequest(array $messages, float $temperature, ?int $maxTokens): string
     {
