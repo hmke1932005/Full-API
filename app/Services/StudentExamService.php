@@ -123,6 +123,7 @@ class StudentExamService
             'secure_mode_enabled' => (bool) $exam->secure_mode_enabled,
             'max_violations'     => $exam->max_violations !== null ? (int) $exam->max_violations : null,
             'status'             => $exam->status,
+            'created_at'         => $exam->created_at,
             'allow_back_navigation' => (bool) $exam->allow_back_navigation,
             'auto_submit_on_timeout' => (bool) $exam->auto_submit_on_timeout,
             'show_answer_review' => (bool) $exam->show_answer_review,
