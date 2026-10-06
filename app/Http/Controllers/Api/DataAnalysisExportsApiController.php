@@ -432,7 +432,7 @@ class DataAnalysisExportsApiController extends Controller
     /**
      * تصدير "الكل" المجمّع: كل مشروع وشركة وجامعة على المنصة في ملف
      * واحد. الجداول التلاتة شكلها مختلف، فالصفوف بتتشارك مجموعة أعمدة
-     * موحدة (entity_type/name/detail_1/detail_2/status/created_at) بدل
+     * موحدة (Type/Name/Category-Country/Owner-Stats/Status/Created At) بدل
      * ما تتلزق كجداول منفصلة مش قابلة للمحاذاة.
      * @return array{0:string[],1:array<int,array<int,mixed>>}
      */
@@ -462,6 +462,6 @@ class DataAnalysisExportsApiController extends Controller
             ];
         }
 
-        return [['entity_type', 'name', 'detail_1', 'detail_2', 'status', 'created_at'], $rows];
+        return [['Type', 'Name', 'Category / Country', 'Owner / Stats', 'Status', 'Created At'], $rows];
     }
 }

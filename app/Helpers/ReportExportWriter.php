@@ -34,13 +34,13 @@ class ReportExportWriter
      * @param string[] $header
      * @param array<int,array<int,mixed>> $rows
      */
-    public static function write(string $format, array $header, array $rows, string $fullPath): void
+    public static function write(string $format, array $header, array $rows, string $fullPath, ?string $title = null): void
     {
         match ($format) {
             'csv'  => self::toCsv($header, $rows, $fullPath),
             'json' => self::toJson($header, $rows, $fullPath),
             'xlsx' => self::toXlsx($header, $rows, $fullPath),
-            'pdf'  => self::toPdf($header, $rows, $fullPath),
+            'pdf'  => self::toPdfBest($header, $rows, $fullPath, $title),
             'docx' => self::toDocx($header, $rows, $fullPath),
             'xml'  => self::toXml($header, $rows, $fullPath),
             'pptx' => self::toPptx($header, $rows, $fullPath),
@@ -187,6 +187,25 @@ class ReportExportWriter
             '</worksheet>');
 
         $zip->close();
+    }
+
+    /**
+     * PDF حقيقي (mPDF: Unicode + عربي + جدول منسّق) لو متسطّب، وإلا الكاتب
+     * اليدوي البسيط تحت (Latin-1 بس).
+     */
+    private static function toPdfBest(array $header, array $rows, string $fullPath, ?string $title): void
+    {
+        if (class_exists(\Mpdf\Mpdf::class)) {
+            try {
+                \App\Services\Export\PdfWriter::writeTable($fullPath, $title ?: 'Report', $header, $rows);
+                if (is_file($fullPath) && str_starts_with((string) file_get_contents($fullPath, false, null, 0, 5), '%PDF')) {
+                    return;
+                }
+            } catch (\Throwable) {
+                // نكمّل بالكاتب البسيط
+            }
+        }
+        self::toPdf($header, $rows, $fullPath);
     }
 
     /**

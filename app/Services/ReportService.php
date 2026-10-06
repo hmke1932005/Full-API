@@ -88,7 +88,7 @@ class ReportService
         $filename = $type . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $format;
         $fullPath = $dir . '/' . $filename;
 
-        ReportExportWriter::write($format, $header, $rows, $fullPath);
+        ReportExportWriter::write($format, $header, $rows, $fullPath, ucwords(str_replace(['_', '-'], ' ', $type)));
 
         return $this->reports->create([
             'generated_by' => $userId,

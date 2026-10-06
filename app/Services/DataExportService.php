@@ -186,6 +186,6 @@ class DataExportService
             ];
         }
 
-        return [['entity_type', 'name', 'detail_1', 'detail_2', 'status', 'created_at'], $rows];
+        return [['Type', 'Name', 'Category / Country', 'Owner / Stats', 'Status', 'Created At'], $rows];
     }
 }
