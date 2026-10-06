@@ -34,6 +34,15 @@ class UserSessionService
         $ua = (string) ($request?->userAgent() ?? '');
         $location = $this->locationLabel($ip);
 
+        // Concurrent session limit (Security > Policies > Sessions): لو مفعّل
+        // بنفضّي مكان بإلغاء أقدم الجلسات قبل فتح الجديدة. أي فشل هنا ميمنعش
+        // الـ login.
+        try {
+            app(SessionPolicyService::class)->enforceConcurrentLimit($userId);
+        } catch (\Throwable $e) {
+            Log::warning('Concurrent session limit check failed: ' . $e->getMessage());
+        }
+
         $id = (int) DB::table('user_sessions')->insertGetId([
             'user_id'          => $userId,
             'session_token'    => hash('sha256', $rawRefresh),

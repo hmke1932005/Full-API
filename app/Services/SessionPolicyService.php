@@ -3,14 +3,13 @@
 namespace App\Services;
 
 /**
- * منقولة من app/Services/SessionPolicyService.php القديمة — بند 25
- * batch 3 (Vulnerabilities + Policies). getPolicy()/updatePolicy() بس
- * (اللي SecurityPoliciesApiController محتاجاها). enforceIdleTimeout()/
- * enforceConcurrentLimit() القديمة (بتتنادى من AuthMiddleware/AuthService
- * وقت كل ريكوست/لوجين) مش منقولة هنا عمدًا — نفس فجوة UserSessionRepository
- * الموثّقة في بند 25 batch 1: AuthService/AuthMiddleware في اللارافيل
- * لسه مش بيكتبوا/يتحققوا من `user_sessions` أصلًا، فمفيش حاجة حقيقية
- * تستدعيهم دلوقتي — هتتضاف لما توصيل تتبع الجلسة جوه Auth يتعمل فعليًا.
+ * getPolicy()/updatePolicy() + enforceConcurrentLimit() (بيتنادى من
+ * UserSessionService::start وقت كل login ناجح). الـ concurrent limit
+ * بقى بيتطبّق فعلًا: لو enforce_concurrent_limit شغّال والمستخدم وصل للحد،
+ * أقدم جلساته بتتلغي (is_active=0 + revoke للـ refresh token) عشان الجلسة
+ * الجديدة تاخد مكانها — فالجهاز القديم يتطرد بدل ما الدخول الجديد يتمنع.
+ *
+ * مش متطبّق هنا: idle timeout (timeout_minutes بيتخزّن بس).
  */
 class SessionPolicyService
 {
@@ -76,5 +75,43 @@ class SessionPolicyService
         $this->auditLog->record($adminUserId, 'security_policy.session_updated', 'SecurityPolicy', null, $before, $policy, $ip);
 
         return $policy;
+    }
+
+    /**
+     * يلغي أقدم الجلسات النشطة للمستخدم بحيث يفضل مكان لجلسة جديدة.
+     * بيتنادى قبل إدخال الجلسة الجديدة. @return int عدد الجلسات اللي اتلغت
+     */
+    public function enforceConcurrentLimit(int $userId): int
+    {
+        $policy = $this->getPolicy();
+        $limit = (int) $policy['concurrent_limit'];
+        if (empty($policy['enforce_concurrent_limit']) || $limit < 1) {
+            return 0;
+        }
+
+        $active = \Illuminate\Support\Facades\DB::table('user_sessions')
+            ->where('user_id', $userId)
+            ->where('is_active', 1)
+            ->where(function ($q) {
+                $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->orderBy('last_activity_at')
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+
+        $excess = count($active) - ($limit - 1); // نسيب مكان للجلسة الجديدة
+        if ($excess <= 0) {
+            return 0;
+        }
+
+        $sessions = app(UserSessionService::class);
+        $ended = 0;
+        foreach (array_slice($active, 0, $excess) as $sessionId) {
+            if ($sessions->end((int) $sessionId, 'concurrent_limit')) {
+                $ended++;
+            }
+        }
+        return $ended;
     }
 }

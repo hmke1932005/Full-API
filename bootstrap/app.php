@@ -30,6 +30,17 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // خلف Railway/Vercel/أي reverse proxy: من غير ده $request->ip() بيرجّع
+        // IP الـ proxy الداخلي لكل المستخدمين، فصفحة Sessions بتعرض نفس الـ IP
+        // للكل، والـ geo-location وعدّاد الـ brute-force والـ IP block كلهم
+        // بيشتغلوا على IP غلط. TRUSTED_PROXIES في .env: '*' (الافتراضي، مناسب
+        // لما السيرفر مش متاح للإنترنت إلا عبر الـ proxy) أو قائمة IPs/CIDRs
+        // مفصولة بفاصلة.
+        $trusted = trim((string) env('TRUSTED_PROXIES', '*'));
+        $middleware->trustProxies(
+            at: $trusted === '*' ? '*' : array_values(array_filter(array_map('trim', explode(',', $trusted))))
+        );
+
         $middleware->alias([
             'uip.auth'  => \App\Http\Middleware\UipAuthMiddleware::class,
             // بند 3 — يطابق app/Middleware/AdminMiddleware.php القديمة.
