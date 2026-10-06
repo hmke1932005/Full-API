@@ -78,6 +78,7 @@ class Project extends Model
         $title = $this->title_en ?: $this->title_ar;
         return [
             'id'              => $this->uuid ?: (string) $this->id,
+            'slug'            => $this->slug ?: null,
             'title'           => ['en' => $this->title_en ?: $title, 'ar' => $this->title_ar ?: $title],
             'summary'         => ['en' => $this->summary, 'ar' => $this->summary],
             'category'        => ['en' => $this->category ?: 'General', 'ar' => $this->category ?: 'عام'],
