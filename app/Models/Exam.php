@@ -34,7 +34,18 @@ class Exam extends Model
         'late_grace_minutes', 'late_penalty_percent',
         'single_session_enabled', 'proctoring_mode', 'identity_check_required', 'snapshot_interval_seconds',
         'appeals_enabled', 'appeal_window_days', 'is_template',
+        'access_password',
     ];
+
+    /** الباسورد (hash) عمره ما يطلع في أي response — الفرونت بياخد has_access_password بس. */
+    protected $hidden = ['access_password'];
+
+    protected $appends = ['has_access_password'];
+
+    public function getHasAccessPasswordAttribute(): bool
+    {
+        return !empty($this->attributes['access_password'] ?? null);
+    }
 
     protected $casts = [
         'start_at'             => 'datetime',

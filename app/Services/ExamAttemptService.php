@@ -61,6 +61,10 @@ class ExamAttemptService
     /** startAttempt(): الامتحان بيطلب لقطة بدء ومابعتهاش — الكونترولر بيحوّلها لـ 422 code=start_photo_required. */
     public const ERR_START_PHOTO_REQUIRED = 4101;
 
+    /** الامتحان محمي بباسورد: الطالب ما بعتش باسورد / بعت باسورد غلط (الكونترولر بيحوّلهم لـ 422 بـ code). */
+    public const ERR_PASSWORD_REQUIRED = 4102;
+    public const ERR_PASSWORD_INVALID = 4103;
+
     // -----------------------------------------------------------------
     // Start / resume
     // -----------------------------------------------------------------
@@ -90,6 +94,7 @@ class ExamAttemptService
         }
 
         $this->assertAccessible($exam, $studentId, $universityId);
+        $this->assertAccessPassword($exam, $options['access_password'] ?? null);
 
         // لقطة البدء بتتفحص قبل ما نخلق أي حاجة عشان مايتخلقش صف محاولة يتيم.
         $startPhoto = $options['start_photo'] ?? null;
@@ -145,6 +150,25 @@ class ExamAttemptService
     }
 
     /** Phase 9 — كل فحوصات "هل الطالب ده يقدر يبدأ محاولة على الامتحان ده دلوقتي؟". */
+    /**
+     * لو الدكتور حط باسورد للامتحان، الطالب لازم يبعته صح قبل ما تتخلق أي محاولة جديدة.
+     * (استكمال محاولة شغالة بيحصل قبل كده ومابيطلبهوش تاني.)
+     */
+    private function assertAccessPassword(Exam $exam, $plain): void
+    {
+        $hash = $exam->getAttributes()['access_password'] ?? null;
+        if (empty($hash)) {
+            return;
+        }
+        $plain = is_string($plain) ? $plain : '';
+        if (trim($plain) === '') {
+            throw new \InvalidArgumentException('This exam is password protected. Enter the exam password to start.', self::ERR_PASSWORD_REQUIRED);
+        }
+        if (!\Illuminate\Support\Facades\Hash::check($plain, $hash)) {
+            throw new \InvalidArgumentException('Incorrect exam password.', self::ERR_PASSWORD_INVALID);
+        }
+    }
+
     private function assertAccessible(Exam $exam, $studentId, $universityId): void
     {
         if ((int) $exam->university_id !== (int) $universityId) {

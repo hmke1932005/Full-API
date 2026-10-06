@@ -682,6 +682,7 @@ class ExamSystemService
             'identity_check_required'       => $identity = (bool) ($data['identity_check_required'] ?? false),
             'proctoring_mode'               => $identity ? 'required' : $this->normalizeProctoringMode($data['proctoring_mode'] ?? 'off'),
             'snapshot_interval_seconds'     => $this->normalizeSnapshotInterval($data['snapshot_interval_seconds'] ?? 60),
+            'access_password'               => $this->hashAccessPassword($data['access_password'] ?? null),
             'status'                        => 'draft',
         ]);
     }
@@ -713,6 +714,12 @@ class ExamSystemService
         if ($effectiveGrace <= 0) {
             $fillable['late_penalty_percent'] = 0;
         }
+        // باسورد الدخول (اختياري): قيمة جديدة = تعيين/تغيير، remove_access_password=true = إلغاء، وغير كده بيفضل زي ما هو.
+        if (!empty($data['remove_access_password'])) {
+            $fillable['access_password'] = null;
+        } elseif (isset($data['access_password']) && trim((string) $data['access_password']) !== '') {
+            $fillable['access_password'] = $this->hashAccessPassword($data['access_password']);
+        }
         foreach (['start_at', 'end_at'] as $k) {
             if (array_key_exists($k, $fillable)) {
                 $fillable[$k] = $this->toAppTimezone($fillable[$k]);
@@ -729,6 +736,12 @@ class ExamSystemService
         $exam->fill($fillable);
         $exam->save();
         return $exam;
+    }
+
+    private function hashAccessPassword($plain): ?string
+    {
+        $plain = trim((string) $plain);
+        return $plain === '' ? null : \Illuminate\Support\Facades\Hash::make($plain);
     }
 
     private function normalizeProctoringMode($mode): string

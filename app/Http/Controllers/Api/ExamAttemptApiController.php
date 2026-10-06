@@ -11,6 +11,7 @@ use App\Services\ExamProctoringService;
 use App\Services\ExamSecurityService;
 use App\Services\ExamSessionService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -124,9 +125,22 @@ class ExamAttemptApiController extends Controller
             'id_card'     => 'nullable|file|max:1500',
             'photo_flags' => 'nullable',
             'takeover'    => 'nullable|boolean',
+            'access_password' => 'nullable|string|max:64',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+
+        // حماية من تخمين الباسورد: 5 محاولات غلط كل 5 دقايق لكل طالب على كل امتحان.
+        $limiterKey = 'exam-password:' . $student->id . ':' . (int) $examId;
+        if (RateLimiter::tooManyAttempts($limiterKey, 5)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Too many incorrect password attempts. Try again in ' . RateLimiter::availableIn($limiterKey) . ' seconds.',
+                'data'    => ['code' => 'exam_password_locked', 'retry_after' => RateLimiter::availableIn($limiterKey)],
+                'errors'  => null,
+                'meta'    => (object) [],
+            ], 429);
         }
 
         try {
@@ -135,8 +149,23 @@ class ExamAttemptApiController extends Controller
                 'id_card'     => $request->file('id_card'),
                 'photo_flags' => $request->input('photo_flags', []),
                 'ip'          => $request->ip(),
+                'access_password' => $request->input('access_password'),
             ]);
+            RateLimiter::clear($limiterKey);
         } catch (\InvalidArgumentException $e) {
+            if (in_array($e->getCode(), [ExamAttemptService::ERR_PASSWORD_REQUIRED, ExamAttemptService::ERR_PASSWORD_INVALID], true)) {
+                $invalid = $e->getCode() === ExamAttemptService::ERR_PASSWORD_INVALID;
+                if ($invalid) {
+                    RateLimiter::hit($limiterKey, 300);
+                }
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'data'    => ['code' => $invalid ? 'exam_password_invalid' : 'exam_password_required'],
+                    'errors'  => null,
+                    'meta'    => (object) [],
+                ], 422);
+            }
             if ($e->getCode() === ExamAttemptService::ERR_START_PHOTO_REQUIRED) {
                 return response()->json([
                     'success' => false,

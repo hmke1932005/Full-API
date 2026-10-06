@@ -32,6 +32,8 @@ class ExamSecurityService
         'tab_switch', 'window_blur', 'window_focus',
         'copy_attempt', 'paste_attempt', 'cut_attempt',
         'question_changed', 'time_expired',
+        // أدوات المطوّر (F12): devtools_attempt = اختصار اتمنع (إعلامي)، devtools_opened = اتفتحت فعلًا (مخالفة).
+        'devtools_attempt', 'devtools_opened',
         // الكاميرا (browser-level): الطالب رفضها / اتقفلت وقت الامتحان / اشتغلت.
         'camera_denied', 'camera_started', 'camera_stopped',
     ];
@@ -52,6 +54,7 @@ class ExamSecurityService
     public const VIOLATION_EVENTS = [
         'fullscreen_exited', 'tab_switch', 'window_blur',
         'copy_attempt', 'paste_attempt', 'cut_attempt',
+        'devtools_opened',
         // الاستحواذ على جلسة جهاز تاني شغال = مخالفة.
         'session_takeover',
     ];

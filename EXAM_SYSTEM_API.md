@@ -292,3 +292,9 @@ Run `php artisan migrate` (new migration `2026_10_05_200000_...`).
 - `X-Device-Id` بييجي من المتصفح (localStorage) — مش دليل قاطع على الجهاز.
 - مفيش مطابقة وجه بين السيلفي والكارنيه: المراجعة بشرية. رفض الهوية بيسجّل الحالة بس؛ الإلغاء/الإعادة قرار المدرس.
 - الصور على disk `local` الخاص ومابتتقدّمش إلا عبر endpoint المدرس صاحب الامتحان. لسه مفيش سياسة احتفاظ/حذف (محتاجة قرار حسب لوائح الجامعة).
+
+## Exam access password (optional) + DevTools guard
+
+- `POST/PATCH /api/v1/exam-system/exams` accept `access_password` (4–64 chars, stored hashed) and `remove_access_password` (bool). Omit both on update to keep the current password. The hash is never returned; exams expose `has_access_password`, and the student `my-exams/{id}` payload exposes `requires_password`.
+- `POST /my-exams/{id}/attempts` accepts `access_password`. A new attempt on a protected exam fails with 422 `exam_password_required` / `exam_password_invalid`; 5 wrong tries per student+exam lock it for 5 min (429 `exam_password_locked`). Resuming a running attempt does not ask for the password again. Duplicating an exam does not copy the password.
+- New client security events: `devtools_attempt` (shortcut blocked, informational) and `devtools_opened` (counts as a violation).

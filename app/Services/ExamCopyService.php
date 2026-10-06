@@ -31,7 +31,7 @@ class ExamCopyService
     public function duplicate(Exam $source, $staff, array $opts = []): array
     {
         return DB::transaction(function () use ($source, $staff, $opts) {
-            $copy = $source->replicate(['results_published_at']);
+            $copy = $source->replicate(['results_published_at', 'access_password']);
             $copy->title = trim($opts['title'] ?? '') !== '' ? trim($opts['title']) : $this->defaultTitle($source->title);
             $copy->status = 'draft';
             $copy->is_template = false;

@@ -640,6 +640,9 @@ class ExamSystemApiController extends Controller
             'proctoring_mode'           => 'nullable|in:off,optional,required',
             'identity_check_required'   => 'nullable|boolean',
             'snapshot_interval_seconds' => 'nullable|integer|min:15|max:600',
+            // باسورد دخول اختياري يحدده الدكتور (بيتخزن hash). remove_access_password لإلغائه.
+            'access_password'           => 'nullable|string|min:4|max:64',
+            'remove_access_password'    => 'nullable|boolean',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
@@ -716,6 +719,9 @@ class ExamSystemApiController extends Controller
             'proctoring_mode'           => 'nullable|in:off,optional,required',
             'identity_check_required'   => 'nullable|boolean',
             'snapshot_interval_seconds' => 'nullable|integer|min:15|max:600',
+            // باسورد دخول اختياري يحدده الدكتور (بيتخزن hash). remove_access_password لإلغائه.
+            'access_password'           => 'nullable|string|min:4|max:64',
+            'remove_access_password'    => 'nullable|boolean',
         ]);
         if ($validator->fails()) {
             return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
