@@ -52,6 +52,18 @@ class DataExplorerRepository
         return config('data_explorer_datasets', []);
     }
 
+    /** @return array<int,string> أسماء الجداول (lowercase) اللي بتستخدم soft-delete وبتتفلتر تلقائيًا بـ deleted_at IS NULL */
+    public function softDeleteTables(): array
+    {
+        $out = [];
+        foreach ($this->catalog() as $entry) {
+            if (!empty($entry['soft_deletes'])) {
+                $out[] = strtolower($entry['table']);
+            }
+        }
+        return $out;
+    }
+
     /** @return array|null صف الكتالوج لمفتاح dataset معين، أو null لو مش في الـ allow-list */
     public function dataset(string $key): ?array
     {
@@ -141,6 +153,11 @@ class DataExplorerRepository
 
         $where = [];
         $params = [];
+
+        // الصفوف المحذوفة (soft-delete) مش بتظهر في المعاينة ولا العدّادات.
+        if (!empty($dataset['soft_deletes'])) {
+            $where[] = $this->quoteIdent('deleted_at') . ' IS NULL';
+        }
 
         $search = trim((string) ($opts['search'] ?? ''));
         if ($search !== '' && $textColumns) {
@@ -238,12 +255,14 @@ class DataExplorerRepository
         $columns = $this->columns($table);
         $columnNames = array_column($columns, 'name');
 
-        $rowCount = (int) (DB::selectOne('SELECT COUNT(*) AS c FROM ' . $this->quoteIdent($table))->c ?? 0);
+        $softWhere = !empty($dataset['soft_deletes']) ? ' WHERE ' . $this->quoteIdent('deleted_at') . ' IS NULL' : '';
+
+        $rowCount = (int) (DB::selectOne('SELECT COUNT(*) AS c FROM ' . $this->quoteIdent($table) . $softWhere)->c ?? 0);
 
         $earliest = $latest = null;
         if (in_array('created_at', $columnNames, true)) {
-            $earliest = DB::selectOne('SELECT MIN(created_at) AS v FROM ' . $this->quoteIdent($table))->v ?? null;
-            $latest = DB::selectOne('SELECT MAX(created_at) AS v FROM ' . $this->quoteIdent($table))->v ?? null;
+            $earliest = DB::selectOne('SELECT MIN(created_at) AS v FROM ' . $this->quoteIdent($table) . $softWhere)->v ?? null;
+            $latest = DB::selectOne('SELECT MAX(created_at) AS v FROM ' . $this->quoteIdent($table) . $softWhere)->v ?? null;
         }
 
         return [

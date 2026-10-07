@@ -149,6 +149,8 @@ return [
         ],
         'icon' => 'note',
         'primary_key' => 'id',
+        // الجدول بيستخدم soft-delete: الـ Explorer والـ Query Builder بيستبعدوا الصفوف المحذوفة تلقائيًا.
+        'soft_deletes' => true,
         'default_sort' => 'created_at',
         'default_sort_dir' => 'desc',
         'sensitive_columns' => ['access_password'],
@@ -157,6 +159,8 @@ return [
                 'label' => ['en' => 'Created by (doctor)', 'ar' => 'أنشأه الدكتور']],
             ['column' => 'course_id', 'references' => 'courses', 'references_column' => 'id',
                 'label' => ['en' => 'Course', 'ar' => 'المقرر']],
+            ['column' => 'id', 'references' => 'exam_questions', 'references_column' => 'exam_id',
+                'label' => ['en' => 'Exam questions', 'ar' => 'أسئلة الامتحان']],
             ['column' => 'id', 'references' => 'exam_attempts', 'references_column' => 'exam_id',
                 'label' => ['en' => 'Student attempts', 'ar' => 'محاولات الطلاب']],
             ['column' => 'id', 'references' => 'exam_security_events', 'references_column' => 'exam_id',
@@ -203,6 +207,8 @@ return [
         'relationships' => [
             ['column' => 'exam_attempt_id', 'references' => 'exam_attempts', 'references_column' => 'id',
                 'label' => ['en' => 'Attempt', 'ar' => 'المحاولة']],
+            ['column' => 'exam_question_id', 'references' => 'exam_questions', 'references_column' => 'id',
+                'label' => ['en' => 'Exam question', 'ar' => 'سؤال الامتحان']],
             ['column' => 'graded_by_academic_staff_id', 'references' => 'academic_staff', 'references_column' => 'id',
                 'label' => ['en' => 'Graded by (doctor)', 'ar' => 'صححه الدكتور']],
         ],
@@ -283,6 +289,8 @@ return [
         ],
         'icon' => 'file',
         'primary_key' => 'id',
+        // الجدول بيستخدم soft-delete: الـ Explorer والـ Query Builder بيستبعدوا الصفوف المحذوفة تلقائيًا.
+        'soft_deletes' => true,
         'default_sort' => 'created_at',
         'default_sort_dir' => 'desc',
         'sensitive_columns' => ['correct_answer', 'accepted_answers', 'model_answer', 'expected_concepts', 'grading_instructions'],
@@ -291,6 +299,8 @@ return [
                 'label' => ['en' => 'Question bank', 'ar' => 'بنك الأسئلة']],
             ['column' => 'created_by_academic_staff_id', 'references' => 'academic_staff', 'references_column' => 'id',
                 'label' => ['en' => 'Author (doctor)', 'ar' => 'كاتب السؤال']],
+            ['column' => 'id', 'references' => 'exam_questions', 'references_column' => 'question_id',
+                'label' => ['en' => 'Used in exams', 'ar' => 'مستخدم في امتحانات']],
         ],
     ],
 
@@ -303,6 +313,8 @@ return [
         ],
         'icon' => 'folder',
         'primary_key' => 'id',
+        // الجدول بيستخدم soft-delete: الـ Explorer والـ Query Builder بيستبعدوا الصفوف المحذوفة تلقائيًا.
+        'soft_deletes' => true,
         'default_sort' => 'created_at',
         'default_sort_dir' => 'desc',
         'sensitive_columns' => [],
@@ -371,6 +383,50 @@ return [
         'relationships' => [
             ['column' => 'id', 'references' => 'exams', 'references_column' => 'course_id',
                 'label' => ['en' => 'Exams of this course', 'ar' => 'امتحانات هذا المقرر']],
+        ],
+    ],
+
+    'exam_questions' => [
+        'table' => 'exam_questions',
+        'label' => ['en' => 'Exam Questions', 'ar' => 'أسئلة الامتحانات'],
+        'description' => [
+            'en' => 'Which questions are placed in which exam, with mark overrides and ordering.',
+            'ar' => 'الأسئلة الموضوعة في كل امتحان مع تعديل الدرجة والترتيب.',
+        ],
+        'icon' => 'layers',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'exam_id', 'references' => 'exams', 'references_column' => 'id',
+                'label' => ['en' => 'Exam', 'ar' => 'الامتحان']],
+            ['column' => 'question_id', 'references' => 'questions', 'references_column' => 'id',
+                'label' => ['en' => 'Question', 'ar' => 'السؤال']],
+            ['column' => 'id', 'references' => 'exam_grades', 'references_column' => 'exam_question_id',
+                'label' => ['en' => 'Grades', 'ar' => 'الدرجات']],
+            ['column' => 'id', 'references' => 'exam_answers', 'references_column' => 'exam_question_id',
+                'label' => ['en' => 'Student answers', 'ar' => 'إجابات الطلاب']],
+        ],
+    ],
+
+    'exam_answers' => [
+        'table' => 'exam_answers',
+        'label' => ['en' => 'Exam Answers', 'ar' => 'إجابات الامتحانات'],
+        'description' => [
+            'en' => 'Actual student answers (selected options / free text) per attempt and question.',
+            'ar' => 'إجابات الطلاب الفعلية (الاختيارات / النص) لكل محاولة وسؤال.',
+        ],
+        'icon' => 'note',
+        'primary_key' => 'id',
+        'default_sort' => 'created_at',
+        'default_sort_dir' => 'desc',
+        'sensitive_columns' => [],
+        'relationships' => [
+            ['column' => 'exam_attempt_id', 'references' => 'exam_attempts', 'references_column' => 'id',
+                'label' => ['en' => 'Attempt', 'ar' => 'المحاولة']],
+            ['column' => 'exam_question_id', 'references' => 'exam_questions', 'references_column' => 'id',
+                'label' => ['en' => 'Exam question', 'ar' => 'سؤال الامتحان']],
         ],
     ],
 

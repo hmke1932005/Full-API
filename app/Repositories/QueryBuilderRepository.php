@@ -160,6 +160,13 @@ class QueryBuilderRepository
         // WHERE/SELECT/GROUP BY/ORDER BY تقدر تفحص "table.column".
         $tablesInPlay = [$table => $baseVisible];
 
+        // جداول soft-delete: الصفوف المحذوفة بتتستبعد تلقائيًا (WHERE، أو ON لو LEFT JOIN).
+        $softTables = $this->explorer->softDeleteTables();
+        $softWhere = [];
+        if (in_array(strtolower($table), $softTables, true)) {
+            $softWhere[] = $this->quoteIdent($table) . '.' . $this->quoteIdent('deleted_at') . ' IS NULL';
+        }
+
         $joinSql = '';
         $joinCount = 0;
         foreach ((array) ($spec['joins'] ?? []) as $join) {
@@ -182,6 +189,14 @@ class QueryBuilderRepository
             $joinSql .= " {$joinType} JOIN " . $this->quoteIdent($joinTable)
                 . ' ON ' . $this->quoteIdent($leftTable) . '.' . $this->quoteIdent($leftCol)
                 . ' = ' . $this->quoteIdent($rightTable) . '.' . $this->quoteIdent($rightCol);
+            if (in_array(strtolower($joinTable), $softTables, true)) {
+                $softCond = $this->quoteIdent($joinTable) . '.' . $this->quoteIdent('deleted_at') . ' IS NULL';
+                if ($joinType === 'LEFT') {
+                    $joinSql .= ' AND ' . $softCond;
+                } else {
+                    $softWhere[] = $softCond;
+                }
+            }
             $joinCount++;
             if ($joinCount > 4) {
                 throw new RuntimeException('Too many joins (max 4).');
@@ -219,7 +234,7 @@ class QueryBuilderRepository
         }
 
         // WHERE
-        $where = [];
+        $where = $softWhere;
         $params = [];
         foreach ((array) ($spec['where'] ?? []) as $cond) {
             $colName = (string) ($cond['column'] ?? '');
@@ -390,11 +405,44 @@ class QueryBuilderRepository
             }
         }
 
+        // joins بالفاصلة (FROM a, b) بتتخطى فحص الـ allow-list فوق (اللي بيشوف بس الاسم بعد FROM/JOIN) — مرفوضة.
+        if (preg_match('/\b(?:from|join)\s+`?[a-zA-Z_][a-zA-Z0-9_]*`?(?:\s+(?:as\s+)?`?[a-zA-Z_][a-zA-Z0-9_]*`?)?\s*,/i', $trimmed)) {
+            throw new RuntimeException('Comma-separated joins are not allowed; use explicit JOIN ... ON.');
+        }
+
+        $trimmed = $this->excludeSoftDeleted($trimmed);
+
         if (!preg_match('/\blimit\s+\d+/i', $trimmed)) {
             $trimmed .= ' LIMIT ' . self::MAX_ROWS;
         }
 
         return $trimmed;
+    }
+
+    /**
+     * بتلف كل جدول soft-delete متسمّى بعد FROM/JOIN في subquery بيستبعد
+     * deleted_at، بنفس الـ alias (أو اسم الجدول لو مفيش alias)، فالاستعلام
+     * الخام عمره ما بيشوف صفوف محذوفة من غير ما المحلل يفتكر يفلتر.
+     */
+    private function excludeSoftDeleted(string $sql): string
+    {
+        $soft = $this->explorer->softDeleteTables();
+        if (!$soft) {
+            return $sql;
+        }
+        $reserved = ['where', 'on', 'inner', 'left', 'right', 'full', 'cross', 'natural', 'join', 'group',
+            'order', 'limit', 'having', 'union', 'using', 'offset', 'window', 'intersect', 'except', 'as'];
+        $pattern = '/\b(from|join)(\s+)`?(' . implode('|', array_map(fn ($t) => preg_quote($t, '/'), $soft))
+            . ')`?(?![a-zA-Z0-9_`])(\s+(?:as\s+)?`?([a-zA-Z_][a-zA-Z0-9_]*)`?)?/i';
+
+        return preg_replace_callback($pattern, function ($m) use ($reserved) {
+            $table = strtolower($m[3]);
+            $alias = $m[5] ?? '';
+            $hasAlias = $alias !== '' && !in_array(strtolower($alias), $reserved, true);
+            $name = $hasAlias ? $alias : $table;
+            $tail = $hasAlias ? '' : ($m[4] ?? '');
+            return $m[1] . $m[2] . '(SELECT * FROM `' . $table . '` WHERE `deleted_at` IS NULL) AS `' . $name . '`' . $tail;
+        }, $sql);
     }
 
     /** بتشيل sensitive_columns بتاعة أي dataset مسموح من نتيجة الاستعلام، باسم المفتاح، أيًا كانت قايمة SELECT المستخدمة. */

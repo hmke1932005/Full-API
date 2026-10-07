@@ -19,7 +19,7 @@ class ReportTemplateFactory extends Factory
             'created_by' => User::factory(),
             'name' => fake()->name(),
             'description' => fake()->paragraph(),
-            'data_source' => fake()->randomElement(['projects', 'users', 'ai_analysis', 'analytics_records', 'innovation_statistics', 'security_logs']),
+            'data_source' => fake()->randomElement(['projects', 'users', 'ai_analysis', 'analytics_records', 'innovation_statistics', 'security_logs', 'exams', 'exam_attempts', 'academic_staff']),
             'query_config' => [],
             'is_shared' => fake()->boolean(),
         ];

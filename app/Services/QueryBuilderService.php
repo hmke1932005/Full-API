@@ -48,7 +48,7 @@ class QueryBuilderService
      * قوالب جاهزة مكتوبة يدويًا لمنصة الامتحانات + الدكاترة + الطلاب. كلها
      * SELECT واحد، بتستخدم جداول من الـ allow-list بس ومفيهاش أعمدة حساسة،
      * فبتعدي من validateRawSql() زي أي استعلام مكتوب بإيد المحلل.
-     * (الجداول المحذوفة soft-delete بتتفلتر بـ deleted_at IS NULL.)
+     * (الجداول soft-delete بتتفلتر تلقائيًا في QueryBuilderRepository.)
      *
      * @return array<int,array<string,string>>
      */
@@ -382,6 +382,77 @@ SELECT academic_year, COUNT(*) AS students, ROUND(AVG(gpa), 2) AS avg_gpa
 FROM students
 GROUP BY academic_year
 ORDER BY academic_year
+SQL,
+            ],
+            [
+                'category'       => 'questions',
+                'name'           => 'Hardest questions',
+                'name_ar'        => 'أصعب الأسئلة',
+                'description'    => 'Questions with the lowest average score percentage (5+ graded answers).',
+                'description_ar' => 'الأسئلة الأقل في متوسط نسبة الدرجة (5 إجابات مُصحَّحة على الأقل).',
+                'sql_text'       => <<<'SQL'
+SELECT q.id AS question_id, q.type, q.difficulty, q.topic, COUNT(g.id) AS graded_answers,
+       ROUND(100.0 * SUM(g.marks_awarded) / SUM(g.max_marks), 1) AS avg_score_pct
+FROM exam_grades g
+INNER JOIN exam_questions eq ON eq.id = g.exam_question_id
+INNER JOIN questions q ON q.id = eq.question_id
+WHERE g.marks_awarded IS NOT NULL AND g.max_marks > 0
+GROUP BY q.id, q.type, q.difficulty, q.topic
+HAVING COUNT(g.id) >= 5
+ORDER BY avg_score_pct ASC
+LIMIT 50
+SQL,
+            ],
+            [
+                'category'       => 'questions',
+                'name'           => 'Most missed questions',
+                'name_ar'        => 'أكثر الأسئلة خطأً',
+                'description'    => 'Questions answered incorrectly most often (auto-gradable).',
+                'description_ar' => 'الأسئلة التي يخطئ فيها الطلاب أكثر (القابلة للتصحيح التلقائي).',
+                'sql_text'       => <<<'SQL'
+SELECT q.id AS question_id, q.type, q.topic, COUNT(g.id) AS answers,
+       SUM(CASE WHEN g.is_correct = 0 THEN 1 ELSE 0 END) AS wrong_answers,
+       ROUND(100.0 * SUM(CASE WHEN g.is_correct = 0 THEN 1 ELSE 0 END) / COUNT(g.id), 1) AS wrong_pct
+FROM exam_grades g
+INNER JOIN exam_questions eq ON eq.id = g.exam_question_id
+INNER JOIN questions q ON q.id = eq.question_id
+WHERE g.is_correct IS NOT NULL
+GROUP BY q.id, q.type, q.topic
+HAVING COUNT(g.id) >= 5
+ORDER BY wrong_pct DESC
+LIMIT 50
+SQL,
+            ],
+            [
+                'category'       => 'questions',
+                'name'           => 'Question reuse across exams',
+                'name_ar'        => 'إعادة استخدام الأسئلة',
+                'description'    => 'How many exams each question is used in.',
+                'description_ar' => 'عدد الامتحانات التي يُستخدم فيها كل سؤال.',
+                'sql_text'       => <<<'SQL'
+SELECT q.id AS question_id, q.type, q.topic, COUNT(DISTINCT eq.exam_id) AS exams_used
+FROM questions q
+INNER JOIN exam_questions eq ON eq.question_id = q.id
+GROUP BY q.id, q.type, q.topic
+ORDER BY exams_used DESC
+LIMIT 50
+SQL,
+            ],
+            [
+                'category'       => 'questions',
+                'name'           => 'Unanswered questions per exam',
+                'name_ar'        => 'الأسئلة بدون إجابة لكل امتحان',
+                'description'    => 'Blank answers (no text and no selected options) per exam.',
+                'description_ar' => 'الإجابات الفارغة (بدون نص أو اختيار) لكل امتحان.',
+                'sql_text'       => <<<'SQL'
+SELECT e.id AS exam_id, e.title, COUNT(ans.id) AS answers,
+       SUM(CASE WHEN (ans.answer_text IS NULL OR ans.answer_text = '') AND ans.selected_option_ids IS NULL THEN 1 ELSE 0 END) AS blank_answers
+FROM exam_answers ans
+INNER JOIN exam_questions eq ON eq.id = ans.exam_question_id
+INNER JOIN exams e ON e.id = eq.exam_id
+GROUP BY e.id, e.title
+ORDER BY blank_answers DESC
+LIMIT 50
 SQL,
             ],
         ];

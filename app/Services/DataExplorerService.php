@@ -53,7 +53,7 @@ class DataExplorerService
             foreach ($this->repo->catalog() as $key => $entry) {
                 try {
                     $table = preg_replace('/[^A-Za-z0-9_]/', '', $entry['table']);
-                    $counts[$key] = (int) (DB::selectOne('SELECT COUNT(*) AS c FROM `' . $table . '`')->c ?? 0);
+                    $counts[$key] = (int) (DB::selectOne('SELECT COUNT(*) AS c FROM `' . $table . '`' . (!empty($entry['soft_deletes']) ? ' WHERE `deleted_at` IS NULL' : ''))->c ?? 0);
                 } catch (\Throwable $e) {
                     $counts[$key] = 0;
                 }
