@@ -3,19 +3,16 @@
 namespace App\Http\Middleware;
 
 use App\Services\UipJwtService;
+use App\Services\UserSessionService;
 use Closure;
 use Illuminate\Http\Request;
 
 /**
- * نسخة اختيارية من UipAuthMiddleware — Round 2 (Lobby & Access)، لسطح
- * "الدخول للاجتماع" العام (join_token) اللي لازم يشتغل لمستخدم UIP
- * مسجّل *أو* لضيف من غير حساب خالص (بند 23). لو فيه Bearer token صالح،
- * بتحط uip_user_id/uip_role بالظبط زي uip.auth العادي. لو مفيش
- * Authorization header، أو فيه واحد لكن التوكن باظ/منتهي، الريكوست
- * بيكمل عادي من غير ما تتحط الـ attributes دي (مش 401) — الميدلوير دي
- * عمدًا مش بتقرر "الضيوف مسموحين ولا لأ"، ده قرار الكنترولر/الخدمة على
- * مستوى كل اجتماع لوحده (allow_guests)، زي ما بند 23 نص "Guest access
- * must be configurable per meeting".
+ * نسخة اختيارية من UipAuthMiddleware (meetings/join, signaling, chat, files...).
+ * لو فيه Bearer صالح *وجلسته لسه شغالة* بتحط uip_user_id/uip_role.
+ * لو التوكن باظ أو الجلسة اتلغت (logout/revoke) بيتعامل معاه كضيف — مش 401.
+ *
+ * التعديل: قبل كده كانت بتتجاهل `sid` فتوكن بعد الـ logout يفضل بيتعرّف كمستخدم هنا.
  */
 class UipAuthOptionalMiddleware
 {
@@ -26,8 +23,23 @@ class UipAuthOptionalMiddleware
         if (str_starts_with($header, 'Bearer ')) {
             $claims = UipJwtService::decode(substr($header, 7));
             if ($claims && isset($claims['sub'])) {
-                $request->attributes->set('uip_user_id', (int) $claims['sub']);
-                $request->attributes->set('uip_role', (string) ($claims['role'] ?? ''));
+                $sid = isset($claims['sid']) ? (int) $claims['sid'] : null;
+                $requireSid = filter_var(env('AUTH_REQUIRE_SID', false), FILTER_VALIDATE_BOOLEAN);
+
+                $valid = true;
+                if ($sid) {
+                    $valid = app(UserSessionService::class)->isActive($sid);
+                } elseif ($requireSid) {
+                    $valid = false;
+                }
+
+                if ($valid) {
+                    if ($sid) {
+                        $request->attributes->set('uip_session_id', $sid);
+                    }
+                    $request->attributes->set('uip_user_id', (int) $claims['sub']);
+                    $request->attributes->set('uip_role', (string) ($claims['role'] ?? ''));
+                }
             }
         }
 

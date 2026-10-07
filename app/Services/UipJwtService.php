@@ -149,8 +149,8 @@ class UipJwtService
                 $sessionId = $sessions->start($userId, $rawRefresh, $refreshTtl);
             }
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning('Session tracking failed: ' . $e->getMessage());
-            $sessionId = null;
+            \Illuminate\Support\Facades\Log::error('Session tracking failed: ' . $e->getMessage());
+            throw $e; // مفيش توكن من غير sid (مينفعش يتلغى بالـ logout)
         }
 
         $claims = [
