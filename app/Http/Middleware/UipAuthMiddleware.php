@@ -31,7 +31,7 @@ class UipAuthMiddleware
         }
 
         $token = substr($header, 7);
-        $claims = UipJwtService::decode($token);
+        $claims = UipJwtService::decodeAccess($token);
 
         if (!$claims || !isset($claims['sub'])) {
             return response()->json([

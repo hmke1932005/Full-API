@@ -21,7 +21,7 @@ class UipAuthOptionalMiddleware
         $header = $request->header('Authorization', '');
 
         if (str_starts_with($header, 'Bearer ')) {
-            $claims = UipJwtService::decode(substr($header, 7));
+            $claims = UipJwtService::decodeAccess(substr($header, 7));
             if ($claims && isset($claims['sub'])) {
                 $sid = isset($claims['sid']) ? (int) $claims['sid'] : null;
                 $requireSid = filter_var(env('AUTH_REQUIRE_SID', false), FILTER_VALIDATE_BOOLEAN);

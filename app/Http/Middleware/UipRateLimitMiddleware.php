@@ -90,7 +90,7 @@ class UipRateLimitMiddleware
     {
         $header = (string) $request->header('Authorization', '');
         if (str_starts_with($header, 'Bearer ')) {
-            $claims = UipJwtService::decode(substr($header, 7));
+            $claims = UipJwtService::decodeAccess(substr($header, 7));
             if ($claims && !empty($claims['sub'])) {
                 return 'user_' . $claims['sub'];
             }

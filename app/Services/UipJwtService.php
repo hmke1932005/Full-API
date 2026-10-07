@@ -47,49 +47,101 @@ class UipJwtService
         return implode('.', $segments);
     }
 
-    /** بادئة الـ access token المشفّر — أي توكن مش بادئ بيها بيتعامل كـ JWT عادي (توكنات قديمة/اختبارات/challenge/ضيف). */
-    private const SEALED_PREFIX = 'uipe1.';
+    /** بادئات الـ access token المشفّر. uipe2 = الحالي (فيه kid للتدوير)، uipe1 = القديم (لسه بيتفك). */
+    private const SEALED_PREFIX_V1 = 'uipe1.';
+    private const SEALED_PREFIX_V2 = 'uipe2.';
 
-    /** مفتاح التشفير: JWT_ENC_KEY لو متظبط، غير كده بيتشتق من JWT_SECRET (HKDF) عشان مفيش مفتاح جديد لازم يتضاف. */
-    private static function encKey(): string
+    private static function isSealed(string $token): bool
     {
-        $base = env('JWT_ENC_KEY') ?: self::secret();
-        return hash_hkdf('sha256', (string) $base, 32, 'uip-access-token-v1');
+        return strncmp($token, self::SEALED_PREFIX_V2, 6) === 0 || strncmp($token, self::SEALED_PREFIX_V1, 6) === 0;
     }
 
-    /** يشفّر الـ JWT بالكامل (AES-256-GCM) فيطلع string معتم: مفيش claims ظاهرة في F12. */
+    /**
+     * مفاتيح التشفير [kid => key]، أولها هو الحالي (بيشفّر بيه)، والباقي للفك بس (تدوير مفاتيح).
+     *   JWT_ENC_KEY      : مفتاح التشفير الحالي — لازم يبقى مستقل عن JWT_SECRET (php artisan tinker: bin2hex(random_bytes(32))).
+     *   JWT_ENC_KEY_PREV : المفتاح القديم أثناء التدوير (اختياري، شيله بعد JWT_ACCESS_TTL).
+     * لو JWT_ENC_KEY مش متظبط بيتشتق من JWT_SECRET (توافق قديم) مع تحذير في اللوج.
+     *
+     * @return array<string,string>
+     */
+    private static function encKeys(): array
+    {
+        static $warned = false;
+        $bases = [];
+        $cur = env('JWT_ENC_KEY');
+        if (!$cur) {
+            if (!$warned && app()->environment('production')) {
+                \Illuminate\Support\Facades\Log::warning('JWT_ENC_KEY is not set — access-token encryption key is derived from JWT_SECRET. Set a separate random key.');
+                $warned = true;
+            }
+            $cur = self::secret();
+        }
+        $bases[] = (string) $cur;
+        if ($prev = env('JWT_ENC_KEY_PREV')) {
+            $bases[] = (string) $prev;
+        }
+
+        $keys = [];
+        foreach ($bases as $base) {
+            $key = hash_hkdf('sha256', $base, 32, 'uip-access-token-v1');
+            $keys[substr(hash('sha256', 'kid|' . $key), 0, 8)] = $key;
+        }
+        return $keys;
+    }
+
+    /** يشفّر الـ JWT بالكامل (AES-256-GCM) فيطلع string معتم. الـ kid جوه الـ AAD فمتلعبش فيه. */
     public static function seal(string $jwt): string
     {
-        $iv  = random_bytes(12);
-        $tag = '';
-        $ct  = openssl_encrypt($jwt, 'aes-256-gcm', self::encKey(), OPENSSL_RAW_DATA, $iv, $tag, 'uip-access', 16);
+        $keys = self::encKeys();
+        $kid  = array_key_first($keys);
+        $iv   = random_bytes(12);
+        $tag  = '';
+        $ct   = openssl_encrypt($jwt, 'aes-256-gcm', $keys[$kid], OPENSSL_RAW_DATA, $iv, $tag, 'uip-access|' . $kid, 16);
         if ($ct === false) {
             throw new \RuntimeException('Token encryption failed.');
         }
-        return self::SEALED_PREFIX . self::b64UrlEncode($iv . $tag . $ct);
+        return self::SEALED_PREFIX_V2 . $kid . '.' . self::b64UrlEncode($iv . $tag . $ct);
     }
 
     /** يفك التشفير؛ null لو التوكن اتلعب فيه أو المفتاح غلط. */
     public static function open(string $sealed): ?string
     {
-        if (strncmp($sealed, self::SEALED_PREFIX, strlen(self::SEALED_PREFIX)) !== 0) {
-            return null;
+        $keys = self::encKeys();
+
+        if (strncmp($sealed, self::SEALED_PREFIX_V2, 6) === 0) {
+            $parts = explode('.', $sealed, 3);
+            if (count($parts) !== 3 || !isset($keys[$parts[1]])) {
+                return null;
+            }
+            $kid = $parts[1];
+            $raw = self::b64UrlDecode($parts[2]);
+            return self::decrypt($raw, $keys[$kid], 'uip-access|' . $kid);
         }
-        $raw = self::b64UrlDecode(substr($sealed, strlen(self::SEALED_PREFIX)));
+
+        if (strncmp($sealed, self::SEALED_PREFIX_V1, 6) === 0) {
+            $raw = self::b64UrlDecode(substr($sealed, 6));
+            foreach ($keys as $key) {
+                if (($jwt = self::decrypt($raw, $key, 'uip-access')) !== null) {
+                    return $jwt;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static function decrypt(string $raw, string $key, string $aad): ?string
+    {
         if (strlen($raw) < 12 + 16 + 1) {
             return null;
         }
-        $iv  = substr($raw, 0, 12);
-        $tag = substr($raw, 12, 16);
-        $ct  = substr($raw, 28);
-        $jwt = openssl_decrypt($ct, 'aes-256-gcm', self::encKey(), OPENSSL_RAW_DATA, $iv, $tag, 'uip-access');
+        $jwt = openssl_decrypt(substr($raw, 28), 'aes-256-gcm', $key, OPENSSL_RAW_DATA, substr($raw, 0, 12), substr($raw, 12, 16), $aad);
         return $jwt === false ? null : $jwt;
     }
 
     /** @return array<string,mixed>|null null لو التوكن باظ أو الصلاحية خلصت أو التوقيع غلط. */
     public static function decode(string $token): ?array
     {
-        if (strncmp($token, self::SEALED_PREFIX, strlen(self::SEALED_PREFIX)) === 0) {
+        if (self::isSealed($token)) {
             $inner = self::open($token);
             if ($inner === null) {
                 return null;
@@ -116,6 +168,28 @@ class UipJwtService
         }
 
         return $payload;
+    }
+
+    /**
+     * فك access token فقط. decode() لوحدها بتقبل أي JWT موقّع (challenge الـ 2FA، setup، ضيف الاجتماعات)،
+     * فكان ممكن challenge_token (بعد الباسورد وقبل كود الـ 2FA) يتستخدم كـ Bearer ويعدّي الـ 2FA.
+     * هنا: أي توكن عليه typ مختلف عن "access" مرفوض، و AUTH_REQUIRE_SEALED=true يرفض أي توكن مش مشفّر.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function decodeAccess(string $token): ?array
+    {
+        if (filter_var(env('AUTH_REQUIRE_SEALED', false), FILTER_VALIDATE_BOOLEAN) && !self::isSealed($token)) {
+            return null;
+        }
+        $claims = self::decode($token);
+        if (!$claims || !isset($claims['sub'])) {
+            return null;
+        }
+        if (isset($claims['typ']) && $claims['typ'] !== 'access') {
+            return null;
+        }
+        return $claims;
     }
 
     /**
@@ -153,11 +227,13 @@ class UipJwtService
             throw $e; // مفيش توكن من غير sid (مينفعش يتلغى بالـ logout)
         }
 
+        // typ=access: يمنع استخدام challenge/setup/guest tokens كـ Bearer. jti: معرّف فريد لكل توكن.
+        // الاسم/الإيميل اتشالوا من التوكن (PII مالهاش لازمة جواه) — الفرونت بياخدهم من data.user.
         $claims = [
-            'sub'   => $userId,
-            'role'  => $role,
-            'name'  => $user->full_name ?? null,
-            'email' => $user->email ?? null,
+            'typ'  => 'access',
+            'jti'  => bin2hex(random_bytes(8)),
+            'sub'  => $userId,
+            'role' => $role,
         ];
         if ($sessionId) {
             $claims['sid'] = $sessionId;

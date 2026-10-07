@@ -33,7 +33,7 @@ class LogoutController extends Controller
         // 1) من الـ access token (Bearer). مفيش CSRF هنا: Bearer مش credential بيتبعت أوتوماتيك.
         $header = (string) $request->header('Authorization', '');
         if (str_starts_with($header, 'Bearer ')) {
-            $claims = UipJwtService::decode(substr($header, 7));
+            $claims = UipJwtService::decodeAccess(substr($header, 7));
             if ($claims && !empty($claims['sid'])) {
                 $sid = (int) $claims['sid'];
                 if ($this->sessions->end($sid, 'logout')) {
