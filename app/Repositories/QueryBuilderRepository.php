@@ -489,13 +489,26 @@ class QueryBuilderRepository
         return ['rows' => $rows, 'columns' => $rows ? array_keys($rows[0]) : [], 'row_count' => count($rows), 'execution_time_ms' => $ms];
     }
 
-    /** بتقص خطأ PDO خام لحد الجزء المفيد، من غير تفاصيل driver/DSN كاملة. */
+    /**
+     * بتقص خطأ PDO/Laravel الخام لحد الجزء المفيد بس. Laravel بيزوّد في آخر
+     * الرسالة "(Connection: ..., Host: ..., Port: ..., Database: ..., SQL: ...)"
+     * وده بيسرّب الهوست والداتابيز والاستعلام، فبيتشال دايمًا.
+     */
+    public function sanitizeDbError(string $message): string
+    {
+        if (!preg_match('/SQLSTATE\[([^\]]+)\]:?\s*(.*)$/s', $message, $m)) {
+            return 'invalid query.';
+        }
+        if (preg_match('/\[(2002|2006|2013|1045|1044)\]|getaddrinfo|Connection refused|Access denied/i', $message)) {
+            return 'database is temporarily unavailable.';
+        }
+        $msg = trim((string) preg_replace('/\s*\(Conn.*$/s', '', $m[2]));
+        return $msg !== '' ? $msg : 'invalid query.';
+    }
+
     private function safeDbError(string $message): string
     {
-        if (preg_match('/SQLSTATE\[[^\]]+\]:?\s*(.*)$/s', $message, $m)) {
-            return trim($m[1]);
-        }
-        return 'invalid query.';
+        return $this->sanitizeDbError($message);
     }
 
     // -- Saved queries CRUD --------------------------------------------
@@ -565,6 +578,16 @@ class QueryBuilderRepository
             'SELECT * FROM query_history WHERE user_id = ? ORDER BY executed_at DESC LIMIT ' . max(1, min(200, $limit)),
             [$userId]
         );
-        return array_map(fn ($r) => (array) $r, $rows);
+        // صفوف قديمة اتسجلت قبل التنضيف ممكن تحتوي Host/Database، فبتتنضّف وقت العرض.
+        return array_map(function ($r) {
+            $r = (array) $r;
+            if (!empty($r['error_message'])) {
+                $em = (string) $r['error_message'];
+                $r['error_message'] = str_contains($em, 'SQLSTATE')
+                    ? 'Query failed: ' . $this->sanitizeDbError($em)
+                    : trim((string) preg_replace('/\s*\(Conn.*$/s', '', $em));
+            }
+            return $r;
+        }, $rows);
     }
 }
