@@ -7,9 +7,9 @@ use App\Models\RefreshToken;
 use App\Services\RoleService;
 use App\Services\UipJwtService;
 use App\Services\UserSessionService;
+use App\Support\AuthCookies;
 use App\Support\SecurityLog;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 
 /** يطابق RefreshTokenController::submit() + AuthService::refreshApiTokens() القديمين (rotation: توكن واحد الاستخدام + reuse detection). */
 class RefreshTokenController extends Controller
@@ -20,15 +20,23 @@ class RefreshTokenController extends Controller
 
     public function submit(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'refresh_token' => 'required',
-        ]);
-
-        if ($validator->fails()) {
-            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        // المصدر الأساسي: كوكي HttpOnly (مع فحص CSRF). الجسم (refresh_token) مقبول
+        // بس كـ migration لجلسات قديمة كانت في localStorage — والرد بيحط كوكي
+        // ويشيل التوكن من الجسم فالـ JS مبيشوفوش تاني.
+        $raw = AuthCookies::refreshFromCookie($request);
+        if ($raw !== '') {
+            if ($reason = AuthCookies::csrfFailure($request)) {
+                SecurityLog::write('Refresh rejected — CSRF check failed', ['reason' => $reason, 'ip' => $request->ip()]);
+                return AuthCookies::noStore($this->apiError('Request could not be verified.', ['code' => $reason], 403));
+            }
+        } elseif (AuthCookies::allowBodyRefresh()) {
+            $raw = (string) $request->input('refresh_token', '');
         }
 
-        $raw = $request->input('refresh_token');
+        if ($raw === '') {
+            return AuthCookies::clear($this->apiError('Not authenticated.', null, 401), $request);
+        }
+
         $hash = hash('sha256', $raw);
 
         $row = RefreshToken::where('token_hash', $hash)
@@ -47,7 +55,7 @@ class RefreshTokenController extends Controller
                 SecurityLog::write('Refresh token reuse detected — revoking all sessions', ['user_id' => $stale->user_id]);
             }
 
-            return $this->apiError('This refresh token is invalid, expired, or has already been used.', null, 401);
+            return AuthCookies::clear($this->apiError('This refresh token is invalid, expired, or has already been used.', null, 401), $request);
         }
 
         // الجلسة اللي الـ refresh token ده تبعها: لو اتلغت من بورتال الأمان
@@ -56,7 +64,7 @@ class RefreshTokenController extends Controller
         if ($session && !$session->is_active) {
             $row->revoked_at = now();
             $row->save();
-            return $this->apiError('This session was ended. Please log in again.', null, 401);
+            return AuthCookies::clear($this->apiError('This session was ended. Please log in again.', null, 401), $request);
         }
 
         // خمول: لو الجلسة مفيهاش نشاط أكتر من المدة المسموحة، الـ refresh token
@@ -65,7 +73,7 @@ class RefreshTokenController extends Controller
             $this->sessions->end((int) $session->id, 'idle_timeout');
             $row->revoked_at = now();
             $row->save();
-            return $this->apiError('Your session expired due to inactivity. Please log in again.', null, 401);
+            return AuthCookies::clear($this->apiError('Your session expired due to inactivity. Please log in again.', null, 401), $request);
         }
 
         $role = $this->roles->primaryRoleFor($row->user_id);
@@ -77,6 +85,6 @@ class RefreshTokenController extends Controller
         $row->replaced_by_id = $newest?->id;
         $row->save();
 
-        return $this->apiSuccess($tokens, 'Token refreshed successfully.');
+        return AuthCookies::attach($this->apiSuccess($tokens, 'Token refreshed successfully.'), $request);
     }
 }

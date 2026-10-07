@@ -9,6 +9,7 @@ use App\Services\RoleService;
 use App\Services\TrustedDeviceService;
 use App\Services\TwoFactorService;
 use App\Services\UipJwtService;
+use App\Support\AuthCookies;
 use App\Support\SecurityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -80,10 +81,10 @@ class TwoFactorChallengeController extends Controller
 
         SecurityLog::write('Successful login (2FA)', ['user_id' => $user->id, 'ip' => $request->ip()]);
 
-        return $this->apiSuccess(
+        return AuthCookies::attach($this->apiSuccess(
             array_merge(['redirect' => $this->roles->homeRouteFor($role)], $tokens),
             'Two-factor verification successful.'
-        );
+        ), $request);
     }
 
     /** POST /api/v1/auth/two-factor/cancel */

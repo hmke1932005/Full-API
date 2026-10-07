@@ -3,9 +3,9 @@
  * نسخة من config/security.php القديمة — الأجزاء المستخدمة في بند 2
  * (Infra) بس: rate_limit_per_min (fallback الـ UipRateLimitMiddleware)
  * وsecurity_headers (UipSecurityHeadersMiddleware). csrf_enabled مش
- * منقول لأن الـ API الجديد Bearer-JWT فقط (مفيش cookies) فمفيش CSRF
- * يتحمى منه أصلًا — نفس القرار اللي اتاخد في موديول Auth (بند 1) وملوش
- * أي middleware اسمها CSRF هنا. geoip بند 25 batch 3 (Country
+ * منقول: الـ access token Bearer (مفيش CSRF عليه)، لكن الـ refresh
+ * token بقى في كوكي HttpOnly فـ refresh/logout محميين بـ double-submit CSRF
+ * (X-CSRF-Token) + SameSite — شوف App\Support\AuthCookies. geoip بند 25 batch 3 (Country
  * Restrictions) — نفس مفاتيح القديمة بالظبط، GeoIpService بيقراها.
  */
 
@@ -20,6 +20,11 @@ return [
         'X-Frame-Options'        => 'DENY',
         'X-Content-Type-Options' => 'nosniff',
         'Referrer-Policy'        => 'strict-origin-when-cross-origin',
+        // الـ API بيرجّع JSON/ملفات بس: لو رد اتفتح كصفحة، أي سكريبت/frame ممنوع.
+        'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        'Strict-Transport-Security' => 'max-age=31536000; includeSubDomains',
+        'Permissions-Policy'     => 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
+        'Cross-Origin-Opener-Policy' => 'same-origin',
     ],
 
     'geoip' => [

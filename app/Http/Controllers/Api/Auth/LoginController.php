@@ -9,6 +9,7 @@ use App\Services\AccountLockoutService;
 use App\Services\RoleService;
 use App\Services\TrustedDeviceService;
 use App\Services\UipJwtService;
+use App\Support\AuthCookies;
 use App\Support\SecurityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -200,12 +201,12 @@ class LoginController extends Controller
 
         SecurityLog::write('Successful login', ['user_id' => $user->id, 'ip' => $request->ip()]);
 
-        return response()->json([
+        return AuthCookies::attach(response()->json([
             'success' => true,
             'message' => 'Login successful.',
             'data'    => array_merge(['redirect' => $this->roles->homeRouteFor($role)], $tokens),
             'errors'  => null,
             'meta'    => (object) [],
-        ]);
+        ]), $request);
     }
 }
