@@ -127,6 +127,18 @@ class AnnouncementRepository
             $where[] = 'MATCH(a.title, a.body) AGAINST (? IN NATURAL LANGUAGE MODE)';
             $params[] = $filters['q'];
         }
+        if (!empty($filters['category']) && $filters['category'] !== 'all') {
+            $where[] = 'a.category = ?';
+            $params[] = $filters['category'];
+        }
+        switch ($filters['status'] ?? 'all') {
+            case 'live':
+                $where[] = '(a.publish_at IS NULL OR a.publish_at <= NOW())';
+                $where[] = '(a.expires_at IS NULL OR a.expires_at > NOW())';
+                break;
+            case 'scheduled': $where[] = 'a.publish_at IS NOT NULL AND a.publish_at > NOW()'; break;
+            case 'expired':   $where[] = 'a.expires_at IS NOT NULL AND a.expires_at <= NOW()'; break;
+        }
 
         $whereSql = implode(' AND ', $where);
         $total = (int) (DB::selectOne("SELECT COUNT(*) AS c FROM announcements a WHERE $whereSql", $params)->c ?? 0);

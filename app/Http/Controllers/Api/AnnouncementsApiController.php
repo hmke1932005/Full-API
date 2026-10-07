@@ -56,7 +56,11 @@ class AnnouncementsApiController extends Controller
 
         if ($role === 'university') {
             $university = $this->universities->getOrCreate($userId);
-            $filters = ['q' => trim((string) $request->input('q', ''))];
+            $filters = [
+                'q'        => trim((string) $request->input('q', '')),
+                'category' => $request->input('category', 'all'),
+                'status'   => $request->input('status', 'all'),
+            ];
 
             $listing = $this->announcements->forUniversity((int) $university->id, $filters, $page, $perPage);
             $attachments = $this->announcements->attachmentsFor(array_column($listing['items'], 'id'));

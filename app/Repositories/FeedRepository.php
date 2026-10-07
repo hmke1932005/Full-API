@@ -146,6 +146,12 @@ class FeedRepository
             $where[] = 'MATCH(fp.title, fp.body) AGAINST (? IN NATURAL LANGUAGE MODE)';
             $params[] = $filters['q'];
         }
+        switch ($filters['status'] ?? 'all') {
+            case 'published': $where[] = 'fp.status = 1'; break;
+            case 'draft':     $where[] = 'fp.status = 0'; break;
+            case 'events':    $where[] = 'fp.is_event = 1'; break;
+            case 'pinned':    $where[] = 'fp.is_pinned = 1'; break;
+        }
 
         $whereSql = implode(' AND ', $where);
         $total = (int) (DB::selectOne("SELECT COUNT(*) AS c FROM feed_posts fp WHERE $whereSql", $params)->c ?? 0);

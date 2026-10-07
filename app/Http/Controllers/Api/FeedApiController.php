@@ -59,7 +59,10 @@ class FeedApiController extends Controller
 
         if ($role === 'university') {
             $university = $this->universities->getOrCreate($userId);
-            $filters = ['q' => trim((string) $request->input('q', ''))];
+            $filters = [
+                'q'      => trim((string) $request->input('q', '')),
+                'status' => $request->input('status', 'all'),
+            ];
 
             $listing = $this->feedRepo->postsForUniversity((int) $university->id, $filters, $page, $perPage);
             $attachments = $this->feedRepo->attachmentsForPosts(array_column($listing['items'], 'id'));
