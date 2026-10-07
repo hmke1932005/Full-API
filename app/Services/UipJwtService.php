@@ -47,9 +47,56 @@ class UipJwtService
         return implode('.', $segments);
     }
 
+    /** بادئة الـ access token المشفّر — أي توكن مش بادئ بيها بيتعامل كـ JWT عادي (توكنات قديمة/اختبارات/challenge/ضيف). */
+    private const SEALED_PREFIX = 'uipe1.';
+
+    /** مفتاح التشفير: JWT_ENC_KEY لو متظبط، غير كده بيتشتق من JWT_SECRET (HKDF) عشان مفيش مفتاح جديد لازم يتضاف. */
+    private static function encKey(): string
+    {
+        $base = env('JWT_ENC_KEY') ?: self::secret();
+        return hash_hkdf('sha256', (string) $base, 32, 'uip-access-token-v1');
+    }
+
+    /** يشفّر الـ JWT بالكامل (AES-256-GCM) فيطلع string معتم: مفيش claims ظاهرة في F12. */
+    public static function seal(string $jwt): string
+    {
+        $iv  = random_bytes(12);
+        $tag = '';
+        $ct  = openssl_encrypt($jwt, 'aes-256-gcm', self::encKey(), OPENSSL_RAW_DATA, $iv, $tag, 'uip-access', 16);
+        if ($ct === false) {
+            throw new \RuntimeException('Token encryption failed.');
+        }
+        return self::SEALED_PREFIX . self::b64UrlEncode($iv . $tag . $ct);
+    }
+
+    /** يفك التشفير؛ null لو التوكن اتلعب فيه أو المفتاح غلط. */
+    public static function open(string $sealed): ?string
+    {
+        if (strncmp($sealed, self::SEALED_PREFIX, strlen(self::SEALED_PREFIX)) !== 0) {
+            return null;
+        }
+        $raw = self::b64UrlDecode(substr($sealed, strlen(self::SEALED_PREFIX)));
+        if (strlen($raw) < 12 + 16 + 1) {
+            return null;
+        }
+        $iv  = substr($raw, 0, 12);
+        $tag = substr($raw, 12, 16);
+        $ct  = substr($raw, 28);
+        $jwt = openssl_decrypt($ct, 'aes-256-gcm', self::encKey(), OPENSSL_RAW_DATA, $iv, $tag, 'uip-access');
+        return $jwt === false ? null : $jwt;
+    }
+
     /** @return array<string,mixed>|null null لو التوكن باظ أو الصلاحية خلصت أو التوقيع غلط. */
     public static function decode(string $token): ?array
     {
+        if (strncmp($token, self::SEALED_PREFIX, strlen(self::SEALED_PREFIX)) === 0) {
+            $inner = self::open($token);
+            if ($inner === null) {
+                return null;
+            }
+            $token = $inner;
+        }
+
         $parts = explode('.', $token);
         if (count($parts) !== 3) {
             return null;
@@ -115,7 +162,8 @@ class UipJwtService
         if ($sessionId) {
             $claims['sid'] = $sessionId;
         }
-        $accessToken = self::encode($claims, $accessTtl);
+        // الـ JWT نفسه (موقّع) بيتشفّر قبل ما يخرج للمتصفح، فالـ claims (الاسم/الإيميل/الدور/sid) مبقتش ظاهرة.
+        $accessToken = self::seal(self::encode($claims, $accessTtl));
 
         \App\Models\RefreshToken::create([
             'user_id'      => $userId,
@@ -132,6 +180,13 @@ class UipJwtService
             'expires_in'    => $accessTtl,
             // الفرونت بيستخدمها لقفل الجلسة لما المستخدم يسيب المنصة من غير أي تفاعل.
             'idle_timeout_minutes' => (int) round(app(\App\Services\SessionPolicyService::class)->idleTimeoutSeconds() / 60),
+            // الفرونت مبقاش يقدر يقرا الـ claims من التوكن (مشفّر)، فبياخد هوية العرض من هنا.
+            'user' => [
+                'id'    => $userId,
+                'role'  => $role,
+                'name'  => $user->full_name ?? null,
+                'email' => $user->email ?? null,
+            ],
         ];
     }
 }

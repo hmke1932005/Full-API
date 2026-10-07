@@ -107,6 +107,11 @@ use the Bcrypt algorithm."** السبب: القديم بيستخدم دوال PH
 ```
 ⚠️ ملحوظة: شكل الفشل هنا **بسيط** (مفيهوش `data/errors/meta`) — بيستخدم `$this->json()` مباشرة مش `apiError()`.
 
+> **تحديث: الـ access_token بقى مشفّر.** `UipJwtService::issueTokenPair()` بيشفّر الـ JWT الموقّع بـ AES-256-GCM
+> ويرجّعه بصيغة `uipe1.<base64url>` (المفتاح من `JWT_ENC_KEY` أو بيتشتق من `JWT_SECRET`). مفيش claims ظاهرة للعميل،
+> فالرد بقى فيه `data.user = { id, role, name, email }` للعرض. `decode()` بيقبل الشكلين (المشفّر والـ JWT العادي).
+> الـ refresh_token كان ولسه string عشوائي معتم (بيتخزن hash بس).
+
 **access_token (JWT) — الشكل بالظبط:**
 - Header: `{"typ":"JWT","alg":"HS256"}`
 - Payload: `{"sub": <user_id:int>, "role": "<role>", "iat": <unix>, "exp": <unix>}`
