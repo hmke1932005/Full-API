@@ -45,7 +45,8 @@ class AIInsightsService
         private AIInsightRepository $repo,
         private AnalyticsService $analytics,
         private KpiService $kpis,
-        private DataQualityService $quality
+        private DataQualityService $quality,
+        private DataAnalysisAcademicService $academic
     ) {
         $this->client = $client;
         $this->applySettingsOverrides($this->client, $settings);
@@ -94,7 +95,9 @@ class AIInsightsService
 
             $system = 'You are a senior business intelligence analyst for a university innovation & startup platform. '
                 . 'You will be given a JSON digest of real, live platform metrics (user growth, category/project growth, '
-                . 'university leaderboard, KPIs with targets/achievement/trend, and a data quality overview). '
+                . 'university leaderboard, KPIs with targets/achievement/trend, exam-platform metrics under "exams_and_academic" '
+                . '(exam results, pass rate, score bands, attempt status, at-risk student counts, integrity/appeals, doctor activity), '
+                . 'and a data quality overview). '
                 . 'Analyze it honestly and specifically — reference the actual numbers, categories, KPI names, and '
                 . 'universities given to you, never generic filler. Be concise: one sentence per item, and cap every '
                 . 'array at the maximum size stated below so the report stays fast to generate. '
@@ -193,6 +196,8 @@ class AIInsightsService
             ], $categoryGrowth),
             'top_universities'      => array_map(fn ($r) => ['university' => $r['university']['en'], 'projects' => $r['projects']], $universities),
             'kpis'                  => $kpis,
+            // منصة الامتحانات (أرقام مجمّعة بس، من غير أسماء طلاب/دكاترة).
+            'exams_and_academic'    => $this->academic->aiDigest(),
             'data_quality_overview' => [
                 'overall_score' => $this->quality->overallScore($qualityReports),
                 'datasets'      => $qualitySummary,

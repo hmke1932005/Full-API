@@ -18,7 +18,8 @@ class DataAnalysisDashboardService
     public function __construct(
         private AnalyticsService $analytics,
         private SavedDashboardRepository $dashboards,
-        private DataExportRepository $exports
+        private DataExportRepository $exports,
+        private DataAnalysisAcademicService $academic
     ) {
     }
 
@@ -33,7 +34,7 @@ class DataAnalysisDashboardService
             'leaderboard'    => $this->analytics->universityLeaderboard(5),
             'trends'         => $this->analytics->categoryGrowthTrends(30, 6),
             'university_map' => $this->analytics->universityGrowthMap(6),
-        ];
+        ] + $this->academic->overview();
     }
 
     public function savedDashboardsFor($userId): array

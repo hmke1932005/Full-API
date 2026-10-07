@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Repositories\ProjectRepository;
+use App\Services\DataAnalysisAcademicService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -26,7 +27,8 @@ class DataAnalysisSearchApiController extends Controller
     private const QUICK_LIMIT = 5;
 
     public function __construct(
-        private ProjectRepository $projects
+        private ProjectRepository $projects,
+        private DataAnalysisAcademicService $academic
     ) {
     }
 
@@ -39,15 +41,17 @@ class DataAnalysisSearchApiController extends Controller
 
         $q = trim((string) $request->input('q', ''));
         $projects = [];
+        $academic = ['exams' => [], 'students' => [], 'doctors' => [], 'courses' => []];
 
         if ($q !== '') {
             $projects = $this->projects->searchAll($q);
+            $academic = $this->academic->search($q, 10);
         }
 
         return $this->apiSuccess([
             'query'       => $q,
             'projects'    => $projects,
-        ], 'Search results retrieved successfully.');
+        ] + $academic, 'Search results retrieved successfully.');
     }
 
     /** GET /api/v1/data-analysis/search/quick */
@@ -60,7 +64,7 @@ class DataAnalysisSearchApiController extends Controller
         $q = trim((string) $request->input('q', ''));
 
         if (mb_strlen($q) < 2) {
-            return $this->apiSuccess(['query' => $q, 'projects' => []]);
+            return $this->apiSuccess(['query' => $q, 'projects' => [], 'exams' => [], 'students' => [], 'doctors' => [], 'courses' => []]);
         }
 
         $projects = array_map(function ($p) {
@@ -70,9 +74,15 @@ class DataAnalysisSearchApiController extends Controller
             ];
         }, $this->projects->searchAll($q, self::QUICK_LIMIT));
 
+        $academic = $this->academic->search($q, self::QUICK_LIMIT);
+
         return $this->apiSuccess([
             'query'       => $q,
             'projects'    => $projects,
+            'exams'       => array_map(fn ($e) => ['title' => $e['title'], 'meta' => trim(($e['exam_type'] ?? '') . ' · ' . ($e['status'] ?? ''), ' ·')], $academic['exams']),
+            'students'    => array_map(fn ($s) => ['title' => $s['full_name'], 'meta' => (string) ($s['student_number'] ?? '')], $academic['students']),
+            'doctors'     => array_map(fn ($d) => ['title' => $d['full_name'], 'meta' => (string) ($d['staff_number'] ?? '')], $academic['doctors']),
+            'courses'     => array_map(fn ($c) => ['title' => $c['name_en'] ?: $c['name_ar'], 'meta' => (string) $c['code']], $academic['courses']),
         ]);
     }
 

@@ -24,7 +24,18 @@ class SavedDashboardService
         'leaderboard'    => ['en' => 'University Leaderboard', 'ar' => 'ترتيب الجامعات',           'icon' => 'building'],
         'trends'         => ['en' => 'Growth Trends (30d)',    'ar' => 'اتجاهات النمو',            'icon' => 'chevron-down'],
         'university_map' => ['en' => 'University Growth Map',  'ar' => 'خريطة نمو الجامعات',        'icon' => 'grid'],
+        // منصة الامتحانات / الدكاترة / الطلاب (DataAnalysisAcademicService)
+        'academic_kpis'      => ['en' => 'Academic Overview',        'ar' => 'نظرة أكاديمية عامة',      'icon' => 'building'],
+        'exam_kpis'          => ['en' => 'Exam KPIs',                'ar' => 'مؤشرات الامتحانات',       'icon' => 'note'],
+        'exam_status'        => ['en' => 'Attempts by Status',       'ar' => 'المحاولات حسب الحالة',    'icon' => 'check-circle'],
+        'score_distribution' => ['en' => 'Score Distribution',       'ar' => 'توزيع الدرجات',           'icon' => 'bar-chart'],
+        'exam_trend'         => ['en' => 'Average Score Trend',      'ar' => 'اتجاه متوسط الدرجات',     'icon' => 'trend'],
+        'top_doctors'        => ['en' => 'Top Doctors (exams)',      'ar' => 'أكثر الدكاترة نشاطًا',    'icon' => 'briefcase'],
+        'students_at_risk'   => ['en' => 'Students at Risk',         'ar' => 'الطلاب المعرّضون للخطر', 'icon' => 'alert-triangle'],
+        'exam_integrity'     => ['en' => 'Exam Integrity & Appeals', 'ar' => 'النزاهة والتظلمات',       'icon' => 'shield'],
     ];
+
+    private const ACADEMIC_WIDGETS = ['academic_kpis', 'exam_kpis', 'exam_status', 'score_distribution', 'exam_trend', 'top_doctors', 'students_at_risk', 'exam_integrity'];
 
     /** تخطيطات جاهزة لقائمة "Templates" في الـ builder — اختيار widgets بس، بدون بيانات. */
     public const TEMPLATES = [
@@ -43,16 +54,28 @@ class SavedDashboardService
             'ar'      => 'تركيبة المنصة',
             'widgets' => ['kpis', 'users_by_role', 'category_dist'],
         ],
+        'exams' => [
+            'en'      => 'Exams & Results',
+            'ar'      => 'الامتحانات والنتائج',
+            'widgets' => ['exam_kpis', 'exam_status', 'score_distribution', 'exam_trend'],
+        ],
+        'academic' => [
+            'en'      => 'Doctors & Students',
+            'ar'      => 'الدكاترة والطلاب',
+            'widgets' => ['academic_kpis', 'top_doctors', 'students_at_risk', 'exam_integrity'],
+        ],
         'full' => [
             'en'      => 'Everything',
             'ar'      => 'كل شيء',
-            'widgets' => ['kpis', 'user_growth', 'users_by_role', 'category_dist', 'leaderboard', 'trends', 'university_map'],
+            'widgets' => ['kpis', 'user_growth', 'users_by_role', 'category_dist', 'leaderboard', 'trends', 'university_map',
+                'academic_kpis', 'exam_kpis', 'exam_status', 'score_distribution', 'exam_trend', 'top_doctors', 'students_at_risk', 'exam_integrity'],
         ],
     ];
 
     public function __construct(
         private AnalyticsService $analytics,
-        private SavedDashboardRepository $repo
+        private SavedDashboardRepository $repo,
+        private DataAnalysisAcademicService $academic
     ) {
     }
 
@@ -170,6 +193,12 @@ class SavedDashboardService
         }
         if (in_array('university_map', $needed, true)) {
             $data['university_map'] = $this->analytics->universityGrowthMap(6);
+        }
+
+        foreach ($needed as $type) {
+            if (isset(self::WIDGETS[$type]) && !array_key_exists($type, $data) && in_array($type, self::ACADEMIC_WIDGETS, true)) {
+                $data[$type] = $this->academic->widget($type);
+            }
         }
 
         $widgets = [];
