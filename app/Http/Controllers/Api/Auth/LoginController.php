@@ -30,6 +30,27 @@ use Illuminate\Support\Facades\Validator;
  */
 class LoginController extends Controller
 {
+    /**
+     * أدوار الستاف: بتدخل من بوابة الدخول المخفية بس (portal=staff، الفرونت بيبعتها
+     * من صفحة /staff-access)، ومبتدخلش من /auth/login العادية. والعكس: أي دور تاني
+     * مبيدخلش من بوابة الستاف. الرفض بنفس رسالة "بيانات غلط" عشان مفيش حد يعرف
+     * إن الحساب ده موجود أو إنه ستاف.
+     */
+    private const STAFF_ROLES = ['admin', 'data_analyst', 'security_admin', 'security_officer'];
+
+    /**
+     * أنواع الحسابات في اللوجين العادي. الفرونت بيسأل "إنت مين؟" قبل الدخول وبيبعت
+     * الاختيار في login_as؛ لو الحساب مش من النوع ده الدخول بيترفض حتى بإيميل
+     * وباسورد صح (وبرضه لو login_as ناقص — مفيش دخول من غير اختيار).
+     */
+    private const PUBLIC_ROLE_LABELS = [
+        'student'        => ['en' => 'Student',         'ar' => 'طالب'],
+        'university'     => ['en' => 'University',      'ar' => 'جامعة'],
+        'faculty'        => ['en' => 'Faculty',         'ar' => 'كلية'],
+        'academic_staff' => ['en' => 'Academic staff',  'ar' => 'دكتور / عضو هيئة تدريس'],
+        'supervisor'     => ['en' => 'Supervisor',      'ar' => 'مشرف'],
+    ];
+
     public function __construct(
         private RoleService $roles,
         private AccountLockoutService $lockout,
@@ -91,8 +112,42 @@ class LoginController extends Controller
             ], 422);
         }
 
-        $this->lockout->registerSuccessfulLogin($user);
         $role = $this->roles->primaryRoleFor($user->id);
+
+        $viaStaffPortal = $request->input('portal') === 'staff';
+        if (in_array($role, self::STAFF_ROLES, true) !== $viaStaffPortal) {
+            SecurityLog::write('Login refused - wrong entry portal', [
+                'user_id' => $user->id, 'role' => $role, 'portal' => $viaStaffPortal ? 'staff' : 'public', 'ip' => $request->ip(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid email or password.',
+            ], 422);
+        }
+
+        if (!$viaStaffPortal) {
+            $loginAs = (string) $request->input('login_as', '');
+            if (!isset(self::PUBLIC_ROLE_LABELS[$loginAs])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $locale === 'ar' ? 'اختار نوع حسابك الأول.' : 'Please choose your account type first.',
+                ], 422);
+            }
+            if ($loginAs !== $role) {
+                SecurityLog::write('Login refused - wrong account type chosen', [
+                    'user_id' => $user->id, 'role' => $role, 'chosen' => $loginAs, 'ip' => $request->ip(),
+                ]);
+                $label = self::PUBLIC_ROLE_LABELS[$loginAs][$locale];
+                return response()->json([
+                    'success' => false,
+                    'message' => $locale === 'ar'
+                        ? "الحساب ده مش حساب «{$label}». اختار نوع الحساب الصح وجرّب تاني."
+                        : "This isn't a {$label} account. Pick the right account type and try again.",
+                ], 422);
+            }
+        }
+
+        $this->lockout->registerSuccessfulLogin($user);
 
         if ($role !== 'admin' && $this->settings->get('maintenance_mode', 'global', null, '0') === '1') {
             SecurityLog::write('Login blocked - maintenance mode', ['user_id' => $user->id, 'ip' => $request->ip()]);
