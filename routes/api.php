@@ -150,6 +150,7 @@ Route::prefix('v1')->group(function () {
 
         // محتاج Bearer token — يطابق AuthMiddleware القديمة (الجزء الخاص بالـ API بس)
         Route::middleware('uip.auth')->group(function () {
+            Route::get('/permissions', [\App\Http\Controllers\Api\MyPermissionsApiController::class, 'show']);
             Route::get('/sessions', [SessionsController::class, 'index']);
             Route::delete('/sessions/{id}', [SessionsController::class, 'revoke']);
         });
@@ -679,7 +680,7 @@ Route::prefix('v1')->group(function () {
     // ProjectsApiController.
     Route::prefix('projects')->middleware('uip.auth')->group(function () {
         Route::get('/', [ProjectsApiController::class, 'index']);
-        Route::post('/', [ProjectsApiController::class, 'store']);
+        Route::post('/', [ProjectsApiController::class, 'store'])->middleware('uip.can:project.create');
 
         Route::get('/create-meta', [ProjectsApiController::class, 'createMeta']);
 
@@ -689,7 +690,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/github', [ProjectsApiController::class, 'githubOverview']);
 
         Route::get('/{id}', [ProjectsApiController::class, 'show']);
-        Route::patch('/{id}', [ProjectsApiController::class, 'update']);
+        Route::patch('/{id}', [ProjectsApiController::class, 'update'])->middleware('uip.can:project.edit_own');
         Route::delete('/{id}', [ProjectsApiController::class, 'destroy']);
         Route::post('/{id}/submit', [ProjectsApiController::class, 'submit']);
         Route::post('/{id}/archive', [ProjectsApiController::class, 'archive']);
@@ -731,11 +732,11 @@ Route::prefix('v1')->group(function () {
         // findOwnedOr404() في الكنترولر). consent/run لازم CSRF زي
         // القديمة — uip.auth middleware هنا بيغطي auth، الـ CSRF-equivalent
         // بتاع API tokens مش محتاج تكرار هنا (لا يوجد جلسة كوكي على REST).
-        Route::post('/{id}/ai-analysis/consent', [ProjectsApiController::class, 'grantAiConsent']);
-        Route::post('/{id}/ai-analysis/run', [ProjectsApiController::class, 'runAiAnalysis']);
-        Route::get('/{id}/ai-analysis', [ProjectsApiController::class, 'latestAiAnalysis']);
-        Route::get('/{id}/ai-analysis/similar', [ProjectsApiController::class, 'similarProjects']);
-        Route::get('/{id}/ai-analysis/duplicates', [ProjectsApiController::class, 'duplicateCheck']);
+        Route::post('/{id}/ai-analysis/consent', [ProjectsApiController::class, 'grantAiConsent'])->middleware('uip.can:ai.request_analysis');
+        Route::post('/{id}/ai-analysis/run', [ProjectsApiController::class, 'runAiAnalysis'])->middleware('uip.can:ai.request_analysis');
+        Route::get('/{id}/ai-analysis', [ProjectsApiController::class, 'latestAiAnalysis'])->middleware('uip.can:ai.request_analysis');
+        Route::get('/{id}/ai-analysis/similar', [ProjectsApiController::class, 'similarProjects'])->middleware('uip.can:ai.request_analysis');
+        Route::get('/{id}/ai-analysis/duplicates', [ProjectsApiController::class, 'duplicateCheck'])->middleware('uip.can:ai.request_analysis');
     });
 
     // بند 11 مرحلة 2 — إشراف الأدمن على مستوى المنصة كلها على طابور
@@ -1113,7 +1114,7 @@ Route::prefix('v1')->group(function () {
     // university، AnalyticsApiController's docblock بالظبط). كل روت هنا
     // بيتأكد من uip_role جوّه نفسه (مش عبر middleware منفصل) لأن admin
     // وuniversity بياخدوا بيانات مختلفة تمامًا لنفس الـendpoint.
-    Route::prefix('analytics')->middleware('uip.auth')->group(function () {
+    Route::prefix('analytics')->middleware(['uip.auth', 'uip.can:analytics.view'])->group(function () {
         Route::get('/overview', [AnalyticsApiController::class, 'overview']);
         Route::get('/trends', [AnalyticsApiController::class, 'trends']);
         Route::get('/innovation-statistics', [AnalyticsApiController::class, 'innovationStatistics']);
@@ -1123,7 +1124,7 @@ Route::prefix('v1')->group(function () {
     // Dashboards) + batch 2 (Exports التنفيذ الفعلي + Segments) خلصوا.
     // باقي البورتال (kpis, reports, forecasting, advanced analytics,
     // explorer, query builder, ...) جاي مع بنودها الفرعية.
-    Route::prefix('data-analysis')->middleware('uip.auth')->group(function () {
+    Route::prefix('data-analysis')->middleware(['uip.auth', 'uip.can:data_analysis.dashboard.view'])->group(function () {
         Route::get('/dashboard', [DataAnalysisDashboardApiController::class, 'index']);
 
         // تحليلات الامتحانات والدرجات (قراءة بس) — الروتس الحرفية قبل أي {id}.
@@ -1136,7 +1137,7 @@ Route::prefix('v1')->group(function () {
 
         // بند 24 batch 1 — Saved Dashboards. catalog لازم يتسجل قبل
         // {id} عشان "catalog" متتاخدش على إنها id.
-        Route::prefix('dashboards')->group(function () {
+        Route::prefix('dashboards')->middleware('uip.can:write:data_analysis.dashboards.customize')->group(function () {
             Route::get('/', [SavedDashboardsApiController::class, 'index']);
             Route::get('/catalog', [SavedDashboardsApiController::class, 'catalog']);
             Route::post('/', [SavedDashboardsApiController::class, 'store']);
@@ -1156,7 +1157,7 @@ Route::prefix('v1')->group(function () {
         // section 7). الروتس الحرفية (delete-selected/delete-all/
         // schedules) لازم تتسجل قبل DELETE /{id} عشان مايتلخبطوش مع
         // {id} — نفس ترتيب dashboards/catalog فوق.
-        Route::prefix('exports')->group(function () {
+        Route::prefix('exports')->middleware('uip.can:data_analysis.export')->group(function () {
             Route::get('/', [DataAnalysisExportsApiController::class, 'index']);
             Route::post('/', [DataAnalysisExportsApiController::class, 'store']);
             Route::post('/delete-selected', [DataAnalysisExportsApiController::class, 'destroySelected']);
@@ -1174,7 +1175,7 @@ Route::prefix('v1')->group(function () {
 
         // بند 24 batch 2 — Data Segments (فلاتر محفوظة قابلة لإعادة
         // الاستخدام فوق users/projects).
-        Route::prefix('segments')->group(function () {
+        Route::prefix('segments')->middleware('uip.can:data_analysis.segments.manage')->group(function () {
             Route::get('/', [DataAnalysisSegmentsApiController::class, 'index']);
             Route::post('/', [DataAnalysisSegmentsApiController::class, 'store']);
             Route::delete('/{id}', [DataAnalysisSegmentsApiController::class, 'destroy']);
@@ -1186,7 +1187,7 @@ Route::prefix('v1')->group(function () {
         // الرئيسي. الروتس الحرفية (archive/restore/record-value/explain/
         // export) لازم تتسجل قبل أي {id}/{key} عام — نفس ترتيب
         // dashboards/catalog وexports/schedules فوق.
-        Route::prefix('kpis')->group(function () {
+        Route::prefix('kpis')->middleware('uip.can:data_analysis.trends.view')->group(function () {
             Route::get('/', [DataAnalysisKpisApiController::class, 'index']);
             Route::post('/', [DataAnalysisKpisApiController::class, 'store']);
             Route::patch('/{id}', [DataAnalysisKpisApiController::class, 'update']);
@@ -1196,12 +1197,12 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}', [DataAnalysisKpisApiController::class, 'destroy']);
         });
 
-        Route::prefix('advanced-analytics')->group(function () {
+        Route::prefix('advanced-analytics')->middleware('uip.can:data_analysis.trends.view')->group(function () {
             Route::get('/', [DataAnalysisAdvancedAnalyticsApiController::class, 'index']);
             Route::get('/{key}', [DataAnalysisAdvancedAnalyticsApiController::class, 'show']);
         });
 
-        Route::prefix('forecasting')->group(function () {
+        Route::prefix('forecasting')->middleware('uip.can:data_analysis.trends.view')->group(function () {
             Route::get('/', [DataAnalysisForecastingApiController::class, 'index']);
             Route::get('/{key}', [DataAnalysisForecastingApiController::class, 'show']);
             Route::post('/{key}/explain', [DataAnalysisForecastingApiController::class, 'explain']);
@@ -1239,7 +1240,7 @@ Route::prefix('v1')->group(function () {
         // comments بيسجل هنا (تحت report-files)، وباقي أفعال الكومنت
         // (note/unnote/resolve/reopen) بيسجلوا تحت prefix('comments')
         // منفصل لأنها بتاخد comment id مش report-file id.
-        Route::prefix('reports')->group(function () {
+        Route::prefix('reports')->middleware('uip.can:data_analysis.reports.manage')->group(function () {
             Route::get('/', [DataAnalysisReportsApiController::class, 'index']);
             Route::post('/generate', [DataAnalysisReportsApiController::class, 'generate']);
             Route::post('/delete-selected', [DataAnalysisReportsApiController::class, 'destroySelected']);
@@ -1254,7 +1255,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{id}', [DataAnalysisReportsApiController::class, 'destroy']);
         });
 
-        Route::prefix('report-files')->group(function () {
+        Route::prefix('report-files')->middleware('uip.can:data_analysis.reports.manage')->group(function () {
             Route::get('/', [DataAnalysisReportFilesApiController::class, 'index']);
             Route::post('/', [DataAnalysisReportFilesApiController::class, 'store']);
             Route::get('/{id}', [DataAnalysisReportFilesApiController::class, 'show']);
@@ -1268,14 +1269,14 @@ Route::prefix('v1')->group(function () {
             Route::post('/{id}/comments', [DataAnalysisReportCommentsApiController::class, 'store']);
         });
 
-        Route::prefix('comments')->group(function () {
+        Route::prefix('comments')->middleware('uip.can:data_analysis.reports.manage')->group(function () {
             Route::post('/{id}/note', [DataAnalysisReportCommentsApiController::class, 'markNote']);
             Route::post('/{id}/unnote', [DataAnalysisReportCommentsApiController::class, 'unmarkNote']);
             Route::post('/{id}/resolve', [DataAnalysisReportCommentsApiController::class, 'resolve']);
             Route::post('/{id}/reopen', [DataAnalysisReportCommentsApiController::class, 'reopen']);
         });
 
-        Route::prefix('ai-insights')->group(function () {
+        Route::prefix('ai-insights')->middleware('uip.can:data_analysis.trends.view')->group(function () {
             Route::get('/', [DataAnalysisAiInsightsApiController::class, 'index']);
             Route::post('/regenerate', [DataAnalysisAiInsightsApiController::class, 'regenerate']);
         });
@@ -1344,7 +1345,7 @@ Route::prefix('v1')->group(function () {
     // (كنترولر موحّد، نفس نمط messaging). ملحوظة ترتيب الراوتس: /read-all
     // و /read و /bulk لازم يتسجلوا قبل /{id} عشان Laravel ميحاولش يفسّر
     // "read-all"/"read"/"bulk" كإنهم {id}.
-    Route::prefix('notifications')->middleware('uip.auth')->group(function () {
+    Route::prefix('notifications')->middleware(['uip.auth', 'uip.can:write:notifications.manage'])->group(function () {
         Route::get('/', [NotificationsApiController::class, 'index']);
         Route::get('/counts', [NotificationsApiController::class, 'counts']);
         Route::post('/read-all', [NotificationsApiController::class, 'markAllRead']);
@@ -1369,7 +1370,7 @@ Route::prefix('v1')->group(function () {
     // student-group-chat هنا: بتعمل
     // get-or-create للمحادثة بتاعتها بس، وبعد كده كل الإرسال/التفاعل
     // بيمر من هنا (نفس الـ conversation id).
-    Route::prefix('messaging')->middleware('uip.auth')->group(function () {
+    Route::prefix('messaging')->middleware(['uip.auth', 'uip.can:messaging.use'])->group(function () {
         Route::get('/inbox', [MessagingController::class, 'inbox']);
         Route::get('/recipients', [MessagingController::class, 'recipients']);
         Route::get('/search', [MessagingController::class, 'search']);
@@ -1591,8 +1592,10 @@ Route::prefix('v1')->group(function () {
 // الثابتة (status/search) زي كل مجموعة تانية في المشروع.
 Route::prefix('v1')->group(function () {
     Route::prefix('ai-assistant')->middleware(['uip.auth', 'uip.exam_lock'])->group(function () {
+        // /status مفتوح عمدًا: الودجت بيسأله عشان يعرف يعرض نفسه ولا لأ.
         Route::get('/status', [AiAssistantController::class, 'status']);
 
+        Route::middleware('uip.can:ai.assistant_use')->group(function () {
         Route::get('/conversations', [AiAssistantController::class, 'conversations']);
         Route::post('/conversations', [AiAssistantController::class, 'createConversation']);
         Route::get('/conversations/{id}', [AiAssistantController::class, 'showConversation']);
@@ -1612,6 +1615,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/messages/{id}/react', [AiAssistantController::class, 'reactToMessage']);
 
         Route::get('/search', [AiAssistantController::class, 'search']);
+        });
     });
 
     // بند 14 (Admin Settings) — كان الوحيد من كل بورتالات Settings من غير
@@ -1660,16 +1664,16 @@ Route::prefix('v1')->group(function () {
     // incidents, vulnerabilities, policies, logs, reports, report-files,
     // settings) جاي مع batches 2-6.
     Route::prefix('security')->middleware('uip.auth')->group(function () {
-        Route::get('/dashboard', [SecurityDashboardApiController::class, 'index']);
+        Route::get('/dashboard', [SecurityDashboardApiController::class, 'index'])->middleware('uip.can:security.dashboard.view');
 
-        Route::prefix('sessions')->group(function () {
+        Route::prefix('sessions')->middleware('uip.can:security.sessions.manage')->group(function () {
             Route::get('/', [SecuritySessionsApiController::class, 'index']);
             Route::post('/{id}/revoke', [SecuritySessionsApiController::class, 'revoke']);
         });
 
         // بند 25 batch 2 — Alerts. /export لازم يتسجل هنا (مفيش /{id}
         // bare route في alerts أصلًا، فمفيش تعارض).
-        Route::prefix('alerts')->group(function () {
+        Route::prefix('alerts')->middleware('uip.can:security.notifications.manage')->group(function () {
             Route::get('/', [SecurityAlertsApiController::class, 'index']);
             Route::get('/export', [SecurityAlertsApiController::class, 'export']);
             Route::post('/{id}/acknowledge', [SecurityAlertsApiController::class, 'acknowledge']);
@@ -1680,7 +1684,7 @@ Route::prefix('v1')->group(function () {
 
         // بند 25 batch 2 — Incidents. مفيش تعارض بين GET /{id} والباقي
         // لاختلاف عدد الأجزاء في المسار (زي faq-intents فوق).
-        Route::prefix('incidents')->group(function () {
+        Route::prefix('incidents')->middleware('uip.can:security.incidents.manage')->group(function () {
             Route::get('/', [SecurityIncidentsApiController::class, 'index']);
             Route::post('/', [SecurityIncidentsApiController::class, 'store']);
             Route::get('/{id}', [SecurityIncidentsApiController::class, 'show']);
@@ -1695,7 +1699,7 @@ Route::prefix('v1')->group(function () {
 
         // بند 25 batch 3 — Vulnerabilities. /export لازم يتسجل قبل
         // /{id}/... زي alerts فوق (مفيش /{id} bare route هنا أصلًا).
-        Route::prefix('vulnerabilities')->group(function () {
+        Route::prefix('vulnerabilities')->middleware('uip.can:security.vulnerabilities.manage')->group(function () {
             Route::get('/', [SecurityVulnerabilitiesApiController::class, 'index']);
             Route::post('/', [SecurityVulnerabilitiesApiController::class, 'store']);
             Route::get('/export', [SecurityVulnerabilitiesApiController::class, 'export']);
@@ -1708,7 +1712,7 @@ Route::prefix('v1')->group(function () {
         // {id}/... تاني هنا (مفيش تعارض)، والمسارات الحرفية (لockout/
         // password/upload/session/mfa/rate-limit/ip-restriction/
         // country-restriction/device-restriction) قبل PATCH / العامة.
-        Route::prefix('policies')->group(function () {
+        Route::prefix('policies')->middleware('uip.can:write:security.policies.manage')->group(function () {
             Route::get('/', [SecurityPoliciesApiController::class, 'index']);
             Route::patch('/', [SecurityPoliciesApiController::class, 'update']);
 
@@ -1727,15 +1731,15 @@ Route::prefix('v1')->group(function () {
 
         // بند 25 batch 4 — Logs. /export لازم يتسجل قبل /blocked-ips/{id}/unblock
         // زي باقي المجموعات فوق (مفيش /{id} bare route هنا أصلًا فمفيش تعارض).
-        Route::prefix('logs')->group(function () {
+        Route::prefix('logs')->middleware('uip.can:logs.view_security')->group(function () {
             Route::get('/', [SecurityLogsApiController::class, 'index']);
             Route::get('/export', [SecurityLogsApiController::class, 'export']);
-            Route::post('/blocked-ips/{id}/unblock', [SecurityLogsApiController::class, 'unblockIp']);
+            Route::post('/blocked-ips/{id}/unblock', [SecurityLogsApiController::class, 'unblockIp'])->middleware('uip.can:security.ip.manage');
         });
 
         // بند 25 batch 5 — Reports (ReportService/ReportRepository
         // المشتركين، أنواع security_incident_summary/vulnerability_summary).
-        Route::prefix('reports')->group(function () {
+        Route::prefix('reports')->middleware('uip.can:security.reports.generate')->group(function () {
             Route::get('/', [SecurityReportsApiController::class, 'index']);
             Route::post('/generate', [SecurityReportsApiController::class, 'generate']);
             Route::delete('/{id}', [SecurityReportsApiController::class, 'destroy']);
@@ -1744,7 +1748,7 @@ Route::prefix('v1')->group(function () {
         // بند 25 batch 5 — Report Files (رفع/عرض/معاينة/تنزيل/استبدال/
         // أرشفة/حذف نهائي + تاريخ نسخ). مفيش تعارض بين GET /{id} والباقي
         // لاختلاف عدد الأجزاء في المسار.
-        Route::prefix('report-files')->group(function () {
+        Route::prefix('report-files')->middleware('uip.can:security.reports.generate')->group(function () {
             Route::get('/', [SecurityReportFilesApiController::class, 'index']);
             Route::post('/', [SecurityReportFilesApiController::class, 'store']);
             Route::get('/{id}', [SecurityReportFilesApiController::class, 'show']);
