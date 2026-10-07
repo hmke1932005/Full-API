@@ -58,6 +58,9 @@ return [
     // عشان يشتغل لما الـ config يتعمله cache (env() بترجع null وقتها).
     'frontend_url' => env('FRONTEND_URL'),
 
+    // مسار صفحة دخول الستاف المخفية (لازم يطابق VITE_STAFF_LOGIN_PATH في الفرونت).
+    'staff_login_path' => env('STAFF_LOGIN_PATH', '/staff-access'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone
