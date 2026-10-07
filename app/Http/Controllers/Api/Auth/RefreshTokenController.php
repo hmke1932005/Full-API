@@ -59,6 +59,15 @@ class RefreshTokenController extends Controller
             return $this->apiError('This session was ended. Please log in again.', null, 401);
         }
 
+        // خمول: لو الجلسة مفيهاش نشاط أكتر من المدة المسموحة، الـ refresh token
+        // لوحده ميكفيش — بنقفل الجلسة والمستخدم يعمل login تاني.
+        if ($session && $this->sessions->idleExpired($session)) {
+            $this->sessions->end((int) $session->id, 'idle_timeout');
+            $row->revoked_at = now();
+            $row->save();
+            return $this->apiError('Your session expired due to inactivity. Please log in again.', null, 401);
+        }
+
         $role = $this->roles->primaryRoleFor($row->user_id);
         $tokens = UipJwtService::issueTokenPair($row->user_id, $role, $session ? (int) $session->id : null);
 

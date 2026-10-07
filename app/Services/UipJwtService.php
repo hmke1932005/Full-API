@@ -130,6 +130,8 @@ class UipJwtService
             'refresh_token' => $rawRefresh,
             'token_type'    => 'Bearer',
             'expires_in'    => $accessTtl,
+            // الفرونت بيستخدمها لقفل الجلسة لما المستخدم يسيب المنصة من غير أي تفاعل.
+            'idle_timeout_minutes' => (int) round(app(\App\Services\SessionPolicyService::class)->idleTimeoutSeconds() / 60),
         ];
     }
 }

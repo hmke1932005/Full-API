@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Cache;
+
 /**
  * getPolicy()/updatePolicy() + enforceConcurrentLimit() (بيتنادى من
  * UserSessionService::start وقت كل login ناجح). الـ concurrent limit
@@ -9,7 +11,8 @@ namespace App\Services;
  * أقدم جلساته بتتلغي (is_active=0 + revoke للـ refresh token) عشان الجلسة
  * الجديدة تاخد مكانها — فالجهاز القديم يتطرد بدل ما الدخول الجديد يتمنع.
  *
- * مش متطبّق هنا: idle timeout (timeout_minutes بيتخزّن بس).
+ * idle timeout: timeout_minutes بقى بيتطبّق فعلًا (idleTimeoutSeconds) — الجلسة اللي
+ * مفيهاش أي نشاط المدة دي بتتقفل (UserSessionService::isActive + RefreshTokenController).
  */
 class SessionPolicyService
 {
@@ -25,6 +28,21 @@ class SessionPolicyService
         private \App\Repositories\SecurityPolicyRepository $policies,
         private AuditLogService $auditLog
     ) {
+    }
+
+    private const IDLE_CACHE_KEY = 'session.policy.idle_seconds';
+
+    /** مدة الخمول المسموحة بالثواني (0 = متعطّل). متكاشّة دقيقة عشان الـ middleware بيسألها كل request. */
+    public function idleTimeoutSeconds(): int
+    {
+        try {
+            return (int) Cache::remember(self::IDLE_CACHE_KEY, 60, function () {
+                $minutes = (int) ($this->getPolicy()['timeout_minutes'] ?? 0);
+                return $minutes > 0 ? $minutes * 60 : 0;
+            });
+        } catch (\Throwable $e) {
+            return 0;
+        }
     }
 
     /** @return array{timeout_minutes:int,concurrent_limit:int,enforce_concurrent_limit:bool} */
@@ -71,6 +89,8 @@ class SessionPolicyService
         if (!$saved) {
             throw new \RuntimeException('Could not save the session policy.');
         }
+
+        Cache::forget(self::IDLE_CACHE_KEY);
 
         $this->auditLog->record($adminUserId, 'security_policy.session_updated', 'SecurityPolicy', null, $before, $policy, $ip);
 

@@ -81,17 +81,39 @@ class UserSessionService
         return DB::table('user_sessions')->where('session_token', $hash)->first() ?: null;
     }
 
+    /** هل الجلسة فضلت من غير أي نشاط أكتر من المدة المسموحة في Security > Policies > Sessions؟ */
+    public function idleExpired(?object $row): bool
+    {
+        if (!$row || empty($row->last_activity_at)) {
+            return false;
+        }
+        $limit = app(SessionPolicyService::class)->idleTimeoutSeconds();
+        if ($limit <= 0) {
+            return false;
+        }
+        $last = strtotime((string) $row->last_activity_at);
+        return $last !== false && (time() - $last) > $limit;
+    }
+
     /** هل الجلسة لسه شغالة؟ التوكنات القديمة (من غير sid) بتعدّي. */
     public function isActive(?int $sessionId): bool
     {
         if (!$sessionId) {
             return true;
         }
-        $row = DB::table('user_sessions')->where('id', $sessionId)->first(['is_active', 'expires_at']);
+        $row = DB::table('user_sessions')->where('id', $sessionId)->first(['is_active', 'expires_at', 'last_activity_at']);
         if (!$row) {
             return false;
         }
-        return (bool) $row->is_active && (!$row->expires_at || strtotime((string) $row->expires_at) > time());
+        if (!(bool) $row->is_active || ($row->expires_at && strtotime((string) $row->expires_at) <= time())) {
+            return false;
+        }
+        // خمول: الجلسة بتتقفل فعليًا (is_active=0 + revoke للـ refresh token) مش بس بترفض الطلب ده.
+        if ($this->idleExpired($row)) {
+            $this->end($sessionId, 'idle_timeout');
+            return false;
+        }
+        return true;
     }
 
     /** يحدّث آخر نشاط بحد أقصى مرة كل دقيقة لكل جلسة. */
