@@ -180,7 +180,8 @@ class SecurityPoliciesApiController extends Controller
         }
 
         try {
-            $service->updatePolicy($request->all(), $request->attributes->get('uip_user_id'), $request->ip());
+            // الـ 4th arg (User-Agent) بيستخدمه Device policy بس لحماية الأدمن من قفل نفسه؛ باقي الـ services بتتجاهله.
+            $service->updatePolicy($request->all(), $request->attributes->get('uip_user_id'), $request->ip(), $request->userAgent());
             return $this->apiSuccess(null, $successMessage);
         } catch (\InvalidArgumentException $e) {
             return $this->apiError($e->getMessage(), null, 422);

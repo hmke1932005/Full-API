@@ -14,12 +14,27 @@ use Illuminate\Http\Request;
 /** يطابق RefreshTokenController::submit() + AuthService::refreshApiTokens() القديمين (rotation: توكن واحد الاستخدام + reuse detection). */
 class RefreshTokenController extends Controller
 {
-    public function __construct(private RoleService $roles, private UserSessionService $sessions)
-    {
+    public function __construct(
+        private RoleService $roles,
+        private UserSessionService $sessions,
+        private \App\Services\DeviceRestrictionPolicyService $deviceRestriction
+    ) {
     }
 
     public function submit(Request $request)
     {
+        // Device Restrictions Policy — جلسة على نوع جهاز محظور ماتقدرش تجدّد التوكن.
+        if (!$this->deviceRestriction->isAllowed($request->userAgent())) {
+            SecurityLog::write('Refresh blocked - device type restricted', [
+                'device' => $this->deviceRestriction->classify($request->userAgent()), 'ip' => $request->ip(),
+            ]);
+            return AuthCookies::noStore($this->apiError(
+                $this->deviceRestriction->blockedMessage($request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en'),
+                ['code' => 'device_blocked'],
+                403
+            ));
+        }
+
         // المصدر الأساسي: كوكي HttpOnly (مع فحص CSRF). الجسم (refresh_token) مقبول
         // بس كـ migration لجلسات قديمة كانت في localStorage — والرد بيحط كوكي
         // ويشيل التوكن من الجسم فالـ JS مبيشوفوش تاني.

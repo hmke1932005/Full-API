@@ -43,6 +43,19 @@ class UipAuthMiddleware
             ], 401);
         }
 
+        // Device Restrictions Policy — بتتطبق على كل ريكوست محمي، فالجلسات اللي كانت
+        // شغالة على نوع جهاز اتحظر بعد كده بتتقطع فورًا (مش بس اللوجين الجديد).
+        $devicePolicy = app(\App\Services\DeviceRestrictionPolicyService::class);
+        if (!$devicePolicy->isAllowed($request->userAgent())) {
+            return response()->json([
+                'success' => false,
+                'message' => $devicePolicy->blockedMessage($request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en'),
+                'data'    => ['device_blocked' => true],
+                'errors'  => ['code' => 'device_blocked'],
+                'meta'    => (object) [],
+            ], 403);
+        }
+
         // جلسة اتلغت من بورتال الأمان (أو خلصت) => الـ access token بيبطل فورًا.
         $sid = isset($claims['sid']) ? (int) $claims['sid'] : null;
         // توكن من غير sid مينفعش يتلغى بالـ logout — نرفضه لو AUTH_REQUIRE_SID=true.

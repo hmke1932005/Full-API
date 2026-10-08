@@ -6,10 +6,14 @@ use App\Repositories\SecurityPolicyRepository;
 
 /**
  * منقولة من app/Services/DeviceRestrictionPolicyService.php القديمة
- * بالكامل — بند 25 batch 3. classify()/isAllowed() منقولين كاملين
- * (منطق ذاتي الاكتفاء)، بس نفس فجوة enforcement الموثّقة في باقي
- * *PolicyService بتاعة اللوجين — مفيش نقطة في AuthService الحالي
- * بتنادي عليهم لسه.
+ * بالكامل — بند 25 batch 3. classify()/isAllowed() منقولين كاملين.
+ *
+ * الإنفاذ (enforcement): isAllowed() بتتنادى من
+ *   - LoginController::submit()          (منع الدخول من نوع جهاز محظور)
+ *   - RefreshTokenController::submit()   (منع تجديد جلسة على جهاز محظور)
+ *   - UipAuthMiddleware                  (كل ريكوست محمي — يقطع الجلسات الشغالة فورًا)
+ * التصنيف مبني على User-Agent، يعني بيمنع الاستخدام العادي من الجهاز
+ * بس مش حماية قوية ضد حد بيزوّر الـ User-Agent عمدًا.
  */
 class DeviceRestrictionPolicyService
 {
@@ -46,8 +50,12 @@ class DeviceRestrictionPolicyService
         return $policy;
     }
 
-    /** @throws \InvalidArgumentException on bad input */
-    public function updatePolicy(array $input, $adminUserId, ?string $ip = null): array
+    /**
+     * @param string|null $userAgent الـ User-Agent بتاع الأدمن اللي بيحفظ السياسة — لو السياسة
+     *                               الجديدة هتحظر جهازه هو نفسه بنرفض الحفظ (حماية من قفل الأدمن برا).
+     * @throws \InvalidArgumentException on bad input
+     */
+    public function updatePolicy(array $input, $adminUserId, ?string $ip = null, ?string $userAgent = null): array
     {
         $before = $this->getPolicy();
 
@@ -67,6 +75,12 @@ class DeviceRestrictionPolicyService
         }
 
         $policy = ['mode' => $mode, 'allowed_device_types' => $allowed, 'blocked_device_types' => $blocked];
+
+        if ($userAgent !== null && !$this->allows($policy, $userAgent)) {
+            throw new \InvalidArgumentException(
+                'This policy would block the device you are using right now (' . $this->classify($userAgent) . '), and you would lose access. Save it from a device type that stays allowed.'
+            );
+        }
 
         $saved = $this->policies->updateValue(self::POLICY_KEY, json_encode($policy, JSON_UNESCAPED_UNICODE), $adminUserId);
         if (!$saved) {
@@ -100,7 +114,12 @@ class DeviceRestrictionPolicyService
     /** True = هذا النوع من الأجهزة مسموح له يكمل اللوجين، حسب السياسة الحالية. */
     public function isAllowed(?string $userAgent): bool
     {
-        $policy = $this->getPolicy();
+        return $this->allows($this->getPolicy(), $userAgent);
+    }
+
+    /** نفس منطق isAllowed() على سياسة معيّنة (عشان نقدر نفحص سياسة لسه ماتحفظتش). */
+    private function allows(array $policy, ?string $userAgent): bool
+    {
         if ($policy['mode'] === 'disabled') {
             return true;
         }
@@ -112,5 +131,13 @@ class DeviceRestrictionPolicyService
         }
 
         return !in_array($type, $policy['blocked_device_types'], true);
+    }
+
+    /** رسالة الرفض للمستخدم (عربي/إنجليزي حسب X-Locale). */
+    public function blockedMessage(string $locale = 'en'): string
+    {
+        return $locale === 'ar'
+            ? 'استخدام المنصة من هذا النوع من الأجهزة غير مسموح حاليًا. جرّب من جهاز آخر أو تواصل مع الدعم.'
+            : 'Using the platform from this type of device is not allowed. Try another device or contact support.';
     }
 }

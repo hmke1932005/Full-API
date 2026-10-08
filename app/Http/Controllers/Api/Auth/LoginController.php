@@ -57,7 +57,8 @@ class LoginController extends Controller
         private AccountLockoutService $lockout,
         private TrustedDeviceService $trustedDevice,
         private SettingRepository $settings,
-        private \App\Services\SecurityAlertService $alerts
+        private \App\Services\SecurityAlertService $alerts,
+        private \App\Services\DeviceRestrictionPolicyService $deviceRestriction
     ) {
     }
 
@@ -77,6 +78,21 @@ class LoginController extends Controller
 
         $data = $validator->validated();
         $locale = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
+
+        // Device Restrictions Policy — قاعدة على مستوى المنصة (مش مرتبطة بحساب بعينه)،
+        // فبتتفحص قبل أي بحث عن الحساب أو تحقق من كلمة السر.
+        if (!$this->deviceRestriction->isAllowed($request->userAgent())) {
+            SecurityLog::write('Login blocked - device type restricted', [
+                'device' => $this->deviceRestriction->classify($request->userAgent()), 'ip' => $request->ip(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => $this->deviceRestriction->blockedMessage($locale),
+                'data'    => ['device_blocked' => true],
+                'errors'  => ['code' => 'device_blocked'],
+                'meta'    => (object) [],
+            ], 403);
+        }
 
         $user = User::where('email', $data['email'])->first();
 
