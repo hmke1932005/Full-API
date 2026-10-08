@@ -12,6 +12,7 @@ use App\Repositories\ProjectTeamMemberRepository;
 use App\Repositories\UniversityRepository;
 use App\Services\MessagingService;
 use App\Services\ProjectAnalyticsService;
+use App\Services\SiteVisitService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -52,7 +53,8 @@ class PublicApiController extends Controller
         private ProjectAnalyticsService $analytics,
         private \App\Repositories\GraduationRecordRepository $graduationRecords,
         private UniversityRepository $universities,
-        private MessagingService $messaging
+        private MessagingService $messaging,
+        private SiteVisitService $siteVisits
     ) {
     }
 
@@ -61,7 +63,40 @@ class PublicApiController extends Controller
     {
         return $this->apiSuccess([
             'featured' => $this->projects->featured(6),
+            // أرقام حقيقية من الـ DB (مش ثابتة) — بتتحدّث مع نمو المنصة. كاش قصير
+            // (60ث) عشان صفحة الهبوط العامة متعملش 4 COUNT على كل زيارة.
+            'stats'    => \Illuminate\Support\Facades\Cache::remember(
+                'public.landing_stats',
+                60,
+                fn () => $this->siteVisits->landingStats()
+            ),
         ], 'Landing page data retrieved successfully.');
+    }
+
+    /** GET /api/v1/public/visits — عدّاد زوار المنصة (للفوتر). */
+    public function visits(Request $request)
+    {
+        return $this->apiSuccess($this->siteVisits->counts(), 'Visit counters retrieved successfully.');
+    }
+
+    /**
+     * POST /api/v1/public/visits — تسجيل زيارة. الفرونت بيبعت مرة لكل جلسة
+     * متصفح بمعرّف عشوائي (visitor_id) — بيتخزّن hash بس، مفيش IP/UA.
+     */
+    public function recordVisit(Request $request)
+    {
+        $visitorId = trim((string) $request->input('visitor_id', ''));
+        if (!preg_match('/^[A-Za-z0-9_-]{16,64}$/', $visitorId)) {
+            return $this->apiError('Invalid visitor id.', null, 422);
+        }
+
+        $ua = strtolower((string) $request->userAgent());
+        if ($ua === '' || preg_match('/bot|crawl|spider|slurp|headless|curl|wget|python-requests/', $ua)) {
+            // بوتات/أدوات: بنرجّع العدّاد من غير ما نزوّده.
+            return $this->apiSuccess($this->siteVisits->counts(), 'Visit counters retrieved successfully.');
+        }
+
+        return $this->apiSuccess($this->siteVisits->record($visitorId), 'Visit recorded.');
     }
 
     /**

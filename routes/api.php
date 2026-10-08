@@ -1565,6 +1565,8 @@ Route::prefix('v1')->group(function () {
     Route::prefix('public')->group(function () {
         Route::get('/landing', [PublicApiController::class, 'landing']);
         Route::get('/site-info', [PublicApiController::class, 'siteInfo']);
+        Route::get('/visits', [PublicApiController::class, 'visits'])->middleware('throttle:120,1');
+        Route::post('/visits', [PublicApiController::class, 'recordVisit'])->middleware('throttle:20,1');
         Route::get('/verify-certificate', [PublicApiController::class, 'verifyCertificate']);
         Route::get('/projects', [PublicApiController::class, 'projects']);
         Route::get('/projects/{slug}', [PublicApiController::class, 'projectShow']);
