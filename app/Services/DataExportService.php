@@ -21,7 +21,11 @@ use App\Services\Export\SpreadsheetWriter;
  */
 class DataExportService
 {
-    public const ALLOWED_TYPES = ['platform_kpis', 'user_growth', 'category_distribution', 'university_leaderboard', 'full_platform_export'];
+    public const ALLOWED_TYPES = [
+        'platform_kpis', 'user_growth', 'category_distribution', 'university_leaderboard', 'full_platform_export',
+        // تصديرات نظام الامتحانات (بتتبني في DataAnalysisExamsService::exportRows)
+        'exam_overview', 'exam_scores_detail', 'student_exam_performance', 'exam_summary', 'doctor_exam_performance',
+    ];
 
     public const ALLOWED_FORMATS = ['csv', 'xlsx', 'pdf'];
 
@@ -31,6 +35,11 @@ class DataExportService
         'category_distribution'   => 'Category Distribution',
         'university_leaderboard'  => 'University Leaderboard',
         'full_platform_export'    => 'Everything (Projects + Universities)',
+        'exam_overview'            => 'Exam Overview (KPIs)',
+        'exam_scores_detail'       => 'Exam Scores (every graded attempt)',
+        'student_exam_performance' => 'Student Exam Performance',
+        'exam_summary'             => 'Exams Summary (per exam)',
+        'doctor_exam_performance'  => 'Doctors Exam Performance',
     ];
 
     public function __construct(
@@ -38,7 +47,8 @@ class DataExportService
         private AnalyticsService $analytics,
         private ProjectRepository $projects,
         private UniversityRepository $universities,
-        private MailService $mail
+        private MailService $mail,
+        private DataAnalysisExamsService $exams
     ) {
     }
 
@@ -55,33 +65,35 @@ class DataExportService
         $userId,
         array $recipients = [],
         ?string $batchId = null,
-        ?int $scheduleId = null
+        ?int $scheduleId = null,
+        array $filters = []
     ): DataExport {
         if (!in_array($type, self::ALLOWED_TYPES, true) || !in_array($format, self::ALLOWED_FORMATS, true)) {
             throw new \InvalidArgumentException('Unknown export type or format.');
         }
 
         $emailTo = $recipients ? implode(', ', $recipients) : null;
+        $isExam = in_array($type, DataAnalysisExamsService::EXPORT_TYPES, true);
 
         $export = $this->exports->create([
             'user_id'     => $userId,
             'export_type' => $type,
             'format'      => $format,
-            'filters'     => [],
+            'filters'     => $isExam ? $filters : [],
             'status'      => 'pending',
             'email_to'    => $emailTo,
             'batch_id'    => $batchId,
             'schedule_id' => $scheduleId,
         ]);
 
-        [$header, $rows] = $this->buildRows($type);
+        [$header, $rows] = $this->buildRows($type, $filters);
 
         $dir = public_path(config('upload.paths.reports', 'uploads/reports'));
         if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
             throw new \RuntimeException('Could not prepare the exports folder.');
         }
 
-        $filename = 'export_' . $type . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $format;
+        $filename = 'export_' . $type . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes($isExam ? 16 : 4)) . '.' . $format;
         $fullPath = $dir . '/' . $filename;
 
         switch ($format) {
@@ -125,8 +137,12 @@ class DataExportService
     }
 
     /** @return array{0:string[],1:array<int,array<int,mixed>>} */
-    private function buildRows(string $type): array
+    private function buildRows(string $type, array $filters = []): array
     {
+        if (in_array($type, DataAnalysisExamsService::EXPORT_TYPES, true)) {
+            return $this->exams->exportRows($type, $filters);
+        }
+
         switch ($type) {
             case 'platform_kpis':
                 $overview = $this->analytics->platformOverview();

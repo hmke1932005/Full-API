@@ -34,6 +34,23 @@ class DataAnalysisExamsService
     ];
     private const OBJECTIVE_TYPES = ['mcq', 'multi_select', 'true_false'];
 
+    /** أنواع تصدير الامتحانات اللي بورتال المحلل بيعرضها في Export Center. */
+    public const EXPORT_TYPES = [
+        'exam_overview',
+        'exam_scores_detail',
+        'student_exam_performance',
+        'exam_summary',
+        'doctor_exam_performance',
+    ];
+
+    public const EXPORT_LABELS = [
+        'exam_overview'            => 'Exam Overview (KPIs)',
+        'exam_scores_detail'       => 'Exam Scores (every graded attempt)',
+        'student_exam_performance' => 'Student Exam Performance',
+        'exam_summary'             => 'Exams Summary (per exam)',
+        'doctor_exam_performance'  => 'Doctors Exam Performance',
+    ];
+
     // -----------------------------------------------------------------
     // Filters (dropdown options)
     // -----------------------------------------------------------------
@@ -299,6 +316,207 @@ class DataAnalysisExamsService
             'summary' => $summary,
             'total' => $total,
         ];
+    }
+
+    // -----------------------------------------------------------------
+    // Export Center rows (CSV / XLSX / PDF)
+    // -----------------------------------------------------------------
+
+    /**
+     * صفوف جاهزة للتصدير لنفس البيانات اللي صفحة Exam Analytics بتعرضها
+     * (نفس الفلاتر ونفس قواعد الحساب: أفضل محاولة لكل طالب/امتحان،
+     * المحاولات الملغية والقوالب مستبعدة).
+     *
+     * @param array<string,mixed> $f نفس شكل filtersFrom() في الكنترولر
+     * @return array{0:string[],1:array<int,array<int,mixed>>} [header, rows]
+     */
+    public function exportRows(string $type, array $f = []): array
+    {
+        [$header, $rows] = match ($type) {
+            'exam_overview'            => $this->exportOverviewRows($f),
+            'exam_scores_detail'       => $this->exportScoresDetailRows($f),
+            'student_exam_performance' => $this->exportStudentRows($f),
+            'exam_summary'             => $this->exportExamSummaryRows($f),
+            'doctor_exam_performance'  => $this->exportDoctorRows($f),
+            default                    => [[], []],
+        };
+
+        return [$header, array_map(fn ($row) => array_map([$this, 'safeCell'], $row), $rows)];
+    }
+
+    private function exportOverviewRows(array $f): array
+    {
+        $kpis = $this->overview($f)['kpis'];
+        $rows = [];
+        foreach ($kpis as $metric => $value) {
+            $rows[] = [$metric, $value];
+        }
+        return [['metric', 'value'], $rows];
+    }
+
+    private function exportScoresDetailRows(array $f): array
+    {
+        $graded = $this->gradedRows($f);
+        $nm = $this->names($graded);
+        usort($graded, fn ($a, $b) => strcmp((string) $a['submitted_at'], (string) $b['submitted_at']));
+
+        $rows = [];
+        foreach ($graded as $r) {
+            $rows[] = [
+                $r['title'],
+                $r['exam_type'],
+                $nm['universities'][$r['university_id']]['en'] ?? '',
+                $r['faculty_id'] ? ($nm['faculties'][$r['faculty_id']]['en'] ?? '') : '',
+                $r['course_id'] ? trim(($nm['courses'][$r['course_id']]['code'] ?? '') . ' ' . ($nm['courses'][$r['course_id']]['en'] ?? '')) : '',
+                $r['student'],
+                $r['student_number'],
+                $r['email'],
+                round($r['pct'], 2),
+                $r['passed'] === null ? '' : ($r['passed'] ? 'passed' : 'failed'),
+                $r['late'] ? 'yes' : 'no',
+                $r['violations'],
+                $r['submitted_at'],
+            ];
+        }
+
+        return [[
+            'Exam', 'Exam Type', 'University', 'Faculty', 'Course', 'Student', 'Student Number', 'Email',
+            'Percentage', 'Result', 'Late', 'Violations', 'Submitted At',
+        ], $rows];
+    }
+
+    private function exportStudentRows(array $f): array
+    {
+        // نفس منطق تبويب Students (أفضل محاولة لكل امتحان) من غير تقسيم صفحات.
+        $list = $this->students($f, '', 'name', '', 1, PHP_INT_MAX)['items'];
+
+        $facultyIds = array_values(array_filter(array_unique(array_column($list, 'faculty_id'))));
+        $faculties = [];
+        if ($facultyIds) {
+            foreach (DB::table('faculties')->whereIn('id', $facultyIds)->select('id', 'name_en', 'name_ar')->get() as $r) {
+                $faculties[$r->id] = $r->name_en ?: $r->name_ar;
+            }
+        }
+
+        $rows = [];
+        foreach ($list as $s) {
+            $rows[] = [
+                $s['student'], $s['student_number'], $s['email'],
+                $s['faculty_id'] ? ($faculties[$s['faculty_id']] ?? '') : '',
+                $s['exams_taken'], $s['average_pct'], $s['best_pct'], $s['lowest_pct'],
+                $s['pass_rate'], $s['trend'], $s['flagged'], $s['level'],
+            ];
+        }
+
+        return [[
+            'Student', 'Student Number', 'Email', 'Faculty', 'Exams Taken', 'Average %', 'Best %', 'Lowest %',
+            'Pass Rate %', 'Trend (pts)', 'Flagged Attempts', 'Level',
+        ], $rows];
+    }
+
+    private function exportExamSummaryRows(array $f): array
+    {
+        $graded = $this->gradedRows($f);
+        $nm = $this->names($graded);
+
+        $by = [];
+        foreach ($graded as $r) {
+            $by[$r['exam_id']][] = $r;
+        }
+
+        $rows = [];
+        foreach ($by as $id => $rs) {
+            $pcts = array_column($rs, 'pct');
+            $judged = array_filter($rs, fn ($r) => $r['passed'] !== null);
+            $first = $rs[0];
+            $rows[] = [
+                (int) $id,
+                $first['title'],
+                $first['exam_type'],
+                $nm['universities'][$first['university_id']]['en'] ?? '',
+                $first['course_id'] ? trim(($nm['courses'][$first['course_id']]['code'] ?? '') . ' ' . ($nm['courses'][$first['course_id']]['en'] ?? '')) : '',
+                count($rs),
+                count(array_unique(array_column($rs, 'student_id'))),
+                $this->avg($pcts),
+                round(max($pcts), 2),
+                round(min($pcts), 2),
+                $judged ? round(count(array_filter($judged, fn ($r) => $r['passed'])) / count($judged) * 100, 2) : null,
+                max(array_column($rs, 'submitted_at')),
+            ];
+        }
+        usort($rows, fn ($a, $b) => strcmp((string) $b[11], (string) $a[11]));
+
+        return [[
+            'Exam ID', 'Exam', 'Exam Type', 'University', 'Course', 'Graded Attempts', 'Students',
+            'Average %', 'Highest %', 'Lowest %', 'Pass Rate %', 'Last Submission',
+        ], $rows];
+    }
+
+    private function exportDoctorRows(array $f): array
+    {
+        // كل الامتحانات في النطاق (حتى اللي لسه ماتحلّش) متجمّعة على صاحبها.
+        $created = $this->examScope($f)
+            ->select('e.created_by_academic_staff_id as staff_id', DB::raw('COUNT(*) as exams'))
+            ->groupBy('e.created_by_academic_staff_id')
+            ->pluck('exams', 'staff_id')->all();
+
+        $attempts = $this->baseQuery($f)
+            ->select('e.created_by_academic_staff_id as staff_id', 'e.id as exam_id', 'e.passing_score', 'a.student_id', 'a.percentage')
+            ->limit(self::MAX_ROWS)->get();
+
+        $stats = [];
+        foreach ($attempts as $a) {
+            $sid = (int) $a->staff_id;
+            $pct = (float) $a->percentage;
+            $stats[$sid]['pcts'][] = $pct;
+            $stats[$sid]['exams'][(int) $a->exam_id] = true;
+            $stats[$sid]['students'][(int) $a->student_id] = true;
+            if ($a->passing_score !== null) {
+                $stats[$sid]['judged'] = ($stats[$sid]['judged'] ?? 0) + 1;
+                $stats[$sid]['passed'] = ($stats[$sid]['passed'] ?? 0) + ($pct >= (float) $a->passing_score ? 1 : 0);
+            }
+        }
+
+        $doctors = [];
+        if ($created) {
+            $doctors = DB::table('academic_staff as st')->join('users as u', 'u.id', '=', 'st.user_id')
+                ->whereIn('st.id', array_keys($created))
+                ->select('st.id', 'u.full_name', 'u.email')->get()->keyBy('id')->all();
+        }
+
+        $rows = [];
+        foreach ($created as $staffId => $examCount) {
+            $d = $doctors[$staffId] ?? null;
+            $s = $stats[(int) $staffId] ?? null;
+            $rows[] = [
+                $d->full_name ?? ('#' . $staffId),
+                $d->email ?? '',
+                (int) $examCount,
+                $s ? count($s['exams']) : 0,
+                $s ? count($s['pcts']) : 0,
+                $s ? count($s['students']) : 0,
+                $s ? $this->avg($s['pcts']) : null,
+                ($s && !empty($s['judged'])) ? round($s['passed'] / $s['judged'] * 100, 2) : null,
+            ];
+        }
+        usort($rows, fn ($a, $b) => strcmp((string) $a[0], (string) $b[0]));
+
+        return [[
+            'Doctor', 'Email', 'Exams Created', 'Exams With Graded Attempts', 'Graded Attempts', 'Students',
+            'Average %', 'Pass Rate %',
+        ], $rows];
+    }
+
+    /**
+     * حماية من CSV/Excel formula injection: أسماء الطلاب وعناوين الامتحانات
+     * بيكتبها مستخدمين، فأي نص بيبدأ بـ = + - @ بيتحوّل لنص عادي.
+     */
+    private function safeCell($v)
+    {
+        if (is_string($v) && $v !== '' && strpbrk($v[0], "=+-@\t\r") !== false) {
+            return "'" . $v;
+        }
+        return $v;
     }
 
     // -----------------------------------------------------------------

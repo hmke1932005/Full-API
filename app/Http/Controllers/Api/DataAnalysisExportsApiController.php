@@ -7,6 +7,8 @@ use App\Repositories\DataExportRepository;
 use App\Repositories\ProjectRepository;
 use App\Repositories\UniversityRepository;
 use App\Services\AnalyticsService;
+use App\Services\AuditLogService;
+use App\Services\DataAnalysisExamsService;
 use App\Services\Export\PdfWriter;
 use App\Services\Export\SpreadsheetWriter;
 use App\Services\ExportSchedulerService;
@@ -36,7 +38,11 @@ use Illuminate\Http\Request;
  */
 class DataAnalysisExportsApiController extends Controller
 {
-    private const ALLOWED_TYPES = ['platform_kpis', 'user_growth', 'category_distribution', 'university_leaderboard', 'full_platform_export'];
+    private const ALLOWED_TYPES = [
+        'platform_kpis', 'user_growth', 'category_distribution', 'university_leaderboard', 'full_platform_export',
+        // نظام الامتحانات — الصفوف من DataAnalysisExamsService::exportRows (نفس أرقام Exam Analytics)
+        'exam_overview', 'exam_scores_detail', 'student_exam_performance', 'exam_summary', 'doctor_exam_performance',
+    ];
 
     private const ALLOWED_FORMATS = ['csv', 'xlsx', 'pdf'];
 
@@ -46,6 +52,11 @@ class DataAnalysisExportsApiController extends Controller
         'category_distribution'   => 'Category Distribution',
         'university_leaderboard'  => 'University Leaderboard',
         'full_platform_export'    => 'Everything (Projects + Universities)',
+        'exam_overview'            => 'Exam Overview (KPIs)',
+        'exam_scores_detail'       => 'Exam Scores (every graded attempt)',
+        'student_exam_performance' => 'Student Exam Performance',
+        'exam_summary'             => 'Exams Summary (per exam)',
+        'doctor_exam_performance'  => 'Doctors Exam Performance',
     ];
 
     public function __construct(
@@ -54,7 +65,9 @@ class DataAnalysisExportsApiController extends Controller
         private ProjectRepository $projects,
         private UniversityRepository $universities,
         private MailService $mail,
-        private ExportSchedulerService $scheduler
+        private ExportSchedulerService $scheduler,
+        private DataAnalysisExamsService $exams,
+        private AuditLogService $auditLog
     ) {
     }
 
@@ -76,7 +89,7 @@ class DataAnalysisExportsApiController extends Controller
         return $this->apiSuccess([
             'exports'   => $this->exports->forUser($userId, 50),
             'schedules' => $schedules,
-        ], 'Exports retrieved successfully.', 200, ['allowed_types' => self::ALLOWED_TYPES, 'allowed_formats' => self::ALLOWED_FORMATS]);
+        ], 'Exports retrieved successfully.', 200, ['allowed_types' => self::ALLOWED_TYPES, 'allowed_formats' => self::ALLOWED_FORMATS, 'exam_types' => DataAnalysisExamsService::EXPORT_TYPES]);
     }
 
     /**
@@ -112,6 +125,8 @@ class DataAnalysisExportsApiController extends Controller
             }
         }
 
+        $filters = $this->examFiltersFrom($request);
+
         $batchId = count($types) > 1 ? bin2hex(random_bytes(8)) : null;
         $successCount = 0;
         $failCount = 0;
@@ -119,7 +134,7 @@ class DataAnalysisExportsApiController extends Controller
 
         foreach ($types as $type) {
             try {
-                $this->generateOne($type, $format, $userId, $recipients, $batchId);
+                $this->generateOne($type, $format, $userId, $recipients, $batchId, $filters);
                 $successCount++;
             } catch (\Throwable $e) {
                 $failCount++;
@@ -145,28 +160,30 @@ class DataAnalysisExportsApiController extends Controller
     }
 
     /** بتولّد نوع تصدير واحد، تسجله، وتبعت إيميل لكل مستلم. بترمي استثناء عند الفشل. */
-    private function generateOne(string $type, string $format, $userId, array $recipients, ?string $batchId): void
+    private function generateOne(string $type, string $format, $userId, array $recipients, ?string $batchId, array $filters = []): void
     {
         $emailTo = $recipients ? implode(', ', $recipients) : null;
+        $isExam = in_array($type, DataAnalysisExamsService::EXPORT_TYPES, true);
+        $typeFilters = $isExam ? $filters : []; // الفلاتر بتخص تصديرات الامتحانات بس
 
         $export = $this->exports->create([
             'user_id'     => $userId,
             'export_type' => $type,
             'format'      => $format,
-            'filters'     => [],
+            'filters'     => $typeFilters,
             'status'      => 'pending',
             'email_to'    => $emailTo,
             'batch_id'    => $batchId,
         ]);
 
-        [$header, $rows] = $this->buildRows($type);
+        [$header, $rows] = $this->buildRows($type, $typeFilters);
 
         $dir = public_path(config('upload.paths.reports', 'uploads/reports'));
         if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
             throw new \RuntimeException('Could not prepare the exports folder.');
         }
 
-        $filename = 'export_' . $type . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . $format;
+        $filename = 'export_' . $type . '_' . date('Ymd_His') . '_' . bin2hex(random_bytes($isExam ? 16 : 4)) . '.' . $format;
         $fullPath = $dir . '/' . $filename;
 
         switch ($format) {
@@ -192,6 +209,16 @@ class DataAnalysisExportsApiController extends Controller
 
         $relativePath = rtrim(config('upload.paths.reports', 'uploads/reports'), '/') . '/' . $filename;
         $this->exports->markCompleted($export->id, $relativePath);
+
+        if ($isExam) {
+            // بيانات طلاب (أسماء/إيميلات/درجات) — بنسجّل كل تصدير في الـ audit log.
+            $this->auditLog->record($userId, 'data_analysis.exam_exported', 'data_export', $export->id, null, [
+                'export_type' => $type,
+                'format'      => $format,
+                'filters'     => $typeFilters,
+                'emailed_to'  => $emailTo,
+            ]);
+        }
 
         if ($recipients) {
             $label = self::TYPE_LABELS[$type] ?? $type;
@@ -253,7 +280,8 @@ class DataAnalysisExportsApiController extends Controller
             return $this->apiError('Unknown export type.', null, 422);
         }
 
-        [$header, $rows] = $this->buildRows($type);
+        $savedFilters = is_string($export->filters) ? (json_decode($export->filters, true) ?: []) : (is_array($export->filters) ? $export->filters : []);
+        [$header, $rows] = $this->buildRows($type, $this->sanitizeExamFilters($savedFilters));
         $total = count($rows);
 
         return $this->apiSuccess([
@@ -416,6 +444,29 @@ class DataAnalysisExportsApiController extends Controller
 
     // -- helpers --------------------------------------------------------------
 
+    /** فلاتر تصديرات الامتحانات من body الطلب: filters = {university_id, faculty_id, course_id, exam_type, from, to}. */
+    private function examFiltersFrom(Request $request): array
+    {
+        $raw = $request->input('filters', []);
+        return $this->sanitizeExamFilters(is_array($raw) ? $raw : []);
+    }
+
+    /** نفس تنضيف DataAnalysisExamsApiController::filtersFrom — القيم بترجع null لو مش صالحة. */
+    private function sanitizeExamFilters(array $in): array
+    {
+        $date = fn ($v) => (is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v)) ? $v : null;
+        $examType = $in['exam_type'] ?? null;
+
+        return [
+            'university_id' => (int) ($in['university_id'] ?? 0) ?: null,
+            'faculty_id'    => (int) ($in['faculty_id'] ?? 0) ?: null,
+            'course_id'     => (int) ($in['course_id'] ?? 0) ?: null,
+            'exam_type'     => (is_string($examType) && preg_match('/^[a-z_]{1,20}$/', $examType)) ? $examType : null,
+            'from'          => $date($in['from'] ?? null),
+            'to'            => $date($in['to'] ?? null),
+        ];
+    }
+
     private function isDataAnalyst(Request $request): bool
     {
         // 'admin' متضمنة: نفس قاعدة DataAnalysisSegmentsApiController.
@@ -435,8 +486,12 @@ class DataAnalysisExportsApiController extends Controller
     }
 
     /** @return array{0:string[],1:array<int,array<int,mixed>>} */
-    private function buildRows(string $type): array
+    private function buildRows(string $type, array $filters = []): array
     {
+        if (in_array($type, DataAnalysisExamsService::EXPORT_TYPES, true)) {
+            return $this->exams->exportRows($type, $filters);
+        }
+
         switch ($type) {
             case 'platform_kpis':
                 $overview = $this->analytics->platformOverview();
