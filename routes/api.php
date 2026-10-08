@@ -65,6 +65,7 @@ use App\Http\Controllers\Api\MeetingsRecordingsApiController;
 use App\Http\Controllers\Api\MeetingsAttendanceApiController;
 use App\Http\Controllers\Api\MeetingsInvitationsApiController;
 use App\Http\Controllers\Api\MessagingController;
+use App\Http\Controllers\Api\AccountPrivacyApiController;
 use App\Http\Controllers\Api\AiAssistantController;
 use App\Http\Controllers\Api\AiAssistantSettingsController;
 use App\Http\Controllers\Api\FaqIntentController;
@@ -1370,6 +1371,12 @@ Route::prefix('v1')->group(function () {
     // student-group-chat هنا: بتعمل
     // get-or-create للمحادثة بتاعتها بس، وبعد كده كل الإرسال/التفاعل
     // بيمر من هنا (نفس الـ conversation id).
+    // خصوصية الصورة الشخصية — لأي دور مسجّل دخول (مش مربوطة بصلاحية المراسلة).
+    Route::prefix('account/photo-privacy')->middleware('uip.auth')->group(function () {
+        Route::get('/', [AccountPrivacyApiController::class, 'show']);
+        Route::patch('/', [AccountPrivacyApiController::class, 'update']);
+    });
+
     Route::prefix('messaging')->middleware(['uip.auth', 'uip.can:messaging.use'])->group(function () {
         Route::get('/inbox', [MessagingController::class, 'inbox']);
         Route::get('/recipients', [MessagingController::class, 'recipients']);

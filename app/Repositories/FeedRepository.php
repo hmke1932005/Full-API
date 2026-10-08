@@ -122,7 +122,7 @@ class FeedRepository
 
         $offset = max(0, ($page - 1) * $perPage);
         $items = DB::select(
-            "SELECT fp.*, usr.full_name AS author_name, usr.avatar_path AS author_avatar,
+            "SELECT fp.*, usr.full_name AS author_name, CASE WHEN EXISTS(SELECT 1 FROM settings st_av WHERE st_av.scope = 'user' AND st_av.user_id = usr.id AND st_av.`key` = 'profile_photo_public' AND st_av.value = '0') THEN NULL ELSE usr.avatar_path END AS author_avatar,
                     EXISTS(SELECT 1 FROM feed_post_likes l WHERE l.post_id = fp.id AND l.user_id = ?) AS is_liked,
                     EXISTS(SELECT 1 FROM feed_post_saves sv WHERE sv.post_id = fp.id AND sv.user_id = ?) AS is_saved
              FROM feed_posts fp
@@ -158,7 +158,7 @@ class FeedRepository
 
         $offset = max(0, ($page - 1) * $perPage);
         $items = DB::select(
-            "SELECT fp.*, usr.full_name AS author_name, usr.avatar_path AS author_avatar
+            "SELECT fp.*, usr.full_name AS author_name, CASE WHEN EXISTS(SELECT 1 FROM settings st_av WHERE st_av.scope = 'user' AND st_av.user_id = usr.id AND st_av.`key` = 'profile_photo_public' AND st_av.value = '0') THEN NULL ELSE usr.avatar_path END AS author_avatar
              FROM feed_posts fp
              INNER JOIN users usr ON usr.id = fp.author_user_id
              WHERE $whereSql

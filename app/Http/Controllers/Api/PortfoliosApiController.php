@@ -93,7 +93,7 @@ class PortfoliosApiController extends Controller
                 'uuid'      => $user->uuid,
                 'role'      => $role,
                 // صورة الحساب (users.avatar_path) — بتظهر بدل الحرف الأول في الصفحة العامة.
-                'avatar_path' => $user->avatar_path ?: null,
+                'avatar_path' => app(\App\Services\AvatarPrivacyService::class)->apply($user->avatar_path ?: null, (int) $user->id),
                 // profile: معلومات عامة آمنة خاصة بالدور (جهة/قسم/رتبة) — من غير إيميل أو أي بيانات داخلية.
                 'profile'   => $this->publicRoleProfile((int) $user->id, $role),
             ],

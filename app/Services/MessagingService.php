@@ -133,7 +133,15 @@ class MessagingService
         if (mb_strlen($query) < 2) {
             return [];
         }
-        return $this->users->searchDirectory($query, $excludeUserId);
+        $rows = $this->users->searchDirectory($query, $excludeUserId);
+        // الصورة تتشال من أي شخص مخفيها — الفرونت يعرض الحروف الأولى بدلها.
+        foreach ($rows as &$r) {
+            if ($this->isAvatarHidden((int) $r['id'], $excludeUserId)) {
+                $r['avatar_path'] = null;
+            }
+        }
+        unset($r);
+        return $rows;
     }
 
     // -- Thread ------------------------------------------------------------
@@ -785,7 +793,10 @@ class MessagingService
             return false;
         }
         if (!array_key_exists($ownerId, $this->avatarHiddenCache)) {
-            $this->avatarHiddenCache[$ownerId] = $this->settings->get('messaging_show_avatar', 'user', $ownerId, '1') === '0';
+            // مخفية لو قفلها من إعداد الشات، أو من إعداد "صورتي للعامة" (كل البوابات).
+            $this->avatarHiddenCache[$ownerId] =
+                $this->settings->get('messaging_show_avatar', 'user', $ownerId, '1') === '0'
+                || $this->settings->get('profile_photo_public', 'user', $ownerId, '1') === '0';
         }
         return $this->avatarHiddenCache[$ownerId];
     }

@@ -382,7 +382,7 @@ class MeetingSignalingService
                 'display_name'          => $participant->user->full_name ?? ('User #' . $participant->user_id),
                 'role'                  => $participant->role,
                 'is_host'               => $participant->role === 'host',
-                'avatar_url'            => $participant->user->avatar_path ?? null,
+                'avatar_url'            => app(\App\Services\AvatarPrivacyService::class)->apply($participant->user->avatar_path ?? null, (int) $participant->user_id),
                 'mic_enabled'           => (bool) $participant->mic_enabled,
                 'camera_enabled'        => (bool) $participant->camera_enabled,
                 'screen_sharing'        => (bool) $participant->screen_sharing,

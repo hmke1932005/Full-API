@@ -148,8 +148,12 @@ class PublicApiController extends Controller
         ], 'Project retrieved successfully.');
     }
 
-    private function avatarUrl(?string $path): ?string
+    private function avatarUrl(?string $path, $ownerId = null): ?string
     {
+        // صاحب الصورة ممكن يخفيها عن العامة (إعداد "صورتي للعامة").
+        if ($path && $ownerId && app(\App\Services\AvatarPrivacyService::class)->isHidden((int) $ownerId)) {
+            return null;
+        }
         return $path ? '/' . ltrim($path, '/') : null;
     }
 
@@ -169,13 +173,13 @@ class PublicApiController extends Controller
         $ownerRow = DB::table('users as u')
             ->leftJoin('students as st', 'st.user_id', '=', 'u.id')
             ->where('u.id', $row['owner_id'])
-            ->select('u.full_name', 'u.email', 'u.avatar_path', 'st.student_number', 'st.academic_year', 'st.bio', 'st.skills', 'st.social_links')
+            ->select('u.id as owner_user_id', 'u.full_name', 'u.email', 'u.avatar_path', 'st.student_number', 'st.academic_year', 'st.bio', 'st.skills', 'st.social_links')
             ->first();
 
         $owner = $ownerRow ? [
             'full_name'      => $ownerRow->full_name,
             'email'          => $ownerRow->email,
-            'avatar_url'     => $this->avatarUrl($ownerRow->avatar_path),
+            'avatar_url'     => $this->avatarUrl($ownerRow->avatar_path, $ownerRow->owner_user_id),
             'student_number' => $ownerRow->student_number,
             'academic_year'  => $ownerRow->academic_year,
             'bio'            => $ownerRow->bio,
@@ -187,7 +191,7 @@ class PublicApiController extends Controller
             ->join('supervisors as s', 's.id', '=', 'sa.supervisor_id')
             ->leftJoin('users as su', 'su.id', '=', 's.user_id')
             ->where('sa.project_id', $row['id'])
-            ->select('s.id', 's.full_name', 's.email', 's.title', 's.department', 'su.avatar_path')
+            ->select('s.id', 's.full_name', 's.email', 's.title', 's.department', 'su.avatar_path', 'su.id as su_user_id')
             ->distinct()
             ->get()
             ->map(fn ($s) => [
@@ -195,7 +199,7 @@ class PublicApiController extends Controller
                 'email'      => $s->email,
                 'title'      => $s->title,
                 'department' => $s->department,
-                'avatar_url' => $this->avatarUrl($s->avatar_path),
+                'avatar_url' => $this->avatarUrl($s->avatar_path, $s->su_user_id),
                 'role'       => 'supervisor',
             ])->all();
 
@@ -227,7 +231,7 @@ class PublicApiController extends Controller
                 'role'           => $m->role,
                 'academic_year'  => $m->academic_year,
                 'student_number' => $m->student_number,
-                'avatar_url'     => $this->avatarUrl($m->avatar_path),
+                'avatar_url'     => $this->avatarUrl($m->avatar_path, $m->user_id),
             ])->values()->all();
 
         return ['owner' => $owner, 'supervisors' => $supervisors, 'team' => $team];

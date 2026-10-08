@@ -136,7 +136,7 @@ class UserRepository
                 $w->where('u.full_name', 'like', $q)->orWhere('u.email', 'like', $q);
             })
             ->selectRaw(
-                'u.id, u.uuid, u.full_name, u.email, r.slug AS role,
+                'u.id, u.uuid, u.full_name, u.email, u.avatar_path, r.slug AS role,
                  COALESCE(uni.official_name_en, s.faculty) AS org_en,
                  COALESCE(uni.official_name_ar, s.faculty) AS org_ar'
             )
