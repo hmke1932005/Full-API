@@ -12,6 +12,9 @@ use App\Repositories\SecurityPolicyRepository;
  *   - LoginController::submit()          (منع الدخول من نوع جهاز محظور)
  *   - RefreshTokenController::submit()   (منع تجديد جلسة على جهاز محظور)
  *   - UipAuthMiddleware                  (كل ريكوست محمي — يقطع الجلسات الشغالة فورًا)
+ *   - UipDeviceRestrictionMiddleware     (كل ريكوست /api/* بما فيه register والـ endpoints العامة)
+ *   - RegisterController::submit()       (طبقة تانية على إنشاء الحساب)
+ *   - DeviceStatusController             (GET /v1/device-status — الفرونت يعرض صفحة الحظر)
  * التصنيف مبني على User-Agent، يعني بيمنع الاستخدام العادي من الجهاز
  * بس مش حماية قوية ضد حد بيزوّر الـ User-Agent عمدًا.
  */

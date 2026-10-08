@@ -28,12 +28,28 @@ class RegisterController extends Controller
 
     public function __construct(
         private PasswordPolicyService $passwordPolicy,
-        private StudentJoinRequestService $joinRequests
+        private StudentJoinRequestService $joinRequests,
+        private \App\Services\DeviceRestrictionPolicyService $deviceRestriction
     ) {
     }
 
     public function submit(Request $request)
     {
+        // Device Restrictions Policy — نوع جهاز محظور مايقدرش يعمل حساب كمان (مش اللوجين بس).
+        // UipDeviceRestrictionMiddleware بيغطي ده أصلًا؛ الفحص هنا طبقة تانية لو الميدلوير اتشال.
+        if (!$this->deviceRestriction->isAllowed($request->userAgent())) {
+            SecurityLog::write('Register blocked - device type restricted', [
+                'device' => $this->deviceRestriction->classify($request->userAgent()), 'ip' => $request->ip(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => $this->deviceRestriction->blockedMessage($request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en'),
+                'data'    => ['device_blocked' => true],
+                'errors'  => ['code' => 'device_blocked'],
+                'meta'    => (object) [],
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'full_name' => 'required|min:2|max:150',
             'email'     => 'required|email',

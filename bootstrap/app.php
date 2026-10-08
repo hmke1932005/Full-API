@@ -79,6 +79,9 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\UipCorsMiddleware::class,
             \App\Http\Middleware\UipRateLimitMiddleware::class,
             \App\Http\Middleware\UipLocaleMiddleware::class,
+            // Device Restrictions Policy على كل الـ API (register / forgot-password / public…)
+            // مش بس login — بعد Cors عشان رد الـ 403 يطلع بهيدرز CORS.
+            \App\Http\Middleware\UipDeviceRestrictionMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

@@ -136,6 +136,10 @@ use App\Http\Controllers\Api\SupervisorProjectGradeApiController;
  * OPTIONS preflight) — شوف README قسم "تسجيل الـ Middleware".
  */
 Route::prefix('v1')->group(function () {
+    // عام ومستثنى من UipDeviceRestrictionMiddleware — الفرونت بيسأل بيه لو الجهاز محظور
+    // عشان يعرض صفحة الحظر بدل ما يفتح المنصة.
+    Route::get('/device-status', [\App\Http\Controllers\Api\DeviceStatusController::class, 'show']);
+
     Route::prefix('auth')->group(function () {
         // بدون Middleware — يطابق القديم بالظبط
         Route::post('/login', [LoginController::class, 'submit']);
