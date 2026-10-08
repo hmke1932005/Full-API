@@ -112,6 +112,7 @@ use App\Http\Controllers\Api\ReportsApiController;
 use App\Http\Controllers\Api\AdminReportsApiController;
 use App\Http\Controllers\Api\AdminSettingsApiController;
 use App\Http\Controllers\Api\AdminDashboardApiController;
+use App\Http\Controllers\Api\AdminVisitorsApiController;
 use App\Http\Controllers\Api\AdminUniversitiesApiController;
 use App\Http\Controllers\Api\AdminMessagingOversightApiController;
 use App\Http\Controllers\Api\AdminMobileApiController;
@@ -780,6 +781,11 @@ Route::prefix('v1')->group(function () {
     // Blade view، مفيش حاجة مختلَقة.
     Route::prefix('admin/dashboard')->middleware(['uip.auth', 'uip.admin'])->group(function () {
         Route::get('/', [AdminDashboardApiController::class, 'index']);
+    });
+
+    // الزوار الفريدين الحقيقيين (بدون تضخيم الريفريش) — قسم في داشبورد الأدمن.
+    Route::prefix('admin/visitors')->middleware(['uip.auth', 'uip.admin'])->group(function () {
+        Route::get('/', [AdminVisitorsApiController::class, 'index']);
     });
 
     // Round 10 (Admin & Docs، بند 39 — Admin Monitoring). راجع docblock

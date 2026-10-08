@@ -48,6 +48,13 @@ class SiteVisitService
             }
 
             $this->bump('total_visits');
+
+            // زائر فريد لكل يوم (unique/day) — insertOrIgnore على الـ unique key
+            // يعني الريفريش المتكرر في نفس اليوم مش بيتحسب تاني.
+            DB::table('site_visitor_days')->insertOrIgnore([
+                'visitor_hash' => $hash,
+                'visit_date'   => now()->toDateString(),
+            ]);
         });
 
         return $this->counts();
@@ -80,6 +87,57 @@ class SiteVisitService
                 ->join('users as u', 'u.id', '=', 's.user_id')
                 ->where('u.status', 'active')
                 ->count(),
+        ];
+    }
+
+    /**
+     * إحصائيات "الزوار الحقيقيين" للأدمن: كل رقم بيعدّ زائر (متصفح) مرة واحدة
+     * بس — مفيش تضخيم من الريفريش. total_visits موجود للمقارنة فقط.
+     * @return array<string,mixed>
+     */
+    public function adminVisitorStats(int $days = 30): array
+    {
+        $days  = max(7, min(90, $days));
+        $today = now()->toDateString();
+        $from  = now()->subDays($days - 1)->toDateString();
+
+        $uniqueSince = fn (int $n) => (int) DB::table('site_visitor_days')
+            ->where('visit_date', '>=', now()->subDays($n - 1)->toDateString())
+            ->distinct()->count('visitor_hash');
+
+        $activeByDay = DB::table('site_visitor_days')
+            ->where('visit_date', '>=', $from)
+            ->selectRaw('visit_date as d, COUNT(*) as c')
+            ->groupBy('visit_date')->pluck('c', 'd');
+
+        $newByDay = DB::table('site_visitors')
+            ->where('first_visit_at', '>=', $from . ' 00:00:00')
+            ->selectRaw('DATE(first_visit_at) as d, COUNT(*) as c')
+            ->groupBy('d')->pluck('c', 'd');
+
+        $series = [];
+        for ($i = $days - 1; $i >= 0; $i--) {
+            $d = now()->subDays($i)->toDateString();
+            $series[] = [
+                'date'   => $d,
+                'active' => (int) ($activeByDay[$d] ?? 0),
+                'new'    => (int) ($newByDay[$d] ?? 0),
+            ];
+        }
+
+        $counts    = $this->counts();
+        $unique    = $counts['unique_visitors'];
+        $returning = (int) DB::table('site_visitors')->where('visits_count', '>', 1)->count();
+
+        return [
+            'unique_visitors'   => $unique,
+            'new_today'         => (int) ($newByDay[$today] ?? 0),
+            'active_today'      => (int) ($activeByDay[$today] ?? 0),
+            'active_7d'         => $uniqueSince(7),
+            'active_30d'        => $uniqueSince(30),
+            'returning'         => $returning,
+            'raw_page_loads'    => $counts['total_visits'],
+            'series'            => $series,
         ];
     }
 }
