@@ -130,7 +130,7 @@ class FeedRepository
              WHERE $whereSql
              ORDER BY fp.is_pinned DESC, fp.created_at DESC
              LIMIT $perPage OFFSET $offset",
-            array_merge($params, [$userId, $userId])
+            array_merge([$userId, $userId], $params)
         );
 
         return ['items' => array_map(fn ($r) => (array) $r, $items), 'total' => $total];
