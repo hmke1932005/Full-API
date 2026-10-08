@@ -43,6 +43,16 @@ class UserSessionService
             Log::warning('Concurrent session limit check failed: ' . $e->getMessage());
         }
 
+        // جلسة واحدة لكل حساب: الـ login بيتمنع من الـ controller لو فيه جلسة حية، فاللي
+        // لسه نشط هنا جلسات ميتة (متصفح اتقفل/وقع من غير logout) — بنقفلها عشان متحصلش جلستين.
+        try {
+            if ($this->singleSessionEnabled()) {
+                $this->endOthers($userId, 'single_session');
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Single-session cleanup failed: ' . $e->getMessage());
+        }
+
         $id = (int) DB::table('user_sessions')->insertGetId([
             'user_id'          => $userId,
             'session_token'    => hash('sha256', $rawRefresh),
@@ -64,6 +74,81 @@ class UserSessionService
         }
 
         return $id;
+    }
+
+    public function singleSessionEnabled(): bool
+    {
+        return (bool) config('security.single_session.enabled', true);
+    }
+
+    /** المدة (ثواني) اللي الجلسة بتفضل "حية" بعد آخر نبضة. */
+    public function liveSeconds(): int
+    {
+        return max(30, (int) config('security.single_session.live_seconds', 120));
+    }
+
+    /** أحدث جلسة حية (نبضتها وصلت مؤخرًا) للمستخدم، أو null. */
+    public function liveSessionFor(int $userId): ?object
+    {
+        return DB::table('user_sessions')
+            ->where('user_id', $userId)
+            ->where('is_active', 1)
+            ->where(function ($q) {
+                $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->where('last_activity_at', '>=', now()->subSeconds($this->liveSeconds()))
+            ->orderByDesc('last_activity_at')
+            ->first() ?: null;
+    }
+
+    /**
+     * لو الدخول الجديد لازم يتمنع (فيه جلسة حية على جهاز تاني) يرجّع [message, data]،
+     * وإلا null. بيتنادى بعد التأكد من كلمة السر عشان محدش يعرف حالة حساب مش بتاعه.
+     */
+    public function loginBlock(int $userId, string $locale): ?array
+    {
+        if (!$this->singleSessionEnabled()) {
+            return null;
+        }
+        $live = $this->liveSessionFor($userId);
+        if (!$live) {
+            return null;
+        }
+        $device = trim((string) ($live->device_label ?? ''));
+        $place = trim((string) ($live->location_label ?? ''));
+        $where = trim($device . ($place !== '' ? ($device !== '' ? ' — ' : '') . $place : ''));
+        $message = $locale === 'ar'
+            ? 'الحساب ده مفتوح حاليًا على متصفح أو جهاز تاني' . ($where !== '' ? " ({$where})" : '') . '. اقفله أو سجّل خروج منه الأول وبعدين جرّب تاني.'
+            : 'This account is already open in another browser or device' . ($where !== '' ? " ({$where})" : '') . '. Sign out or close it there first, then try again.';
+
+        return [$message, ['code' => 'account_in_use', 'device' => $device ?: null, 'location' => $place ?: null]];
+    }
+
+    /** نبضة: الجلسة لسه مفتوحة. */
+    public function heartbeat(int $sessionId): void
+    {
+        DB::table('user_sessions')->where('id', $sessionId)->where('is_active', 1)->update(['last_activity_at' => now()]);
+    }
+
+    /**
+     * المتصفح اتقفل: بنقصّر عمر الجلسة الحية لـ ~10 ثواني (مش بنلغيها، فلو كان reload أو
+     * رجع فتح المتصفح بسرعة أول نبضة بترجّعها)، وبعدها أي جهاز تاني يقدر يدخل.
+     */
+    public function release(int $sessionId): void
+    {
+        $stamp = now()->subSeconds(max(0, $this->liveSeconds() - 10));
+        DB::table('user_sessions')->where('id', $sessionId)->where('is_active', 1)->update(['last_activity_at' => $stamp]);
+    }
+
+    /** يقفل كل جلسات المستخدم النشطة (غير الاستثناء) — بيتنادى لما جلسة جديدة بتتفتح. */
+    public function endOthers(int $userId, string $reason, ?int $exceptId = null): void
+    {
+        $ids = DB::table('user_sessions')->where('user_id', $userId)->where('is_active', 1)
+            ->when($exceptId, fn ($q) => $q->where('id', '!=', $exceptId))
+            ->pluck('id')->all();
+        foreach ($ids as $id) {
+            $this->end((int) $id, $reason);
+        }
     }
 
     /** Refresh: نفس الجلسة، refresh token جديد. */

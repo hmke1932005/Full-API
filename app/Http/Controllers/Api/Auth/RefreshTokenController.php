@@ -64,6 +64,12 @@ class RefreshTokenController extends Controller
             // (rotated أو logout)، ده دليل إنه ممكن يكون سُرق — نلغي كل
             // refresh tokens المستخدم ده ونجبره يعمل login تاني من الصفر.
             $stale = RefreshToken::where('token_hash', $hash)->whereNotNull('revoked_at')->first();
+            // توكن جلسة اتقفلت عمدًا (logout / جلسة واحدة لكل حساب / Revoke) مش سرقة: ده متصفح
+            // قديم رجع يفتح بعد ما جهاز تاني دخل. نرفضه بس — من غير ما نقفل جلسة الجهاز الجديد.
+            $endedSession = $stale ? $this->sessions->findByRefreshHash($hash) : null;
+            if ($endedSession && !$endedSession->is_active) {
+                return AuthCookies::clear($this->apiError('This session was ended. Please log in again.', null, 401), $request);
+            }
             if ($stale) {
                 RefreshToken::where('user_id', $stale->user_id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
                 $this->sessions->endAllForUser((int) $stale->user_id, 'token_reuse');

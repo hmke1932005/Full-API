@@ -177,6 +177,18 @@ class LoginController extends Controller
             ], 503);
         }
 
+        // جلسة واحدة نشطة لكل حساب: لو الحساب مفتوح على جهاز/متصفح تاني الدخول بيترفض.
+        if ($block = app(\App\Services\UserSessionService::class)->loginBlock((int) $user->id, $locale)) {
+            SecurityLog::write('Login blocked - account already open elsewhere', ['user_id' => $user->id, 'ip' => $request->ip()]);
+            return response()->json([
+                'success' => false,
+                'message' => $block[0],
+                'data'    => $block[1],
+                'errors'  => null,
+                'meta'    => (object) [],
+            ], 409);
+        }
+
         if ($user->two_factor_enabled) {
             $trustedHit = $this->trustedDevice->isCurrentDeviceTrusted(
                 $user->id,

@@ -56,4 +56,25 @@ class SessionsController extends Controller
 
         return $this->apiSuccess(null, 'Session revoked successfully.');
     }
+
+    /** GET /api/v1/session/heartbeat — الفرونت بيناديها كل ~20 ثانية طول ما المتصفح مفتوح. */
+    public function heartbeat(Request $request)
+    {
+        $sid = (int) $request->attributes->get('uip_session_id');
+        if ($sid > 0) {
+            app(\App\Services\UserSessionService::class)->heartbeat($sid);
+        }
+        return response()->json(['success' => true, 'data' => null, 'message' => 'ok', 'errors' => null, 'meta' => (object) []])
+            ->header('Cache-Control', 'no-store');
+    }
+
+    /** POST /api/v1/session/release — آخر تبويب اتقفل: الجلسة مبقتش "حية" فجهاز تاني يقدر يدخل. */
+    public function release(Request $request)
+    {
+        $sid = (int) $request->attributes->get('uip_session_id');
+        if ($sid > 0) {
+            app(\App\Services\UserSessionService::class)->release($sid);
+        }
+        return response()->json(['success' => true, 'data' => null, 'message' => 'ok', 'errors' => null, 'meta' => (object) []]);
+    }
 }

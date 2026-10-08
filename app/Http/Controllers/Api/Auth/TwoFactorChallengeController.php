@@ -61,6 +61,11 @@ class TwoFactorChallengeController extends Controller
             return $this->apiError('Session expired. Please log in again.', null, 401);
         }
 
+        $locale = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
+        if ($block = app(\App\Services\UserSessionService::class)->loginBlock((int) $user->id, $locale)) {
+            return response()->json(['success' => false, 'message' => $block[0], 'data' => $block[1], 'errors' => null, 'meta' => (object) []], 409);
+        }
+
         if (!$this->twoFactor->verifyLoginCode($user, (string) $request->input('code'))) {
             return $this->apiError('Invalid or expired code. Please try again.', ['code' => ['Invalid or expired code.']], 422);
         }

@@ -31,6 +31,15 @@ return [
     // بيوقّع الـ IP الحقيقي للمستخدم، شوف UipTrustedClientIpMiddleware.
     'proxy_secret' => (string) env('UIP_PROXY_SECRET', ''),
 
+    // جلسة واحدة نشطة لكل حساب: لو الحساب مفتوح (جلسة حية) في متصفح/جهاز، أي دخول
+    // جديد بيترفض لحد ما الأول يتقفل أو يعمل logout. "حية" = وصلها نبضة (heartbeat) في
+    // آخر live_seconds ثانية. الفرونت بيبعت نبضة كل 20 ثانية، وبيحرر الجلسة أول ما
+    // آخر تبويب يتقفل. SINGLE_SESSION_ENFORCED=false بيعطّل الميزة كلها.
+    'single_session' => [
+        'enabled'      => filter_var(env('SINGLE_SESSION_ENFORCED', true), FILTER_VALIDATE_BOOLEAN),
+        'live_seconds' => (int) env('SESSION_LIVE_SECONDS', 120),
+    ],
+
     'geoip' => [
         'enabled'      => (bool) env('GEOIP_ENABLED', true),
         'provider_url' => env('GEOIP_PROVIDER_URL', 'https://ipapi.co/{ip}/country/'),

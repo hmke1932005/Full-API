@@ -162,6 +162,12 @@ Route::prefix('v1')->group(function () {
         Route::post('/two-factor/cancel', [TwoFactorChallengeController::class, 'cancel']);
     });
 
+    // جلسة واحدة نشطة لكل حساب — نبضة + تحرير عند قفل المتصفح (SessionsController).
+    Route::middleware('uip.auth')->prefix('session')->group(function () {
+        Route::get('/heartbeat', [SessionsController::class, 'heartbeat']);
+        Route::post('/release', [SessionsController::class, 'release']);
+    });
+
     // -- Generic Files / Uploads (بند 2 — Infra) -------------------------
     // يطابق app/Controllers/Api/FilesApiController.php القديمة. AuthMiddleware
     // القديمة بقت uip.auth؛ CSRFMiddleware القديمة (على POST/DELETE) مش
