@@ -200,34 +200,41 @@ class MessagingService
 
         $this->assertNotRateLimited($userId);
 
-        $message = $this->messages->create(
-            $conversationId,
-            $userId,
-            $body,
-            null,
-            $options['parent_message_id'] ?? null,
-            $options['forwarded_from_id'] ?? null,
-            $options['message_type'] ?? 'text',
-            $options['metadata'] ?? null
-        );
+        // One transaction: a concurrent poll() must never see the message row
+        // before its attachments exist (it would be delivered as an empty bubble
+        // and never re-fetched, because the client's since_id moves past it).
+        $message = DB::transaction(function () use ($conversationId, $userId, $body, $options, $hasAttachments) {
+            $message = $this->messages->create(
+                $conversationId,
+                $userId,
+                $body,
+                null,
+                $options['parent_message_id'] ?? null,
+                $options['forwarded_from_id'] ?? null,
+                $options['message_type'] ?? 'text',
+                $options['metadata'] ?? null
+            );
 
-        if ($body !== '') {
-            $this->messages->recordHashtags((int) $message->id, $body);
-        }
-
-        foreach ($this->resolveMentions($conversationId, $options['mentioned_user_ids'] ?? []) as $mentionedId) {
-            $this->messages->recordMention((int) $message->id, $mentionedId);
-        }
-
-        $maxAttachments = (int) config('messaging.max_attachments_per_message', 10);
-        if ($hasAttachments) {
-            if (count($options['attachments']) > $maxAttachments) {
-                throw new \RuntimeException("You can attach at most {$maxAttachments} files per message.");
+            if ($body !== '') {
+                $this->messages->recordHashtags((int) $message->id, $body);
             }
-            foreach ($options['attachments'] as $file) {
-                $this->storeAttachment((int) $message->id, $userId, $conversationId, $file);
+
+            foreach ($this->resolveMentions($conversationId, $options['mentioned_user_ids'] ?? []) as $mentionedId) {
+                $this->messages->recordMention((int) $message->id, $mentionedId);
             }
-        }
+
+            $maxAttachments = (int) config('messaging.max_attachments_per_message', 10);
+            if ($hasAttachments) {
+                if (count($options['attachments']) > $maxAttachments) {
+                    throw new \RuntimeException("You can attach at most {$maxAttachments} files per message.");
+                }
+                foreach ($options['attachments'] as $file) {
+                    $this->storeAttachment((int) $message->id, $userId, $conversationId, $file);
+                }
+            }
+
+            return $message;
+        });
 
         $this->conversations->touchUpdatedAt($conversationId);
         $this->conversations->markRead($conversationId, $userId);
@@ -929,14 +936,21 @@ class MessagingService
             throw new \RuntimeException('Conversation not found.');
         }
         $rows = DB::select(
-            "SELECT m.*, u.full_name AS sender_name, u.avatar_path AS sender_avatar
-             FROM messages m INNER JOIN users u ON u.id = m.sender_id
+            "SELECT m.*, u.full_name AS sender_name, u.avatar_path AS sender_avatar,
+                    p.body AS parent_body, pu.full_name AS parent_sender_name
+             FROM messages m
+             INNER JOIN users u ON u.id = m.sender_id
+             LEFT JOIN messages p ON p.id = m.parent_message_id
+             LEFT JOIN users pu ON pu.id = p.sender_id
              WHERE m.conversation_id = ? AND m.id > ?
                AND m.id NOT IN (SELECT message_id FROM message_hidden_for_user WHERE user_id = ?)
              ORDER BY m.id ASC",
             [$conversationId, $sinceMessageId, $userId]
         );
         $rows = array_map(fn ($r) => (array) $r, $rows);
+        // attachments/reactions/mentions — poll used to skip this, so any message
+        // with a file/video arrived as an empty bubble until the page was reloaded.
+        $rows = $this->messages->attachRelations($rows);
 
         return [
             'messages' => array_map(fn ($m) => $this->shapeMessage($m, $userId), $rows),

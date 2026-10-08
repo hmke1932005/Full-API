@@ -65,7 +65,7 @@ class MessageRepository
     }
 
     /** بتحمّل attachments/reactions/mentions دفعة واحدة لمجموعة صفوف رسايل جاهزة (مفيش N+1). */
-    private function attachRelations(array $rows): array
+    public function attachRelations(array $rows): array
     {
         if (!$rows) {
             return [];
