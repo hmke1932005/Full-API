@@ -71,7 +71,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // middleware group (اللي routes/api.php محمّل عليها تلقائيًا في
         // لارافيل 11)، فبيغطوا كل ريكوست تحت /api/* — بما فيه أي OPTIONS
         // preflight لروت مش مسجّل أصلًا (شوف ملحوظة UipCorsMiddleware).
+        // UipTrustedClientIpMiddleware لازم يبقى الأول: بيصلّح $request->ip() (الـ IP الحقيقي
+        // خلف Vercel، بتوقيع HMAC) قبل ما الـ rate limit وغيره يقراه.
         $middleware->api(prepend: [
+            \App\Http\Middleware\UipTrustedClientIpMiddleware::class,
             \App\Http\Middleware\UipSecurityHeadersMiddleware::class,
             \App\Http\Middleware\UipCorsMiddleware::class,
             \App\Http\Middleware\UipRateLimitMiddleware::class,

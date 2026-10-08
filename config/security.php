@@ -27,6 +27,10 @@ return [
         'Cross-Origin-Opener-Policy' => 'same-origin',
     ],
 
+    // سر مشترك مع Vercel (نفس القيمة في UIP_PROXY_SECRET على Vercel وRailway) —
+    // بيوقّع الـ IP الحقيقي للمستخدم، شوف UipTrustedClientIpMiddleware.
+    'proxy_secret' => (string) env('UIP_PROXY_SECRET', ''),
+
     'geoip' => [
         'enabled'      => (bool) env('GEOIP_ENABLED', true),
         'provider_url' => env('GEOIP_PROVIDER_URL', 'https://ipapi.co/{ip}/country/'),
