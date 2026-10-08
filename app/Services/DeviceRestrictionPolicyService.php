@@ -18,6 +18,17 @@ use App\Repositories\SecurityPolicyRepository;
  * التصنيف مبني على User-Agent، يعني بيمنع الاستخدام العادي من الجهاز
  * بس مش حماية قوية ضد حد بيزوّر الـ User-Agent عمدًا.
  */
+/**
+ * أوضاع السياسة (mode):
+ *   disabled  — مفيش حظر.
+ *   allowlist — (عام لكل الحسابات) بس الأنواع في allowed_device_types مسموحة.
+ *   denylist  — (عام لكل الحسابات) الأنواع في blocked_device_types ممنوعة.
+ *   by_role   — حظر حسب نوع الحساب: role_rules[<role>] = أنواع الأجهزة الممنوعة لدور ده بس
+ *               (مثلًا الطالب ممنوع موبايل والأدمن لأ). الأدوار اللي مش في القاعدة مفيش عليها حظر.
+ * ملحوظة: الدور مش معروف قبل تسجيل الدخول، فالأوضاع العامة بتتفحص بدون دور (isAllowed($ua))،
+ * وby_role بتتفحص لما الدور يتعرف: اللوجين بعد التحقق من الحساب، التسجيل من role المختار،
+ * تجديد التوكن، وكل ريكوست محمي (من claims التوكن).
+ */
 class DeviceRestrictionPolicyService
 {
     private const POLICY_KEY = 'device_restriction.policy';
@@ -28,7 +39,10 @@ class DeviceRestrictionPolicyService
         'mode'                 => 'disabled',
         'allowed_device_types' => [],
         'blocked_device_types' => [],
+        'role_rules'           => [],
     ];
+
+    private const MODES = ['disabled', 'allowlist', 'denylist', 'by_role'];
 
     public function __construct(
         private SecurityPolicyRepository $policies,
@@ -36,7 +50,30 @@ class DeviceRestrictionPolicyService
     ) {
     }
 
-    /** @return array{mode:string,allowed_device_types:string[],blocked_device_types:string[]} */
+    /** @return string[] الأدوار اللي ينفع تتحط عليها قاعدة (من config/roles.php). */
+    public function knownRoles(): array
+    {
+        return array_values((array) config('roles.available', []));
+    }
+
+    /** @return array<string,string[]> role => blocked device types (متنضّف: أدوار معروفة وأنواع صالحة ومش فاضية بس). */
+    private function sanitizeRoleRules($rules): array
+    {
+        $out = [];
+        $roles = $this->knownRoles();
+        foreach ((array) $rules as $role => $types) {
+            if (!in_array($role, $roles, true)) {
+                continue;
+            }
+            $types = array_values(array_intersect((array) (is_array($types) && array_key_exists('blocked_device_types', $types) ? $types['blocked_device_types'] : $types), self::DEVICE_TYPES));
+            if ($types) {
+                $out[$role] = $types;
+            }
+        }
+        return $out;
+    }
+
+    /** @return array{mode:string,allowed_device_types:string[],blocked_device_types:string[],role_rules:array<string,string[]>} */
     public function getPolicy(): array
     {
         $row = $this->policies->findByKey(self::POLICY_KEY);
@@ -50,6 +87,10 @@ class DeviceRestrictionPolicyService
         $policy = array_merge(self::DEFAULTS, $stored);
         $policy['allowed_device_types'] = array_values(array_intersect((array) $policy['allowed_device_types'], self::DEVICE_TYPES));
         $policy['blocked_device_types'] = array_values(array_intersect((array) $policy['blocked_device_types'], self::DEVICE_TYPES));
+        $policy['role_rules'] = $this->sanitizeRoleRules($policy['role_rules'] ?? []);
+        if (!in_array($policy['mode'], self::MODES, true)) {
+            $policy['mode'] = 'disabled';
+        }
         return $policy;
     }
 
@@ -63,7 +104,7 @@ class DeviceRestrictionPolicyService
         $before = $this->getPolicy();
 
         $mode = (string) ($input['mode'] ?? 'disabled');
-        if (!in_array($mode, ['disabled', 'allowlist', 'denylist'], true)) {
+        if (!in_array($mode, self::MODES, true)) {
             throw new \InvalidArgumentException('Invalid device restriction mode.');
         }
 
@@ -77,12 +118,21 @@ class DeviceRestrictionPolicyService
             throw new \InvalidArgumentException('Select at least one device type before enabling denylist mode.');
         }
 
-        $policy = ['mode' => $mode, 'allowed_device_types' => $allowed, 'blocked_device_types' => $blocked];
+        $roleRules = $this->sanitizeRoleRules($input['role_rules'] ?? []);
+        if ($mode === 'by_role' && !$roleRules) {
+            throw new \InvalidArgumentException('Block at least one device type for at least one account type before enabling per-role mode.');
+        }
 
-        if ($userAgent !== null && !$this->allows($policy, $userAgent)) {
-            throw new \InvalidArgumentException(
-                'This policy would block the device you are using right now (' . $this->classify($userAgent) . '), and you would lose access. Save it from a device type that stays allowed.'
-            );
+        $policy = ['mode' => $mode, 'allowed_device_types' => $allowed, 'blocked_device_types' => $blocked, 'role_rules' => $roleRules];
+
+        // حماية الأدمن من قفل نفسه: بدوره الحالي (للوضع by_role) ونوع جهازه الحالي.
+        if ($userAgent !== null) {
+            $adminRole = $adminUserId ? app(RoleService::class)->primaryRoleFor((int) $adminUserId) : null;
+            if (!$this->allows($policy, $userAgent, $adminRole)) {
+                throw new \InvalidArgumentException(
+                    'This policy would block the device you are using right now (' . $this->classify($userAgent) . ') for your own account type, and you would lose access. Save it from a device type that stays allowed.'
+                );
+            }
         }
 
         $saved = $this->policies->updateValue(self::POLICY_KEY, json_encode($policy, JSON_UNESCAPED_UNICODE), $adminUserId);
@@ -114,20 +164,30 @@ class DeviceRestrictionPolicyService
         return 'unknown';
     }
 
-    /** True = هذا النوع من الأجهزة مسموح له يكمل اللوجين، حسب السياسة الحالية. */
-    public function isAllowed(?string $userAgent): bool
+    /**
+     * True = هذا النوع من الأجهزة مسموح، حسب السياسة الحالية.
+     * $role = دور الحساب لو معروف (للوضع by_role)؛ من غيره بتتفحص الأوضاع العامة بس.
+     */
+    public function isAllowed(?string $userAgent, ?string $role = null): bool
     {
-        return $this->allows($this->getPolicy(), $userAgent);
+        return $this->allows($this->getPolicy(), $userAgent, $role);
     }
 
     /** نفس منطق isAllowed() على سياسة معيّنة (عشان نقدر نفحص سياسة لسه ماتحفظتش). */
-    private function allows(array $policy, ?string $userAgent): bool
+    private function allows(array $policy, ?string $userAgent, ?string $role = null): bool
     {
         if ($policy['mode'] === 'disabled') {
             return true;
         }
 
         $type = $this->classify($userAgent);
+
+        if ($policy['mode'] === 'by_role') {
+            if ($role === null || $role === '') {
+                return true; // الدور لسه مجهول — هيتفحص أول ما يتعرف
+            }
+            return !in_array($type, $policy['role_rules'][$role] ?? [], true);
+        }
 
         if ($policy['mode'] === 'allowlist') {
             return in_array($type, $policy['allowed_device_types'], true);
@@ -137,8 +197,22 @@ class DeviceRestrictionPolicyService
     }
 
     /** رسالة الرفض للمستخدم (عربي/إنجليزي حسب X-Locale). */
-    public function blockedMessage(string $locale = 'en'): string
+    public function blockedMessage(string $locale = 'en', ?string $role = null): string
     {
+        if ($role) {
+            $labels = [
+                'student' => ['الطلاب', 'Students'], 'university' => ['حسابات الجامعات', 'University accounts'],
+                'faculty' => ['حسابات الكليات', 'Faculty accounts'], 'academic_staff' => ['أعضاء هيئة التدريس', 'Academic staff'],
+                'supervisor' => ['المشرفين', 'Supervisors'], 'admin' => ['مسؤولي النظام', 'Administrators'],
+                'security_admin' => ['مسؤولي الأمان', 'Security administrators'], 'security_officer' => ['ضباط الأمان', 'Security officers'],
+                'data_analyst' => ['محللي البيانات', 'Data analysts'],
+            ];
+            $who = $labels[$role][$locale === 'ar' ? 0 : 1] ?? $role;
+            return $locale === 'ar'
+                ? "استخدام المنصة من هذا النوع من الأجهزة غير مسموح لـ{$who} حاليًا. جرّب من جهاز آخر أو تواصل مع الدعم."
+                : "{$who} aren't allowed to use the platform from this type of device. Try another device or contact support.";
+        }
+
         return $locale === 'ar'
             ? 'استخدام المنصة من هذا النوع من الأجهزة غير مسموح حاليًا. جرّب من جهاز آخر أو تواصل مع الدعم.'
             : 'Using the platform from this type of device is not allowed. Try another device or contact support.';

@@ -98,6 +98,20 @@ class RefreshTokenController extends Controller
         }
 
         $role = $this->roles->primaryRoleFor($row->user_id);
+
+        // Device Restrictions Policy (وضع by_role) — جلسة حساب دوره ممنوع على نوع الجهاز ده ماتتجددش.
+        if (!$this->deviceRestriction->isAllowed($request->userAgent(), $role)) {
+            SecurityLog::write('Refresh blocked - device type restricted for role', [
+                'user_id' => $row->user_id, 'role' => $role,
+                'device' => $this->deviceRestriction->classify($request->userAgent()), 'ip' => $request->ip(),
+            ]);
+            return AuthCookies::noStore($this->apiError(
+                $this->deviceRestriction->blockedMessage($request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en', $role),
+                ['code' => 'device_blocked', 'role' => $role, 'device_type' => $this->deviceRestriction->classify($request->userAgent())],
+                403
+            ));
+        }
+
         $tokens = UipJwtService::issueTokenPair($row->user_id, $role, $session ? (int) $session->id : null);
 
         // إلغاء القديم وربطه بالجديد (rotation chain)

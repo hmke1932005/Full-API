@@ -164,6 +164,26 @@ class LoginController extends Controller
             }
         }
 
+        // Device Restrictions Policy (وضع by_role) — الدور اتعرف دلوقتي والحساب اتأكد منه،
+        // فنطبّق قاعدة الدور ده على نوع الجهاز (مثلًا الطالب ممنوع موبايل والأدمن لأ).
+        if (!$this->deviceRestriction->isAllowed($request->userAgent(), $role)) {
+            SecurityLog::write('Login blocked - device type restricted for role', [
+                'user_id' => $user->id, 'role' => $role,
+                'device' => $this->deviceRestriction->classify($request->userAgent()), 'ip' => $request->ip(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => $this->deviceRestriction->blockedMessage($locale, $role),
+                'data'    => [
+                    'device_blocked' => true,
+                    'device_type'    => $this->deviceRestriction->classify($request->userAgent()),
+                    'role'           => $role,
+                ],
+                'errors'  => ['code' => 'device_blocked'],
+                'meta'    => (object) [],
+            ], 403);
+        }
+
         $this->lockout->registerSuccessfulLogin($user);
 
         if ($role !== 'admin' && $this->settings->get('maintenance_mode', 'global', null, '0') === '1') {

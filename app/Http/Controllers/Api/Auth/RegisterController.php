@@ -73,6 +73,25 @@ class RegisterController extends Controller
             ], 422);
         }
 
+        // Device Restrictions Policy (وضع by_role) — نوع الحساب المختار للتسجيل (طالب/جامعة).
+        if (!$this->deviceRestriction->isAllowed($request->userAgent(), $data['role'])) {
+            $locale = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
+            SecurityLog::write('Register blocked - device type restricted for role', [
+                'role' => $data['role'], 'device' => $this->deviceRestriction->classify($request->userAgent()), 'ip' => $request->ip(),
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => $this->deviceRestriction->blockedMessage($locale, $data['role']),
+                'data'    => [
+                    'device_blocked' => true,
+                    'device_type'    => $this->deviceRestriction->classify($request->userAgent()),
+                    'role'           => $data['role'],
+                ],
+                'errors'  => ['code' => 'device_blocked'],
+                'meta'    => (object) [],
+            ], 403);
+        }
+
         if (User::where('email', $data['email'])->exists()) {
             return response()->json([
                 'success' => false,

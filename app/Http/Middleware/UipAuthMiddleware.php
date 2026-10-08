@@ -46,11 +46,16 @@ class UipAuthMiddleware
         // Device Restrictions Policy — بتتطبق على كل ريكوست محمي، فالجلسات اللي كانت
         // شغالة على نوع جهاز اتحظر بعد كده بتتقطع فورًا (مش بس اللوجين الجديد).
         $devicePolicy = app(\App\Services\DeviceRestrictionPolicyService::class);
-        if (!$devicePolicy->isAllowed($request->userAgent())) {
+        $claimRole = (string) ($claims['role'] ?? '');
+        if (!$devicePolicy->isAllowed($request->userAgent(), $claimRole)) {
             return response()->json([
                 'success' => false,
-                'message' => $devicePolicy->blockedMessage($request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en'),
-                'data'    => ['device_blocked' => true],
+                'message' => $devicePolicy->blockedMessage($request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en', $claimRole),
+                'data'    => [
+                    'device_blocked' => true,
+                    'device_type'    => $devicePolicy->classify($request->userAgent()),
+                    'role'           => $claimRole,
+                ],
                 'errors'  => ['code' => 'device_blocked'],
                 'meta'    => (object) [],
             ], 403);
