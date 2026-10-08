@@ -62,6 +62,7 @@ class StudentsApiController extends Controller
         private MessagingService $messaging,
         private AIAnalysisRepository $aiAnalysis,
         private AnnouncementRepository $announcements,
+        private \App\Repositories\FeedRepository $feedRepo,
         private StudentManagementService $management,
         private FileUploadService $uploads,
         private StudentJoinRequestService $joinRequests
@@ -418,6 +419,7 @@ class StudentsApiController extends Controller
 
         $upcomingDeadlines = [];
         $recentAnnouncements = [];
+        $recentFeed = [];
         if ($student->university_id) {
             $upcomingDeadlines = $this->announcements->publishedForUniversity(
                 $student->university_id,
@@ -430,6 +432,19 @@ class StudentsApiController extends Controller
                 [],
                 1,
                 3
+            )['items'];
+            // Published University Feed posts, same visibility scope as /api/v1/feed.
+            $recentFeed = $this->feedRepo->feedForUniversity(
+                (int) $student->university_id,
+                $userId,
+                ['type' => 'all'],
+                1,
+                3,
+                [
+                    'faculty_id'    => $student->faculty_id ? (int) $student->faculty_id : null,
+                    'department_id' => $student->department_id ? (int) $student->department_id : null,
+                    'academic_year' => $student->academic_year ? (int) $student->academic_year : null,
+                ]
             )['items'];
         }
 
@@ -456,6 +471,7 @@ class StudentsApiController extends Controller
             'unread_notifications'    => $unreadNotifications,
             'upcoming_deadlines'      => $upcomingDeadlines,
             'recent_announcements'    => $recentAnnouncements,
+            'recent_feed'             => $recentFeed,
         ], 'Dashboard stats retrieved successfully.');
     }
 
