@@ -121,7 +121,10 @@ class UserSessionService
             ? 'الحساب ده مفتوح حاليًا على متصفح أو جهاز تاني' . ($where !== '' ? " ({$where})" : '') . '. اقفله أو سجّل خروج منه الأول وبعدين جرّب تاني.'
             : 'This account is already open in another browser or device' . ($where !== '' ? " ({$where})" : '') . '. Sign out or close it there first, then try again.';
 
-        return [$message, ['code' => 'account_in_use', 'device' => $device ?: null, 'location' => $place ?: null]];
+        // takeover_token: يثبت إن كلمة السر اتكتبت صح، وبيفتح مسار "مش أنا" (OTP على الإيميل).
+        $takeover = \App\Services\UipJwtService::encode(['typ' => 'session_takeover', 'sub' => $userId], 900);
+
+        return [$message, ['code' => 'account_in_use', 'device' => $device ?: null, 'location' => $place ?: null, 'takeover_token' => $takeover]];
     }
 
     /** نبضة: الجلسة لسه مفتوحة. */

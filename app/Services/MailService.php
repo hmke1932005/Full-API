@@ -305,6 +305,30 @@ class MailService
         return true;
     }
 
+    /** رمز OTP لاسترجاع حساب مفتوح على جهاز تاني ("مش أنا") — بيرجّع نتيجة الإرسال الفعلية. */
+    public function sendSessionTakeoverOtp(string $toEmail, string $fullName, string $otp, int $minutes, ?string $ip, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+
+        return $this->deliver(
+            $toEmail,
+            $ar ? 'رمز استرجاع حسابك' : 'Your account recovery code',
+            $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
+            [
+                $ar
+                    ? 'حد حاول يدخل حسابك وهو مفتوح على جهاز تاني، وطلب استرجاع الحساب' . ($ip ? " (من IP: {$ip})" : '') . '. استخدم الرمز التالي لتغيير كلمة السر وقفل الجلسة التانية فورًا.'
+                    : 'Someone tried to sign in while your account is open on another device and asked to recover it' . ($ip ? " (from IP: {$ip})" : '') . '. Use the code below to set a new password and sign the other session out right away.',
+                $ar ? "الرمز صالح لمدة {$minutes} دقايق ويُستخدم مرة واحدة. متشاركوش مع حد." : "The code is valid for {$minutes} minutes and works once. Never share it with anyone.",
+                $ar ? 'لو ماكنتش أنت، تجاهل الرسالة، ويُفضّل تغيّر كلمة السر.' : "If this wasn't you, ignore this email, and consider changing your password.",
+            ],
+            null,
+            $locale,
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp]],
+            'sendSessionTakeoverOtp',
+            'security'
+        );
+    }
+
     /** إيميل إعادة تعيين كلمة السر — بيرجّع نتيجة الإرسال الفعلية. */
     public function sendPasswordReset(string $toEmail, string $fullName, string $resetUrl, string $locale = 'ar'): bool
     {

@@ -160,6 +160,10 @@ Route::prefix('v1')->group(function () {
         // Stateless (challenge_token) — بدون Middleware، زي القديم بالظبط
         Route::post('/two-factor/verify', [TwoFactorChallengeController::class, 'submit']);
         Route::post('/two-factor/cancel', [TwoFactorChallengeController::class, 'cancel']);
+
+        // "الحساب مفتوح في مكان تاني وده مش أنا": OTP على الإيميل ← كلمة سر جديدة ← طرد الجلسات التانية.
+        Route::post('/session-takeover/send', [\App\Http\Controllers\Api\Auth\SessionTakeoverController::class, 'send'])->middleware('throttle:6,1');
+        Route::post('/session-takeover/verify', [\App\Http\Controllers\Api\Auth\SessionTakeoverController::class, 'verify'])->middleware('throttle:12,1');
     });
 
     // جلسة واحدة نشطة لكل حساب — نبضة + تحرير عند قفل المتصفح (SessionsController).
