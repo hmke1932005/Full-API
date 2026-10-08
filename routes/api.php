@@ -66,6 +66,7 @@ use App\Http\Controllers\Api\MeetingsAttendanceApiController;
 use App\Http\Controllers\Api\MeetingsInvitationsApiController;
 use App\Http\Controllers\Api\MessagingController;
 use App\Http\Controllers\Api\AccountPrivacyApiController;
+use App\Http\Controllers\Api\AdminAiConversationsApiController;
 use App\Http\Controllers\Api\AiAssistantController;
 use App\Http\Controllers\Api\AiAssistantSettingsController;
 use App\Http\Controllers\Api\FaqIntentController;
@@ -811,6 +812,9 @@ Route::prefix('v1')->group(function () {
     Route::prefix('admin/messaging')->middleware(['uip.auth', 'uip.admin'])->group(function () {
         Route::get('/oversight', [AdminMessagingOversightApiController::class, 'index']);
         Route::get('/oversight/{id}', [AdminMessagingOversightApiController::class, 'thread']);
+        // محادثات المستخدمين مع المساعد الذكي (قراءة-فقط، كل فتح بيتسجل).
+        Route::get('/ai-conversations', [AdminAiConversationsApiController::class, 'index']);
+        Route::get('/ai-conversations/{id}', [AdminAiConversationsApiController::class, 'thread'])->where('id', '[0-9]+');
         Route::post('/oversight/messages/{id}/delete', [AdminMessagingOversightApiController::class, 'deleteMessage']);
         Route::delete('/oversight/attachments/{id}', [AdminMessagingOversightApiController::class, 'deleteAttachment']);
         Route::get('/analytics', [AdminMessagingOversightApiController::class, 'analytics']);
