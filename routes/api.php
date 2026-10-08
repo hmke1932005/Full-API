@@ -1376,6 +1376,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/search', [MessagingController::class, 'search']);
         Route::get('/mentions', [MessagingController::class, 'mentions']);
         Route::get('/categories', [MessagingController::class, 'categories']);
+        Route::get('/privacy', [MessagingController::class, 'privacy']);
+        Route::patch('/privacy', [MessagingController::class, 'updatePrivacy']);
 
         Route::post('/conversations/direct', [MessagingController::class, 'startDirect']);
         Route::post('/conversations/group', [MessagingController::class, 'createGroup']);

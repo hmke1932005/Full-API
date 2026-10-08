@@ -66,8 +66,9 @@ class MessagingService
         $rows = $this->conversations->inboxForUser($userId);
 
         return array_map(function ($row) {
-            $others = $row['other_participants'];
+            $others = $this->applyAvatarPrivacy($row['other_participants']);
             $displayName = $row['subject'] ?: ($row['is_group'] ? $row['group_name'] : null) ?: ($others[0]['full_name'] ?? '—');
+            $peer = !$row['is_group'] ? ($others[0] ?? null) : null;
 
             return [
                 'id'                 => (int) $row['id'],
@@ -76,6 +77,10 @@ class MessagingService
                 'participants'       => array_map(fn ($p) => $p['full_name'], $others),
                 'participant_emails' => array_map(fn ($p) => $p['email'] ?? '', $others),
                 'participant_orgs'   => array_map(fn ($p) => $p['org'] ?? '', $others),
+                // الطرف التاني في المحادثة المباشرة (إيميل/صورة/نوع حساب) — الصورة null لو هو مخفيها.
+                'peer_email'         => $peer['email'] ?? null,
+                'peer_avatar'        => $peer['avatar_path'] ?? null,
+                'peer_role'          => $peer['account_role'] ?? null,
                 'preview'            => $row['last_message_deleted'] ? '(message deleted)' : ($row['last_message_body'] ? mb_substr($row['last_message_body'], 0, 120) : null),
                 'time'               => $row['last_message_at'] ?: $row['updated_at'],
                 'is_unread'          => (bool) $row['is_unread'],
@@ -146,7 +151,7 @@ class MessagingService
 
         $this->conversations->markRead($conversationId, $userId);
 
-        $others = $this->conversations->otherParticipants($conversationId, $userId);
+        $others = $this->applyAvatarPrivacy($this->conversations->otherParticipants($conversationId, $userId));
         $messages = array_map(
             fn ($m) => $this->shapeMessage($m, $userId),
             $this->messages->forConversation($conversationId, $userId, $beforeId)
@@ -403,7 +408,7 @@ class MessagingService
             'metadata'           => isset($m['metadata']) && $m['metadata'] ? json_decode($m['metadata'], true) : null,
             'sender_id'          => $m['sender_id'],
             'sender_name'        => $m['sender_name'],
-            'sender_avatar'      => $m['sender_avatar'] ?? null,
+            'sender_avatar'      => $this->isAvatarHidden((int) $m['sender_id'], $viewerId) ? null : ($m['sender_avatar'] ?? null),
             'is_mine'            => (string) $m['sender_id'] === (string) $viewerId,
             'is_edited'          => (bool) ($m['is_edited'] ?? false),
             'is_pinned'          => (bool) ($m['is_pinned'] ?? false),
@@ -759,6 +764,66 @@ class MessagingService
     public function readReceiptsEnabled($userId): bool
     {
         return $this->settings->get('messaging_read_receipts_enabled', 'user', $userId, '1') === '1';
+    }
+
+    // -- Chat privacy (متاح لكل الأدوار، مش للطالب بس) -------------------------
+
+    /** @var array<int,bool> كاش per-request: user_id => صورته مخفية؟ */
+    private array $avatarHiddenCache = [];
+
+    /** هل المستخدم ده مخفي صورته في الشات؟ (صاحب الصورة بيشوف صورته دايمًا). */
+    public function isAvatarHidden(int $ownerId, $viewerId = null): bool
+    {
+        if ($viewerId !== null && (string) $ownerId === (string) $viewerId) {
+            return false;
+        }
+        if (!array_key_exists($ownerId, $this->avatarHiddenCache)) {
+            $this->avatarHiddenCache[$ownerId] = $this->settings->get('messaging_show_avatar', 'user', $ownerId, '1') === '0';
+        }
+        return $this->avatarHiddenCache[$ownerId];
+    }
+
+    /**
+     * يشيل avatar_path من أي مشارك مخفي صورته — الفرونت بيرجع للحروف الأولى
+     * تلقائيًا لما avatar_path يبقى null.
+     *
+     * @param array<int,array<string,mixed>> $participants
+     * @return array<int,array<string,mixed>>
+     */
+    private function applyAvatarPrivacy(array $participants): array
+    {
+        foreach ($participants as &$p) {
+            if (isset($p['id']) && $this->isAvatarHidden((int) $p['id'])) {
+                $p['avatar_path'] = null;
+            }
+        }
+        unset($p);
+        return $participants;
+    }
+
+    /** @return array{read_receipts_enabled:bool,show_avatar:bool} */
+    public function chatPrivacyFor($userId): array
+    {
+        return [
+            'read_receipts_enabled' => $this->readReceiptsEnabled($userId),
+            'show_avatar'           => $this->settings->get('messaging_show_avatar', 'user', $userId, '1') === '1',
+        ];
+    }
+
+    /**
+     * @param array{read_receipts_enabled?:mixed,show_avatar?:mixed} $input أي مفتاح مش مبعوت بيفضل زي ما هو
+     * @return array{read_receipts_enabled:bool,show_avatar:bool}
+     */
+    public function updateChatPrivacy($userId, array $input): array
+    {
+        if (array_key_exists('read_receipts_enabled', $input)) {
+            $this->settings->set('messaging_read_receipts_enabled', filter_var($input['read_receipts_enabled'], FILTER_VALIDATE_BOOLEAN) ? '1' : '0', 'user', $userId);
+        }
+        if (array_key_exists('show_avatar', $input)) {
+            $this->settings->set('messaging_show_avatar', filter_var($input['show_avatar'], FILTER_VALIDATE_BOOLEAN) ? '1' : '0', 'user', $userId);
+            unset($this->avatarHiddenCache[(int) $userId]);
+        }
+        return $this->chatPrivacyFor($userId);
     }
 
     public function markConversationRead(int $conversationId, $userId): void

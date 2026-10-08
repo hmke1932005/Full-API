@@ -56,6 +56,21 @@ class MessagingController extends Controller
         return $this->apiSuccess($this->messaging->mentionsOfMe($this->uid($request)), 'Mentions retrieved successfully.');
     }
 
+    /** GET /api/v1/messaging/privacy — إعدادات خصوصية الشات للمستخدم الحالي (كل الأدوار). */
+    public function privacy(Request $request)
+    {
+        return $this->apiSuccess($this->messaging->chatPrivacyFor($this->uid($request)), 'Chat privacy retrieved successfully.');
+    }
+
+    /** PATCH /api/v1/messaging/privacy — body: show_avatar?, read_receipts_enabled? (المفتاح اللي مش مبعوت مبيتغيرش). */
+    public function updatePrivacy(Request $request)
+    {
+        return $this->handle(function () use ($request) {
+            $input = $request->only(['show_avatar', 'read_receipts_enabled']);
+            return $this->apiSuccess($this->messaging->updateChatPrivacy($this->uid($request), $input), 'Chat privacy saved successfully.');
+        });
+    }
+
     /** GET /api/v1/messaging/categories */
     public function categories(Request $request)
     {
