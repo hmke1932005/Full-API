@@ -58,7 +58,7 @@ class GraduationRecordRepository
         $query = DB::table('graduation_records as gr')
             ->join('students as s', 's.id', '=', 'gr.student_id')
             ->join('users as u', 'u.id', '=', 's.user_id')
-            ->select('gr.*', 'u.full_name as student_name', 's.student_number')
+            ->select('gr.*', 'u.full_name as student_name', 'u.name_ar as student_name_ar', 'u.name_en as student_name_en', 's.student_number')
             ->where('gr.university_id', $universityId);
 
         if ($status !== null) {
