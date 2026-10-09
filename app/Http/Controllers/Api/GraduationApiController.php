@@ -199,6 +199,33 @@ class GraduationApiController extends Controller
         return $this->apiSuccess($this->transcriptForApi($studentId), $result['message']);
     }
 
+    /**
+     * POST /api/v1/graduation/{studentId}/restore — university/faculty بس.
+     * بيسحب الإلغاء ويرجّع الطالب متخرج بنفس الشهادة ونفس البيانات القديمة.
+     */
+    public function restore(Request $request, string $studentId)
+    {
+        $scope = $this->universityOrFacultyScope($request);
+        if (!$scope) {
+            return $this->apiError('Only university or faculty accounts can restore a graduation.', null, 403);
+        }
+
+        $studentId = (int) $studentId;
+        $result = $this->graduation->restore(
+            $studentId,
+            $scope['university_id'],
+            $this->userId($request),
+            'en',
+            $scope['faculty_id']
+        );
+
+        if (!$result['success']) {
+            return $this->apiError($result['message'], null, 422);
+        }
+
+        return $this->apiSuccess($this->transcriptForApi($studentId), $result['message']);
+    }
+
     /** GET /api/v1/graduation/{studentId}/certificate */
     public function certificate(Request $request, string $studentId)
     {

@@ -305,6 +305,66 @@ class GraduationService
     }
 
     /**
+     * سحب إلغاء التخرج: بيرجّع سجل revoked لحالة graduated بنفس رقم الشهادة
+     * وبنفس البيانات اللي كانت وقت الاعتماد (من غير إصدار شهادة جديدة ولا
+     * فحص أهلية) — عكس revoke() بالظبط. لو عايز بيانات/شهادة جديدة استخدم
+     * approve() (Review & Approve).
+     *
+     * @return array{success:bool, message:string}
+     */
+    public function restore(int $studentId, int $universityId, int $restoredByUserId, string $locale = 'ar', ?int $facultyId = null): array
+    {
+        $record = $this->records->findByStudent($studentId);
+        if (!$record || (int) $record->university_id !== $universityId) {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'لا يوجد سجل تخرج لهذا الطالب ضمن جامعتك.'
+                : 'No graduation record for this student within your university.'];
+        }
+        if ($facultyId !== null) {
+            $recordStudent = $this->students->find($studentId);
+            if (!$recordStudent || (int) $recordStudent->faculty_id !== $facultyId) {
+                return ['success' => false, 'message' => $locale === 'ar'
+                    ? 'لا يوجد سجل تخرج لهذا الطالب ضمن كليتك.'
+                    : 'No graduation record for this student within your faculty.'];
+            }
+        }
+        if ($record->status !== 'revoked') {
+            return ['success' => false, 'message' => $locale === 'ar'
+                ? 'سجل التخرج غير ملغى.'
+                : 'This graduation record is not revoked.'];
+        }
+
+        $before = $record->toArray();
+        $record->fill([
+            'status'        => 'graduated',
+            'revoked_by'    => null,
+            'revoked_at'    => null,
+            'revoke_reason' => null,
+        ]);
+        $record->save();
+
+        $this->auditLog->record($restoredByUserId, 'university.graduation_restore', 'Student', $studentId, $before, $record->toArray());
+        Log::info('Graduation revoke withdrawn (restored)', ['student_id' => $studentId, 'university_id' => $universityId, 'certificate_number' => $record->certificate_number]);
+
+        $student = $this->students->find($studentId);
+        if ($student) {
+            $this->notifications->notify(
+                $student->user_id,
+                'graduation_approved',
+                $locale === 'ar' ? 'تم استرجاع اعتماد تخرجك' : 'Your graduation approval was restored',
+                $locale === 'ar'
+                    ? "رقم الشهادة: {$record->certificate_number}. يمكنك عرض شهادتك من صفحة التخرج."
+                    : "Certificate number: {$record->certificate_number}. You can view your certificate on the Graduation page.",
+                '/student/graduation'
+            );
+        }
+
+        return ['success' => true, 'message' => $locale === 'ar'
+            ? 'تم سحب الإلغاء وإرجاع الطالب متخرجًا.'
+            : 'Revocation withdrawn — the student is graduated again.'];
+    }
+
+    /**
      * تعديل مباشر لبيانات شهادة صادرة بالفعل — لخطأ إملائي أو درجة/برنامج
      * غلط، حيث دورة revoke()+approve() كاملة (رقم شهادة جديد، صف
      * "revoked" فاضل، إشعار الطالب كأنه اتخرج جديد) هتكون الأداة الغلط.

@@ -1619,6 +1619,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/{studentId}/certificate', [GraduationApiController::class, 'certificate'])->where('studentId', '[0-9]+');
         Route::post('/{studentId}/approve', [GraduationApiController::class, 'approve'])->where('studentId', '[0-9]+');
         Route::post('/{studentId}/revoke', [GraduationApiController::class, 'revoke'])->where('studentId', '[0-9]+');
+        Route::post('/{studentId}/restore', [GraduationApiController::class, 'restore'])->where('studentId', '[0-9]+');
 
         Route::get('/{studentId}', [GraduationApiController::class, 'show'])->where('studentId', '[0-9]+');
         Route::patch('/{studentId}', [GraduationApiController::class, 'update'])->where('studentId', '[0-9]+');
