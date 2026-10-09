@@ -226,6 +226,8 @@ class StudentsApiController extends Controller
             $needle = mb_strtolower($search);
             $rows = array_values(array_filter($rows, function ($s) use ($needle) {
                 return str_contains(mb_strtolower((string) $s['full_name']), $needle)
+                    || str_contains(mb_strtolower((string) ($s['name_ar'] ?? '')), $needle)
+                    || str_contains(mb_strtolower((string) ($s['name_en'] ?? '')), $needle)
                     || str_contains(mb_strtolower((string) $s['student_number']), $needle)
                     || str_contains(mb_strtolower((string) $s['email']), $needle);
             }));
@@ -844,6 +846,8 @@ class StudentsApiController extends Controller
         return [
             'id'                       => (int) $s['id'],
             'full_name'                => $s['full_name'],
+            'name_ar'                  => $s['name_ar'] ?? null,
+            'name_en'                  => $s['name_en'] ?? null,
             'email'                    => $s['email'],
             'student_number'           => $s['student_number'],
             'academic_year'            => $s['academic_year'] !== null ? (int) $s['academic_year'] : null,
