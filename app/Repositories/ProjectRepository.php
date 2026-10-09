@@ -1195,7 +1195,7 @@ class ProjectRepository
      * لأن projects مفيهاش faculty_id مباشر) — بانل "Most Active Faculties"
      * في Admin Analytics. منقولة من ProjectRepository::facultyProjectLeaderboard()
      * القديمة. بند 23.
-     * @return array<int,array{id:int,name_en:string,name_ar:string,projects_count:int}>
+     * @return array<int,array{id:int,name_en:string,name_ar:string,university_name_en:?string,university_name_ar:?string,projects_count:int}>
      */
     public function facultyProjectLeaderboard(int $limit = 5): array
     {
@@ -1204,8 +1204,9 @@ class ProjectRepository
             ->join('projects as p', function ($join) {
                 $join->on('p.owner_id', '=', 's.user_id')->where('p.status', '!=', 'draft');
             })
-            ->select('f.id', 'f.name_en', 'f.name_ar', DB::raw('COUNT(p.id) as projects_count'))
-            ->groupBy('f.id', 'f.name_en', 'f.name_ar')
+            ->leftJoin('universities as u', 'u.id', '=', 'f.university_id')
+            ->select('f.id', 'f.name_en', 'f.name_ar', 'u.official_name_en as university_name_en', 'u.official_name_ar as university_name_ar', DB::raw('COUNT(p.id) as projects_count'))
+            ->groupBy('f.id', 'f.name_en', 'f.name_ar', 'u.official_name_en', 'u.official_name_ar')
             ->orderByDesc('projects_count')
             ->limit($limit)
             ->get()
@@ -1220,8 +1221,10 @@ class ProjectRepository
             ->join('projects as p', function ($join) {
                 $join->on('p.owner_id', '=', 's.user_id')->where('p.status', '!=', 'draft');
             })
-            ->select('d.id', 'd.name_en', 'd.name_ar', DB::raw('COUNT(p.id) as projects_count'))
-            ->groupBy('d.id', 'd.name_en', 'd.name_ar')
+            ->leftJoin('faculties as f', 'f.id', '=', 'd.faculty_id')
+            ->leftJoin('universities as u', 'u.id', '=', 'f.university_id')
+            ->select('d.id', 'd.name_en', 'd.name_ar', 'f.name_en as faculty_name_en', 'f.name_ar as faculty_name_ar', 'u.official_name_en as university_name_en', 'u.official_name_ar as university_name_ar', DB::raw('COUNT(p.id) as projects_count'))
+            ->groupBy('d.id', 'd.name_en', 'd.name_ar', 'f.name_en', 'f.name_ar', 'u.official_name_en', 'u.official_name_ar')
             ->orderByDesc('projects_count')
             ->limit($limit)
             ->get()

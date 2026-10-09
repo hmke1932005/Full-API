@@ -199,6 +199,7 @@ class AnalyticsService
         return array_map(fn ($r) => [
             'id'       => (int) $r['id'],
             'name'     => ['en' => $r['name_en'] ?: $r['name_ar'], 'ar' => $r['name_ar'] ?: $r['name_en']],
+            'university' => $this->pairOrNull($r['university_name_en'] ?? null, $r['university_name_ar'] ?? null),
             'projects' => (int) $r['projects_count'],
         ], $rows);
     }
@@ -210,7 +211,18 @@ class AnalyticsService
         return array_map(fn ($r) => [
             'id'       => (int) $r['id'],
             'name'     => ['en' => $r['name_en'] ?: $r['name_ar'], 'ar' => $r['name_ar'] ?: $r['name_en']],
+            'faculty'  => $this->pairOrNull($r['faculty_name_en'] ?? null, $r['faculty_name_ar'] ?? null),
+            'university' => $this->pairOrNull($r['university_name_en'] ?? null, $r['university_name_ar'] ?? null),
             'projects' => (int) $r['projects_count'],
         ], $rows);
+    }
+
+    /** زوج {en, ar} للاسم، أو null لو الاتنين فاضيين (كلية/قسم من غير جامعة مربوطة). */
+    private function pairOrNull(?string $en, ?string $ar): ?array
+    {
+        if (!$en && !$ar) {
+            return null;
+        }
+        return ['en' => $en ?: $ar, 'ar' => $ar ?: $en];
     }
 }
