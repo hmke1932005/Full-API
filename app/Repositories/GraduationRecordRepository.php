@@ -36,6 +36,8 @@ class GraduationRecordRepository
             ->select(
                 'gr.*',
                 'u.full_name as student_name',
+                'u.name_ar as student_name_ar',
+                'u.name_en as student_name_en',
                 'uni.official_name_ar as university_name_ar',
                 'uni.official_name_en as university_name_en'
             )
