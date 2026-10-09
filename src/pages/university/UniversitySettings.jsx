@@ -152,7 +152,7 @@ function ProfileCard({ university }) {
       </h2>
       {university?.verification_status && (
         <p className="text-caption" style={{ marginBottom: 'var(--space-3)' }}>
-          {t('Verification status')}: <strong>{university.verification_status}</strong>
+          {t('Verification status')}: <strong>{t(university.verification_status)}</strong>
         </p>
       )}
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>

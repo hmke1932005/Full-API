@@ -41,4 +41,6 @@ export default {
   'Department Name (English)': 'اسم القسم (إنجليزي)',
   'Department Name (Arabic)': 'اسم القسم (عربي)',
   'Short Description': 'وصف مختصر',
+  'active': 'نشط',
+  'inactive': 'غير نشط',
 };

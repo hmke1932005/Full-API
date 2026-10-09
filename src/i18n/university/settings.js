@@ -42,4 +42,8 @@ export default {
   'Auto-Approve Threshold (AI score, 0–100)': 'حد الاعتماد التلقائي (درجة الذكاء الاصطناعي، 0–100)',
   'Projects scoring at or above this AI-analysis threshold are auto-approved.': 'المشاريع اللي درجتها في تحليل الذكاء الاصطناعي تساوي هذا الحد أو تزيد عليه بتتعتمد تلقائياً.',
   'Notify on New Submission': 'إشعار عند تقديم مشروع جديد',
+  'unverified': 'غير موثّقة',
+  'pending': 'قيد الانتظار',
+  'verified': 'موثّقة',
+  'rejected': 'مرفوضة',
 };

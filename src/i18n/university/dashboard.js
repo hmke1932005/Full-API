@@ -44,4 +44,6 @@ export default {
   'Your University': 'جامعتك',
   'chevron-right': 'chevron-left',
   'Exam': 'الامتحان',
+  'Artificial Intelligence': 'الذكاء الاصطناعي',
+  'IoT': 'إنترنت الأشياء',
 };
