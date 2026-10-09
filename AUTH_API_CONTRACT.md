@@ -128,8 +128,8 @@ use the Bcrypt algorithm."** السبب: القديم بيستخدم دوال PH
 **Request body:**
 ```json
 {
-  "name_ar": "string, required, 2-150 char, حروف عربية (اسم الجامعة بالعربي لو role=university)",
-  "name_en": "string, required, 2-150 char, حروف إنجليزية (اسم الجامعة بالإنجليزي لو role=university)",
+  "name_ar": "string, required, 2-150 char, حروف عربية",
+  "name_en": "string, required, 2-150 char, حروف إنجليزية",
   "email": "string, required, email",
   "password": "string, required, min 8, confirmed (يعني لازم password_confirmation)",
   "role": "string, required — لازم يكون من roleLabels() المتاحة للتسجيل العام فقط",

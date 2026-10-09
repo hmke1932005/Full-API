@@ -23,8 +23,8 @@ use Illuminate\Support\Str;
  */
 class RegisterController extends Controller
 {
-    /** الأدوار المتاحة للتسجيل العام فقط — نفس roleLabels() في RoleService القديمة. */
-    private const SELF_REGISTER_ROLES = ['student', 'university'];
+    /** الأدوار المتاحة للتسجيل العام فقط — الطالب بس. حسابات الجامعات بيضيفها الأدمن (Admin → Users) ومبتتسجّلش ذاتيًا. */
+    private const SELF_REGISTER_ROLES = ['student'];
 
     public function __construct(
         private PasswordPolicyService $passwordPolicy,
@@ -76,6 +76,19 @@ class RegisterController extends Controller
         $data['name_ar']   = $names['name_ar'];
         $data['name_en']   = $names['name_en'];
 
+        if ($data['role'] === 'university') {
+            SecurityLog::write('Register refused - university accounts are admin-created', ['ip' => $request->ip()]);
+            return response()->json([
+                'success' => false,
+                'message' => $request->header('X-Locale', 'en') === 'ar'
+                    ? 'حسابات الجامعات بيضيفها مدير المنصة فقط، ومينفعش التسجيل بنفسك.'
+                    : 'University accounts are created by the platform administrator and cannot be self-registered.',
+                'data'    => null,
+                'errors'  => ['code' => 'university_self_register_disabled'],
+                'meta'    => (object) [],
+            ], 403);
+        }
+
         if (!in_array($data['role'], self::SELF_REGISTER_ROLES, true)) {
             return response()->json([
                 'success' => false,
@@ -83,7 +96,7 @@ class RegisterController extends Controller
             ], 422);
         }
 
-        // Device Restrictions Policy (وضع by_role) — نوع الحساب المختار للتسجيل (طالب/جامعة).
+        // Device Restrictions Policy (وضع by_role) — نوع الحساب المختار للتسجيل (طالب).
         if (!$this->deviceRestriction->isAllowed($request->userAgent(), $data['role'])) {
             $locale = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
             SecurityLog::write('Register blocked - device type restricted for role', [
@@ -184,12 +197,6 @@ class RegisterController extends Controller
         switch ($role) {
             case 'student':
                 DB::table('students')->insert(['user_id' => $userId]);
-                break;
-            case 'university':
-                DB::table('universities')->insert([
-                    'user_id' => $userId, 'official_name_ar' => $nameAr,
-                    'official_name_en' => $nameEn, 'country' => '',
-                ]);
                 break;
         }
     }
