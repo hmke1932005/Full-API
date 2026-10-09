@@ -240,7 +240,15 @@ class ReportSchedulerService
 
         $addresses = array_filter(array_map('trim', explode(',', $recipientEmail)));
         foreach ($addresses as $address) {
-            $this->mail->sendScheduledReport($address, $label, $frequency, $downloadUrl);
+            // لغة الإيميل = لغة المستلم المفضّلة لو هو مستخدم مسجّل (الافتراضي عربي زي باقي الإيميلات).
+            $pref = null;
+            try {
+                $pref = \Illuminate\Support\Facades\DB::table('users')->where('email', $address)->value('preferred_language');
+            } catch (\Throwable $e) {
+                $pref = null;
+            }
+            $locale = in_array($pref, ['ar', 'en'], true) ? $pref : 'ar';
+            $this->mail->sendScheduledReport($address, $label, $frequency, $downloadUrl, $locale);
         }
     }
 

@@ -220,15 +220,19 @@ class MailService
      * القديم، موثّق في README) عشان ReportSchedulerService يكمل جدولة
      * الجري الجاي حتى لو SMTP واقع مؤقتًا؛ الفشل نفسه بيتسجل في الـ log.
      */
-    public function sendScheduledReport(string $toEmail, string $reportLabel, string $frequency, ?string $downloadUrl): bool
+    public function sendScheduledReport(string $toEmail, string $reportLabel, string $frequency, ?string $downloadUrl, string $locale = 'en'): bool
     {
+        $ar = $locale === 'ar';
+        $freqAr = ['daily' => 'يومي', 'weekly' => 'أسبوعي', 'monthly' => 'شهري', 'quarterly' => 'ربع سنوي', 'yearly' => 'سنوي', 'custom' => 'مخصص'];
+        $freq = $ar ? ($freqAr[strtolower($frequency)] ?? $frequency) : $frequency;
+
         $this->deliver(
             $toEmail,
-            "{$reportLabel} — {$frequency}",
+            "{$reportLabel} — {$freq}",
             $reportLabel,
-            ["Your scheduled report \"{$reportLabel}\" ({$frequency}) is ready."],
-            $downloadUrl ? ['label' => 'Download', 'url' => $downloadUrl] : null,
-            'en',
+            [$ar ? "تقريرك المجدول \"{$reportLabel}\" ({$freq}) أصبح جاهزًا." : "Your scheduled report \"{$reportLabel}\" ({$frequency}) is ready."],
+            $downloadUrl ? ['label' => $ar ? 'تحميل' : 'Download', 'url' => $downloadUrl] : null,
+            $locale,
             [],
             'sendScheduledReport',
             'report'

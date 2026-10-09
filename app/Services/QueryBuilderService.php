@@ -473,13 +473,17 @@ SQL,
             $colList = implode(', ', array_map(fn ($c) => "`{$c}`", $cols));
             $generic[] = [
                 'name'        => 'Preview: ' . ($entry['label']['en'] ?? $entry['table']),
+                'name_ar'     => 'معاينة: ' . ($entry['label']['ar'] ?? $entry['label']['en'] ?? $entry['table']),
                 'description' => 'First 50 rows of ' . $entry['table'] . '.',
+                'description_ar' => 'أول 50 صفًا من ' . $entry['table'] . '.',
                 'sql_text'    => "SELECT {$colList}\nFROM `{$entry['table']}`\nLIMIT 50",
             ];
             if (isset($entry['default_sort'])) {
                 $generic[] = [
                     'name'        => 'Latest: ' . ($entry['label']['en'] ?? $entry['table']),
+                    'name_ar'     => 'الأحدث: ' . ($entry['label']['ar'] ?? $entry['label']['en'] ?? $entry['table']),
                     'description' => 'Most recent rows by ' . $entry['default_sort'] . '.',
+                    'description_ar' => 'أحدث الصفوف حسب ' . $entry['default_sort'] . '.',
                     'sql_text'    => "SELECT {$colList}\nFROM `{$entry['table']}`\nORDER BY `{$entry['default_sort']}` DESC\nLIMIT 50",
                 ];
             }

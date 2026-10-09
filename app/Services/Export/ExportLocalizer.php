@@ -36,6 +36,32 @@ final class ExportLocalizer
         'Level' => 'المستوى', 'Exam ID' => 'رقم الامتحان', 'Graded Attempts' => 'المحاولات المصححة',
         'Students' => 'الطلاب', 'Last Submission' => 'آخر تسليم', 'Doctor' => 'الدكتور',
         'Exams Created' => 'الامتحانات المنشأة', 'Exams With Graded Attempts' => 'امتحانات بها محاولات مصححة',
+        // عناوين تقارير النتائج و AI Code Review
+        'Students Results' => 'نتائج الطلاب', 'Exam Results' => 'نتائج الامتحان',
+        'Score Comparison' => 'مقارنة الدرجات', 'Scores' => 'الدرجات', 'Average Scores' => 'متوسط الدرجات',
+        'Issues by Severity' => 'المشكلات حسب الخطورة', 'Administrator Decision' => 'قرار المسؤول',
+        'Historical Comparison (All Versions)' => 'المقارنة التاريخية (كل النسخ)', 'Findings' => 'الملاحظات',
+        'Version A Findings' => 'ملاحظات النسخة A', 'Version B Findings' => 'ملاحظات النسخة B',
+        'AI Code Review' => 'مراجعة الكود بالذكاء الاصطناعي', 'Project Report' => 'تقرير المشروع',
+        'University Report' => 'تقرير الجامعة', 'Faculty Report' => 'تقرير الكلية', 'Version Comparison' => 'مقارنة النسخ',
+        // meta
+        'Generated At' => 'تاريخ الإنشاء', 'Exams' => 'الامتحانات', 'Total Attempts' => 'إجمالي المحاولات',
+        'Graded' => 'المصحّحة', 'Average Score' => 'متوسط الدرجات', 'Project ID' => 'رقم المشروع',
+        'Latest Version' => 'آخر نسخة', 'Reviewed Projects' => 'المشاريع المراجَعة',
+        'Completed / Failed' => 'المكتملة / الفاشلة', 'Total Issues' => 'إجمالي المشكلات', 'Version A' => 'النسخة A',
+        'Version B' => 'النسخة B',
+        // أعمدة
+        'Attempts' => 'المحاولات', 'Best Score' => 'أعلى درجة', 'Max Marks' => 'الدرجة العظمى', 'Attempt #' => 'رقم المحاولة',
+        'Score' => 'الدرجة', 'Submission Time' => 'وقت التسليم', 'Metric' => 'المؤشر', 'Average' => 'المتوسط',
+        'Change' => 'التغيير', 'Severity' => 'الخطورة', 'Count' => 'العدد', 'File' => 'الملف', 'Line' => 'السطر',
+        'Description' => 'الوصف', 'Recommendation' => 'التوصية', 'Field' => 'الحقل', 'Version' => 'النسخة',
+        'Overall Score' => 'الدرجة الإجمالية', 'Issues' => 'المشكلات', 'Date' => 'التاريخ',
+        // صفوف وقيم ثابتة
+        'Overall' => 'الإجمالي', 'Security' => 'الأمان', 'Performance' => 'الأداء', 'Maintainability' => 'سهولة الصيانة',
+        'Architecture' => 'البنية', 'Quality' => 'الجودة', 'Reviewed By (User ID)' => 'تمت المراجعة بواسطة (رقم المستخدم)',
+        'Approved At' => 'تاريخ الاعتماد', 'Not yet approved' => 'لم يُعتمد بعد', 'Score Overridden' => 'تم تعديل الدرجة',
+        'Override Reason' => 'سبب التعديل', 'Admin Notes' => 'ملاحظات المسؤول', 'Yes' => 'نعم', 'No' => 'لا',
+        'Critical' => 'حرجة', 'High' => 'عالية', 'Medium' => 'متوسطة', 'Low' => 'منخفضة',
     ];
 
     public static function isArabic(): bool
@@ -54,6 +80,48 @@ final class ExportLocalizer
         return self::isArabic()
             ? array_map(fn ($h) => is_string($h) ? (self::AR[$h] ?? $h) : $h, $header)
             : $header;
+    }
+
+    /** يترجم عنوان فيه بادئة زي "AI Code Review - University Report: X" ويسيب الاسم الحر زي ما هو. */
+    public static function title(string $title): string
+    {
+        if (!self::isArabic()) {
+            return $title;
+        }
+        if (isset(self::AR[$title])) {
+            return self::AR[$title];
+        }
+        $parts = explode(' - ', $title, 2);
+        if (count($parts) === 2) {
+            $tail = $parts[1];
+            if (str_contains($tail, ': ')) {
+                [$label, $name] = explode(': ', $tail, 2);
+                $tail = self::text($label) . ': ' . $name;
+            } else {
+                $tail = self::text($tail);
+            }
+            return self::text($parts[0]) . ' - ' . $tail;
+        }
+        return $title;
+    }
+
+    /** يترجم عناوين الأقسام وأسماء الأعمدة ومفاتيح الـ meta في تقرير كامل (القيم نفسها بتفضل زي ما هي). */
+    public static function report(string $title, array $meta, array $sections): array
+    {
+        if (!self::isArabic()) {
+            return [$title, $meta, $sections];
+        }
+        $m = [];
+        foreach ($meta as $k => $v) {
+            $m[self::text((string) $k)] = $v;
+        }
+        $sections = array_map(function ($s) {
+            $s['title'] = self::text((string) ($s['title'] ?? ''));
+            $s['header'] = self::headers((array) ($s['header'] ?? []));
+            return $s;
+        }, $sections);
+
+        return [self::title($title), $m, $sections];
     }
 
     public static function recordsLabel(int $n): string

@@ -8,6 +8,7 @@ use App\Repositories\AiCodeReviewRepository;
 use App\Repositories\UniversityRepository;
 use App\Services\AuditLogService;
 use App\Services\Export\CsvWriter;
+use App\Services\Export\ExportLocalizer;
 use App\Services\Export\JsonWriter;
 use App\Services\Export\PdfWriter;
 use App\Services\Export\SpreadsheetWriter;
@@ -202,7 +203,7 @@ class AdminAiCodeReviewExportController extends Controller
         foreach ($scoresA as $key => $valA) {
             $valB = $scoresB[$key] ?? null;
             $diff = ($valA !== null && $valB !== null) ? $valB - $valA : null;
-            $diffRows[] = [ucfirst($key), $valA ?? '-', $valB ?? '-', $diff !== null ? ($diff >= 0 ? '+' . $diff : (string) $diff) : '-'];
+            $diffRows[] = [ExportLocalizer::text(ucfirst($key)), $valA ?? '-', $valB ?? '-', $diff !== null ? ($diff >= 0 ? '+' . $diff : (string) $diff) : '-'];
         }
 
         $meta = [
@@ -233,24 +234,24 @@ class AdminAiCodeReviewExportController extends Controller
     {
         $s = $review->scores();
         return ['title' => 'Scores', 'header' => ['Metric', 'Score'], 'rows' => [
-            ['Overall', $s['overall'] ?? '-'],
-            ['Security', $s['security'] ?? '-'],
-            ['Performance', $s['performance'] ?? '-'],
-            ['Maintainability', $s['maintainability'] ?? '-'],
-            ['Architecture', $s['architecture'] ?? '-'],
-            ['Quality', $s['quality'] ?? '-'],
+            [ExportLocalizer::text('Overall'), $s['overall'] ?? '-'],
+            [ExportLocalizer::text('Security'), $s['security'] ?? '-'],
+            [ExportLocalizer::text('Performance'), $s['performance'] ?? '-'],
+            [ExportLocalizer::text('Maintainability'), $s['maintainability'] ?? '-'],
+            [ExportLocalizer::text('Architecture'), $s['architecture'] ?? '-'],
+            [ExportLocalizer::text('Quality'), $s['quality'] ?? '-'],
         ]];
     }
 
     private function averagesSection(array $averages): array
     {
         return ['title' => 'Average Scores', 'header' => ['Metric', 'Average'], 'rows' => [
-            ['Overall', $averages['overall'] ?? '-'],
-            ['Security', $averages['security'] ?? '-'],
-            ['Performance', $averages['performance'] ?? '-'],
-            ['Maintainability', $averages['maintainability'] ?? '-'],
-            ['Architecture', $averages['architecture'] ?? '-'],
-            ['Quality', $averages['quality'] ?? '-'],
+            [ExportLocalizer::text('Overall'), $averages['overall'] ?? '-'],
+            [ExportLocalizer::text('Security'), $averages['security'] ?? '-'],
+            [ExportLocalizer::text('Performance'), $averages['performance'] ?? '-'],
+            [ExportLocalizer::text('Maintainability'), $averages['maintainability'] ?? '-'],
+            [ExportLocalizer::text('Architecture'), $averages['architecture'] ?? '-'],
+            [ExportLocalizer::text('Quality'), $averages['quality'] ?? '-'],
         ]];
     }
 
@@ -258,7 +259,7 @@ class AdminAiCodeReviewExportController extends Controller
     {
         $rows = [];
         foreach ($counts as $sev => $c) {
-            $rows[] = [ucfirst($sev), $c];
+            $rows[] = [ExportLocalizer::text(ucfirst($sev)), $c];
         }
         return ['title' => 'Issues by Severity', 'header' => ['Severity', 'Count'], 'rows' => $rows];
     }
@@ -268,7 +269,7 @@ class AdminAiCodeReviewExportController extends Controller
     {
         $header = ['Severity', 'Category', 'File', 'Line', 'Description', 'Recommendation'];
         $rows = array_map(fn ($i) => [
-            $i->severity, $i->category, $i->file_name ?: '-', $i->line_number ?? '-',
+            ExportLocalizer::isArabic() ? ExportLocalizer::text(ucfirst((string) $i->severity)) : $i->severity, $i->category, $i->file_name ?: '-', $i->line_number ?? '-',
             $i->description, $i->ai_recommendation ?: '-',
         ], $issues);
         return ['title' => $title, 'header' => $header, 'rows' => $rows];
@@ -277,11 +278,11 @@ class AdminAiCodeReviewExportController extends Controller
     private function adminDecisionSection($review): array
     {
         return ['title' => 'Administrator Decision', 'header' => ['Field', 'Value'], 'rows' => [
-            ['Reviewed By (User ID)', $review->reviewed_by ?? '-'],
-            ['Approved At', $review->approved_at ?? 'Not yet approved'],
-            ['Score Overridden', ((int) ($review->score_overridden ?? 0)) === 1 ? 'Yes' : 'No'],
-            ['Override Reason', $review->override_reason ?: '-'],
-            ['Admin Notes', $review->admin_notes ?: '-'],
+            [ExportLocalizer::text('Reviewed By (User ID)'), $review->reviewed_by ?? '-'],
+            [ExportLocalizer::text('Approved At'), $review->approved_at ?? ExportLocalizer::text('Not yet approved')],
+            [ExportLocalizer::text('Score Overridden'), ((int) ($review->score_overridden ?? 0)) === 1 ? ExportLocalizer::text('Yes') : ExportLocalizer::text('No')],
+            [ExportLocalizer::text('Override Reason'), $review->override_reason ?: '-'],
+            [ExportLocalizer::text('Admin Notes'), $review->admin_notes ?: '-'],
         ]];
     }
 
@@ -333,6 +334,10 @@ class AdminAiCodeReviewExportController extends Controller
         }
         $path = $tmpDir . '/' . $filename . '_' . date('Ymd_His') . '.' . $format;
 
+        // لغة الملف من lang في الريكوست — بتترجم العناوين وأسماء الأعمدة ومفاتيح الـ meta بس.
+        [$title, $meta, $sections] = ExportLocalizer::report($title, $meta, $sections);
+        $ar = ExportLocalizer::isArabic();
+
         try {
             switch ($format) {
                 case 'csv':
@@ -344,7 +349,7 @@ class AdminAiCodeReviewExportController extends Controller
 
                 case 'xlsx':
                     // شيت مسطّح واحد: صفوف meta، ثم كل قسم تحت صف علامة "## Title" (SpreadsheetWriter شيت واحد بس).
-                    $header = ['Field', 'Value'];
+                    $header = ExportLocalizer::headers(['Field', 'Value']);
                     $rows = [];
                     foreach ($meta as $k => $v) {
                         $rows[] = [$k, $v];
@@ -362,7 +367,7 @@ class AdminAiCodeReviewExportController extends Controller
                     // توسيع الـ header لأعرض صف مُستخدم فعليًا عشان الأعمدة ماتتقصّش.
                     $maxCols = max(array_map('count', array_merge([$header], $rows)));
                     $header = array_pad($header, $maxCols, '');
-                    SpreadsheetWriter::write($path, $header, $rows);
+                    SpreadsheetWriter::write($path, $header, $rows, $ar);
                     $contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
                     break;
 

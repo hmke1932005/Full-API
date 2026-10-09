@@ -115,9 +115,13 @@ class ExamResultsExportApiController extends Controller
      */
     protected function writeExportFile(string $format, string $path, string $title, array $meta, array $sections): string
     {
+        // لغة الملف من lang في الريكوست — بتترجم العناوين وأسماء الأعمدة ومفاتيح الـ meta بس.
+        [$title, $meta, $sections] = \App\Services\Export\ExportLocalizer::report($title, $meta, $sections);
+        $ar = \App\Services\Export\ExportLocalizer::isArabic();
+
         switch ($format) {
             case 'xlsx':
-                $header = ['Field', 'Value'];
+                $header = \App\Services\Export\ExportLocalizer::headers(['Field', 'Value']);
                 $rows = [];
                 foreach ($meta as $k => $v) {
                     $rows[] = [$k, $v];
@@ -134,7 +138,7 @@ class ExamResultsExportApiController extends Controller
                 }
                 $maxCols = max(array_map('count', array_merge([$header], $rows)));
                 $header = array_pad($header, $maxCols, '');
-                SpreadsheetWriter::write($path, $header, $rows);
+                SpreadsheetWriter::write($path, $header, $rows, $ar);
                 return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
             case 'json':
