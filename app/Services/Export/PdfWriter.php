@@ -30,13 +30,16 @@ class PdfWriter
      * @param string[] $header
      * @param array<int,array<int,mixed>> $rows
      */
-    public static function writeTable(string $path, string $title, array $header, array $rows): void
+    public static function writeTable(string $path, string $title, array $header, array $rows, bool $rtl = false): void
     {
         if (self::mpdfAvailable()) {
             try {
+                self::$rtlTable = $rtl;
                 self::writeTableMpdf($path, $title, $header, $rows);
+                self::$rtlTable = false;
                 return;
             } catch (\Throwable $e) {
+                self::$rtlTable = false;
                 self::warn('mPDF table export failed, using the basic PDF writer: ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
             }
         }
@@ -186,9 +189,13 @@ class PdfWriter
         };
     }
 
+    /** عرض الجدول من اليمين لليسار (تصدير بالعربي) — بيتظبط في writeTable وبيتصفّر بعد الكتابة. */
+    private static bool $rtlTable = false;
+
     private static function css(): string
     {
         $a = self::ACCENT;
+        $thAlign = self::$rtlTable ? 'right' : 'left';
         return "
             body { font-family: dejavusans; font-size: 9pt; color: #1f2937; }
             .brand { color: {$a}; font-size: 7.5pt; letter-spacing: 1.5pt; font-weight: bold; }
@@ -197,7 +204,7 @@ class PdfWriter
             .sub { color: #6b7280; font-size: 8.5pt; margin: 3pt 0 0 0; }
             .rule { border-bottom: 1.6pt solid {$a}; height: 6pt; margin-bottom: 10pt; }
             table.data { border-collapse: collapse; width: 100%; border: 0.4pt solid #e5e7eb; }
-            table.data th { background-color: {$a}; color: #ffffff; font-size: 8.3pt; padding: 5pt 6pt; text-align: left; border: 0.4pt solid #e5e7eb; }
+            table.data th { background-color: {$a}; color: #ffffff; font-size: 8.3pt; padding: 5pt 6pt; text-align: {$thAlign}; border: 0.4pt solid #e5e7eb; }
             table.data td { padding: 4pt 6pt; border-bottom: 0.4pt solid #e5e7eb; vertical-align: top; }
             table.data tr.alt td { background-color: #f5f6fb; }
             table.meta td { padding: 2.5pt 6pt 2.5pt 0; vertical-align: top; }
@@ -271,7 +278,7 @@ class PdfWriter
         }
         $numeric ??= self::numericColumns($header, $rows);
 
-        $html = '<table class="data" repeat_header="1"><thead><tr>';
+        $html = '<table class="data" repeat_header="1"' . (self::$rtlTable ? ' dir="rtl"' : '') . '><thead><tr>';
         foreach ($header as $i => $h) {
             $html .= self::cell(self::humanize($h), 'th', !empty($numeric[$i]) ? 'text-align:right;' : '');
         }
@@ -291,8 +298,8 @@ class PdfWriter
     private static function titleBlock(string $title, ?string $subtitle = null): string
     {
         return '<div class="brand">UIP · UNIVERSITY INNOVATION PLATFORM</div>'
-            . '<h1' . (self::isRtl($title) ? ' dir="rtl"' : '') . '>' . self::esc($title) . '</h1>'
-            . ($subtitle !== null ? '<div class="sub">' . self::esc($subtitle) . '</div>' : '')
+            . '<h1' . (self::isRtl($title) || self::$rtlTable ? ' dir="rtl"' : '') . '>' . self::esc($title) . '</h1>'
+            . ($subtitle !== null ? '<div class="sub"' . (self::$rtlTable ? ' dir="rtl"' : '') . '>' . self::esc($subtitle) . '</div>' : '')
             . '<div class="rule"></div>';
     }
 
@@ -303,9 +310,9 @@ class PdfWriter
         $mpdf->WriteHTML('<style>' . self::css() . '</style>', \Mpdf\HTMLParserMode::HEADER_CSS);
 
         $count = count($rows);
-        $mpdf->WriteHTML(self::titleBlock($title, number_format($count) . ($count === 1 ? ' record' : ' records')), \Mpdf\HTMLParserMode::HTML_BODY);
+        $mpdf->WriteHTML(self::titleBlock($title, \App\Services\Export\ExportLocalizer::recordsLabel($count)), \Mpdf\HTMLParserMode::HTML_BODY);
         if ($count === 0) {
-            $mpdf->WriteHTML('<p class="none">No data.</p>', \Mpdf\HTMLParserMode::HTML_BODY);
+            $mpdf->WriteHTML('<p class="none"' . (self::$rtlTable ? ' dir="rtl"' : '') . '>' . (self::$rtlTable ? 'لا توجد بيانات.' : 'No data.') . '</p>', \Mpdf\HTMLParserMode::HTML_BODY);
         } elseif ($count <= 150) {
             $mpdf->WriteHTML(self::tableHtml($header, $rows), \Mpdf\HTMLParserMode::HTML_BODY);
         } else {

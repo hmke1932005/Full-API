@@ -20,7 +20,7 @@ class SpreadsheetWriter
      * @param string[] $header
      * @param array<int,array<int,mixed>> $rows
      */
-    public static function write(string $path, array $header, array $rows): void
+    public static function write(string $path, array $header, array $rows, bool $rtl = false): void
     {
         if (!class_exists(\ZipArchive::class)) {
             throw new \RuntimeException('The PHP zip extension is required for Excel exports.');
@@ -35,7 +35,7 @@ class SpreadsheetWriter
         $zip->addFromString('_rels/.rels', self::rootRels());
         $zip->addFromString('xl/workbook.xml', self::workbook());
         $zip->addFromString('xl/_rels/workbook.xml.rels', self::workbookRels());
-        $zip->addFromString('xl/worksheets/sheet1.xml', self::sheet($header, $rows));
+        $zip->addFromString('xl/worksheets/sheet1.xml', self::sheet($header, $rows, $rtl));
         $zip->close();
     }
 
@@ -78,7 +78,7 @@ class SpreadsheetWriter
      * @param string[] $header
      * @param array<int,array<int,mixed>> $rows
      */
-    private static function sheet(array $header, array $rows): string
+    private static function sheet(array $header, array $rows, bool $rtl = false): string
     {
         $allRows = array_merge([$header], $rows);
         $xmlRows = '';
@@ -93,6 +93,7 @@ class SpreadsheetWriter
 
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             . '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            . ($rtl ? '<sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews>' : '')
             . '<sheetData>' . $xmlRows . '</sheetData>'
             . '</worksheet>';
     }

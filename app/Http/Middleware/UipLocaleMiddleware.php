@@ -24,7 +24,8 @@ class UipLocaleMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $requested = $request->query('lang');
+        // ?lang= أو lang في الـ body (تصدير)، وبعدها هيدر X-Locale اللي الفرونت بيبعته مع كل ريكوست.
+        $requested = $request->query('lang') ?: $request->input('lang') ?: $request->header('X-Locale');
         $available = array_keys((array) config('languages', ['en' => [], 'ar' => []]));
 
         $locale = ($requested && in_array($requested, $available, true))

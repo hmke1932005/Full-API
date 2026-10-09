@@ -9,6 +9,7 @@ use App\Repositories\UniversityRepository;
 use App\Services\AnalyticsService;
 use App\Services\AuditLogService;
 use App\Services\DataAnalysisExamsService;
+use App\Services\Export\ExportLocalizer;
 use App\Services\Export\PdfWriter;
 use App\Services\Export\SpreadsheetWriter;
 use App\Services\ExportSchedulerService;
@@ -177,6 +178,10 @@ class DataAnalysisExportsApiController extends Controller
         ]);
 
         [$header, $rows] = $this->buildRows($type, $typeFilters);
+        // لغة الملف جاية من اختيار المستخدم (lang في الريكوست) — بتترجم العنوان وأسماء الأعمدة فقط.
+        $ar = ExportLocalizer::isArabic();
+        $header = ExportLocalizer::headers($header);
+        $title = ExportLocalizer::text(self::TYPE_LABELS[$type] ?? $type);
 
         $dir = public_path(config('upload.paths.reports', 'uploads/reports'));
         if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
@@ -188,17 +193,20 @@ class DataAnalysisExportsApiController extends Controller
 
         switch ($format) {
             case 'xlsx':
-                SpreadsheetWriter::write($fullPath, $header, $rows);
+                SpreadsheetWriter::write($fullPath, $header, $rows, $ar);
                 break;
 
             case 'pdf':
-                PdfWriter::writeTable($fullPath, self::TYPE_LABELS[$type] ?? $type, $header, $rows);
+                PdfWriter::writeTable($fullPath, $title, $header, $rows, $ar);
                 break;
 
             default: // csv
                 $handle = fopen($fullPath, 'w');
                 if (!$handle) {
                     throw new \RuntimeException('Could not write the export file.');
+                }
+                if ($ar) {
+                    fwrite($handle, "\xEF\xBB\xBF"); // BOM: Excel يفتح الحروف العربية صح
                 }
                 fputcsv($handle, $header);
                 foreach ($rows as $row) {
@@ -287,9 +295,9 @@ class DataAnalysisExportsApiController extends Controller
         return $this->apiSuccess([
             'id'        => $export->id,
             'type'      => $type,
-            'label'     => self::TYPE_LABELS[$type] ?? $type,
+            'label'     => ExportLocalizer::text(self::TYPE_LABELS[$type] ?? $type),
             'format'    => $export->format,
-            'header'    => array_values($header),
+            'header'    => array_values(ExportLocalizer::headers($header)),
             'rows'      => array_map('array_values', array_slice($rows, 0, self::PREVIEW_ROWS)),
             'total'     => $total,
             'truncated' => $total > self::PREVIEW_ROWS,
