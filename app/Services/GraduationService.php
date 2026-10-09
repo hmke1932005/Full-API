@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Repositories\GraduationRecordRepository;
 use App\Repositories\ProjectGradeRepository;
 use App\Repositories\StudentRepository;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -213,7 +214,19 @@ class GraduationService
             'approved_at'        => $approvedAt,
         ];
 
-        $this->records->create($data);
+        // طالب اتلغى تخرجه قبل كده: الجدول UNIQUE(student_id) فمينفعش INSERT
+        // تاني (كان بيطلّع 500) — بنحدّث نفس الصف برقم شهادة جديد ونصفّر بيانات الإلغاء.
+        $existingRecord = $eligibility['existing_record'];
+        if ($existingRecord && $existingRecord->status === 'revoked') {
+            $existingRecord->fill($data + [
+                'revoked_by'    => null,
+                'revoked_at'    => null,
+                'revoke_reason' => null,
+            ]);
+            $existingRecord->save();
+        } else {
+            $this->records->create($data);
+        }
 
         $auditAction = $isOverride ? 'university.graduation_manual_override' : 'university.graduation_approve';
         $this->auditLog->record($approvedByUserId, $auditAction, 'Student', $studentId, null, $data + ['manual_override' => $isOverride, 'override_reason' => $isOverride ? $overrideReason : null]);
@@ -406,6 +419,10 @@ class GraduationService
     {
         $year = (int) now()->format('Y');
         $sequence = $this->records->countForUniversityYear($universityId, $year) + 1;
-        return sprintf('UIP-%d-%d-%04d', $universityId, $year, $sequence);
+        // لو في سجل اتمسح/اتعدّل بيخلّي العدّاد يتصادم مع رقم موجود (UNIQUE) — نكمّل لحد أول رقم فاضي.
+        do {
+            $number = sprintf('UIP-%d-%d-%04d', $universityId, $year, $sequence++);
+        } while (DB::table('graduation_records')->where('certificate_number', $number)->exists());
+        return $number;
     }
 }
