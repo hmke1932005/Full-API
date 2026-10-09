@@ -51,20 +51,30 @@ class RegisterController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'full_name' => 'required|min:2|max:150',
             'email'     => 'required|email',
             'password'  => 'required|min:8|confirmed',
             'role'      => 'required|string',
         ]);
 
-        if ($validator->fails()) {
+        // Every account carries both an Arabic and an English name.
+        $names = \App\Support\BilingualName::fromRequest($request, $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en');
+
+        if ($validator->fails() || !$names['ok']) {
+            $errors = $names['errors'];
+            foreach ($validator->errors()->toArray() as $field => $messages) {
+                $errors[$field] = $messages[0];
+            }
             return response()->json([
                 'success' => false,
-                'message' => $validator->errors()->first(),
+                'message' => $names['errors'] ? reset($names['errors']) : $validator->errors()->first(),
+                'errors'  => $errors,
             ], 422);
         }
 
         $data = $validator->validated();
+        $data['full_name'] = $names['full_name'];
+        $data['name_ar']   = $names['name_ar'];
+        $data['name_en']   = $names['name_en'];
 
         if (!in_array($data['role'], self::SELF_REGISTER_ROLES, true)) {
             return response()->json([
@@ -116,6 +126,8 @@ class RegisterController extends Controller
             $user = User::create([
                 'uuid'                => (string) Str::uuid(),
                 'full_name'           => $data['full_name'],
+                'name_ar'             => $data['name_ar'],
+                'name_en'             => $data['name_en'],
                 'email'               => $data['email'],
                 'phone'               => request()->input('phone'),
                 'password_hash'       => $newHash,
@@ -128,7 +140,7 @@ class RegisterController extends Controller
                 DB::table('user_roles')->insert(['user_id' => $user->id, 'role_id' => $roleId]);
             }
 
-            $this->provisionRoleProfile($user->id, $data['role'], $data['full_name']);
+            $this->provisionRoleProfile($user->id, $data['role'], $data['name_ar'], $data['name_en']);
             $this->passwordPolicy->recordPasswordChange($user->id, $newHash);
 
             // لو الدور student واختار جامعة في الفورم (مش "Decide later")،
@@ -167,7 +179,7 @@ class RegisterController extends Controller
     }
 
     /** يطابق UserRepository::provisionRoleProfile() القديم — صف بروفايل فاضي حسب الدور. */
-    private function provisionRoleProfile(int $userId, string $role, string $fullName): void
+    private function provisionRoleProfile(int $userId, string $role, string $nameAr, string $nameEn): void
     {
         switch ($role) {
             case 'student':
@@ -175,8 +187,8 @@ class RegisterController extends Controller
                 break;
             case 'university':
                 DB::table('universities')->insert([
-                    'user_id' => $userId, 'official_name_ar' => $fullName,
-                    'official_name_en' => $fullName, 'country' => '',
+                    'user_id' => $userId, 'official_name_ar' => $nameAr,
+                    'official_name_en' => $nameEn, 'country' => '',
                 ]);
                 break;
         }

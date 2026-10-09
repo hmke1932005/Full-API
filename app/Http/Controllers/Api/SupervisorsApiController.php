@@ -73,7 +73,7 @@ class SupervisorsApiController extends Controller
             return $row;
         }, $this->supervisors->forUniversity($university->id));
 
-        $rows = $this->filterBySearch($request, $rows, ['full_name', 'email']);
+        $rows = $this->filterBySearch($request, $rows, ['full_name', 'name_ar', 'name_en', 'email']);
         [$page, $perPage, $total, $items] = $this->paginateArray($request, $rows);
 
         return $this->apiSuccess($items, 'Supervisors retrieved successfully.', 200, $this->meta($page, $perPage, $total));
@@ -107,11 +107,16 @@ class SupervisorsApiController extends Controller
             return $this->apiError('Only university accounts can invite supervisors.', null, 403);
         }
 
-        $fullName = trim((string) $request->input('full_name', ''));
+        $names = \App\Support\BilingualName::fromRequest($request);
         $email = trim((string) $request->input('email', ''));
-        if ($fullName === '' || $email === '') {
-            return $this->apiError('Validation failed.', ['full_name' => 'Required.', 'email' => 'Required.'], 422);
+        $errors = $names['errors'];
+        if ($email === '') {
+            $errors['email'] = 'Required.';
         }
+        if ($errors) {
+            return $this->apiError('Validation failed.', $errors, 422);
+        }
+        $fullName = $names['full_name'];
 
         $userId = (int) $request->attributes->get('uip_user_id');
         $university = $this->universities->getOrCreate($userId);
@@ -126,7 +131,9 @@ class SupervisorsApiController extends Controller
             $request->input('title'),
             $permissions,
             (string) $request->input('locale', 'ar'),
-            $request->input('password') !== null ? (string) $request->input('password') : null
+            $request->input('password') !== null ? (string) $request->input('password') : null,
+            $names['name_ar'],
+            $names['name_en']
         );
 
         return $result['success']

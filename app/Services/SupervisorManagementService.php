@@ -58,8 +58,13 @@ class SupervisorManagementService
     }
 
     /** @return array{success:bool, message:string} */
-    public function invite($universityId, $actingUserId, string $fullName, string $email, ?string $department, ?string $title, array $permissions, string $locale = 'ar', ?string $password = null): array
+    public function invite($universityId, $actingUserId, string $fullName, string $email, ?string $department, ?string $title, array $permissions, string $locale = 'ar', ?string $password = null, ?string $nameAr = null, ?string $nameEn = null): array
     {
+        $names = \App\Support\BilingualName::resolveOrLegacy($fullName, $nameAr, $nameEn, $locale);
+        if (!$names['ok']) {
+            return ['success' => false, 'message' => reset($names['errors']), 'errors' => $names['errors']];
+        }
+        $fullName = $names['full_name'];
         $email = mb_strtolower(trim($email));
         $password = $password !== null ? trim($password) : '';
         if ($password !== '' && mb_strlen($password) < 8) {
@@ -84,7 +89,9 @@ class SupervisorManagementService
         $tempPassword = $password !== '' ? $password : $this->generateTempPassword();
 
         $user = $this->users->createBareWithRole([
-            'full_name'     => trim($fullName),
+            'full_name'     => $names['full_name'],
+            'name_ar'       => $names['name_ar'],
+            'name_en'       => $names['name_en'],
             'email'         => $email,
             'password_hash' => password_hash($tempPassword, PASSWORD_DEFAULT),
             'status'        => 'active',
@@ -93,7 +100,9 @@ class SupervisorManagementService
         $supervisor = $this->supervisors->create([
             'university_id'      => $universityId,
             'user_id'            => $user->id,
-            'full_name'          => trim($fullName),
+            'full_name'          => $names['full_name'],
+            'name_ar'            => $names['name_ar'],
+            'name_en'            => $names['name_en'],
             'email'              => $email,
             'department'         => $department ? trim($department) : null,
             'title'              => $title ? trim($title) : null,

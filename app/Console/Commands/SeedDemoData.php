@@ -359,7 +359,7 @@ class SeedDemoData extends Command
                 $uid = $this->createUsers([[$email, $name]], 'supervisor')[0];
                 $facId = $uni['faculties'][($s - 1) % count($uni['faculties'])];
                 $supId = DB::table('supervisors')->insertGetId([
-                    'university_id' => $universityId, 'full_name' => $name, 'email' => $email,
+                    'university_id' => $universityId, 'full_name' => $name, 'name_ar' => $name, 'name_en' => $this->englishNameFromEmail($email), 'email' => $email,
                     'department' => 'Demo', 'title' => 'Dr.', 'status' => 'active',
                     'invited_at' => now(), 'activated_at' => now(), 'user_id' => $uid,
                     'permissions' => '', 'invitation_status' => 'accepted', 'accepted_at' => now(),
@@ -517,6 +517,12 @@ class SeedDemoData extends Command
 
     // ---- helpers --------------------------------------------------------------
 
+    /** Demo data only has Arabic names — derive a readable English one from the e-mail local part. */
+    private function englishNameFromEmail(string $email): string
+    {
+        return ucwords(str_replace(['.', '_', '-'], ' ', (string) strstr($email, '@', true))) ?: 'Demo User';
+    }
+
     /**
      * @param array<int, array{0:string,1:string}> $defs [email, full_name]
      * @return int[] user ids in the same order as $defs
@@ -529,7 +535,7 @@ class SeedDemoData extends Command
             foreach ($chunk as [$email, $name]) {
                 $ts = now()->subDays(random_int(0, 400))->format('Y-m-d H:i:s');
                 $rows[] = [
-                    'uuid' => (string) Str::uuid(), 'full_name' => $name, 'email' => $email,
+                    'uuid' => (string) Str::uuid(), 'full_name' => $name, 'name_ar' => $name, 'name_en' => $this->englishNameFromEmail($email), 'email' => $email,
                     'password_hash' => $this->passwordHash, 'preferred_language' => 'ar',
                     'status' => 'active', 'email_verified_at' => $ts, 'created_at' => $ts, 'updated_at' => $ts,
                 ];

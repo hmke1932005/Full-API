@@ -47,7 +47,7 @@ class StudentRepository
             ->leftJoin('programs as p', 'p.id', '=', 's.program_id')
             ->select(
                 's.*',
-                'u.full_name', 'u.email', 'u.phone', 'u.avatar_path', 'u.status as account_status',
+                'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.phone', 'u.avatar_path', 'u.status as account_status',
                 'uni.official_name_en as university_name_en', 'uni.official_name_ar as university_name_ar',
                 'f.name_en as faculty_name_en', 'f.name_ar as faculty_name_ar',
                 'd.name_en as department_name_en', 'd.name_ar as department_name_ar',
@@ -77,7 +77,7 @@ class StudentRepository
             ->leftJoin('student_groups as g', 'g.id', '=', 's.group_id')
             ->select(
                 's.*',
-                'u.full_name', 'u.email', 'u.phone', 'u.avatar_path', 'u.status as account_status',
+                'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.phone', 'u.avatar_path', 'u.status as account_status',
                 'uni.official_name_en as university_name_en', 'uni.official_name_ar as university_name_ar',
                 'f.name_en as faculty_name_en', 'f.name_ar as faculty_name_ar',
                 'd.name_en as department_name_en', 'd.name_ar as department_name_ar',
@@ -111,7 +111,7 @@ class StudentRepository
         return DB::table('students as s')
             ->join('users as u', 'u.id', '=', 's.user_id')
             ->leftJoin('student_groups as g', 'g.id', '=', 's.group_id')
-            ->select('s.*', 'u.full_name', 'u.email', 'u.status as account_status', 'g.name as group_name')
+            ->select('s.*', 'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.status as account_status', 'g.name as group_name')
             ->selectSub(function ($q) {
                 $q->selectRaw('COUNT(*)')->from('projects as p')->whereColumn('p.owner_id', 's.user_id');
             }, 'projects_count')
@@ -183,12 +183,14 @@ class StudentRepository
                 's.id', 's.student_number', 's.faculty', 's.faculty_id',
                 's.department', 's.department_id', 's.program_id',
                 's.academic_year', 's.group_id', 'g.name as group_name',
-                'u.full_name', 'u.email'
+                'u.full_name', 'u.name_ar', 'u.name_en', 'u.email'
             )
             ->where('s.university_id', $universityId)
             ->where('u.status', 'active')
             ->where(function ($w) use ($needle) {
                 $w->where('u.full_name', 'like', $needle)
+                    ->orWhere('u.name_ar', 'like', $needle)
+                    ->orWhere('u.name_en', 'like', $needle)
                     ->orWhere('u.email', 'like', $needle)
                     ->orWhere('s.student_number', 'like', $needle);
             })

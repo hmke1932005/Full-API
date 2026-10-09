@@ -94,11 +94,15 @@ class AdminUsersApiController extends Controller
         }
 
         $data = $request->validate([
-            'full_name' => 'required|min:2',
             'email'     => 'required|email',
             'password'  => 'required|min:8',
             'role'      => 'required',
         ]);
+
+        $names = \App\Support\BilingualName::fromRequest($request);
+        if (!$names['ok']) {
+            return $this->apiError('Please provide the name in both Arabic and English.', $names['errors'], 422);
+        }
 
         if ($this->users->emailExists($data['email'])) {
             return $this->apiError('An account with this email already exists.', null, 422);
@@ -109,7 +113,9 @@ class AdminUsersApiController extends Controller
         }
 
         $user = $this->users->createWithRole([
-            'full_name'          => $data['full_name'],
+            'full_name'          => $names['full_name'],
+            'name_ar'            => $names['name_ar'],
+            'name_en'            => $names['name_en'],
             'email'              => $data['email'],
             'phone'              => $request->input('phone') ?: null,
             'password_hash'      => password_hash($data['password'], PASSWORD_BCRYPT),
@@ -138,12 +144,19 @@ class AdminUsersApiController extends Controller
         }
 
         $data = $request->validate([
-            'full_name' => 'required|min:2',
             'email'     => 'required|email',
         ]);
 
+        $names = \App\Support\BilingualName::fromRequest($request);
+        if (!$names['ok']) {
+            return $this->apiError('Please provide the name in both Arabic and English.', $names['errors'], 422);
+        }
+        $data += \App\Support\BilingualName::columns($names);
+
         $ok = $this->users->updateProfile($target['id'], [
-            'full_name' => $data['full_name'],
+            'full_name' => $names['full_name'],
+            'name_ar'   => $names['name_ar'],
+            'name_en'   => $names['name_en'],
             'email'     => $data['email'],
             'phone'     => $request->input('phone') ?: null,
             'status'    => $request->input('status') ?: $target['status'],

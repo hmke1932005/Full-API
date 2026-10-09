@@ -100,7 +100,7 @@ class AcademicStaffRepository
         // 2026_09_04_000000) ما لازمش تظهر في روستر عام؛ الوصول ليها بس
         // عبر AcademicStaffManagementService::revealPassword().
         return array_map(fn ($r) => (array) $r, DB::select(
-            self::LISTING_COLUMNS . ", u.full_name, u.email,
+            self::LISTING_COLUMNS . ", u.full_name, u.name_ar, u.name_en, u.email,
                     r.name_en AS rank_name_en, r.name_ar AS rank_name_ar,
                     f.name_en AS faculty_name_en, f.name_ar AS faculty_name_ar,
                     d.name_en AS department_name_en, d.name_ar AS department_name_ar
@@ -126,7 +126,7 @@ class AcademicStaffRepository
         // for the same reason.
         // نفس ملاحظة forUniversityWithDetails() فوق — s.* مش مستخدمة عمدًا.
         return array_map(fn ($r) => (array) $r, DB::select(
-            self::LISTING_COLUMNS . ", u.full_name, u.email,
+            self::LISTING_COLUMNS . ", u.full_name, u.name_ar, u.name_en, u.email,
                     r.name_en AS rank_name_en, r.name_ar AS rank_name_ar,
                     d.name_en AS department_name_en, d.name_ar AS department_name_ar
              FROM academic_staff s
@@ -174,7 +174,7 @@ class AcademicStaffRepository
             ->leftJoin('departments as d', 'd.id', '=', 's.department_id')
             ->select(
                 's.*',
-                'u.full_name', 'u.email', 'u.phone', 'u.avatar_path',
+                'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.phone', 'u.avatar_path',
                 'r.name_en as rank_name_en', 'r.name_ar as rank_name_ar',
                 'f.name_en as faculty_name_en', 'f.name_ar as faculty_name_ar',
                 'd.name_en as department_name_en', 'd.name_ar as department_name_ar'

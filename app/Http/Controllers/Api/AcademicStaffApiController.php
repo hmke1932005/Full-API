@@ -148,7 +148,7 @@ class AcademicStaffApiController extends Controller
     {
         if ($request->attributes->get('uip_role') === 'university') {
             $university = $this->universities->getOrCreate((int) $request->attributes->get('uip_user_id'));
-            $rows = $this->filterBySearch($request, $this->withStatus($this->staff->forUniversityWithDetails($university->id)), ['full_name', 'email']);
+            $rows = $this->filterBySearch($request, $this->withStatus($this->staff->forUniversityWithDetails($university->id)), ['full_name', 'name_ar', 'name_en', 'email']);
             [$page, $perPage, $total, $items] = $this->paginateArray($request, $rows);
             return $this->apiSuccess($items, 'Academic staff retrieved successfully.', 200, $this->meta($page, $perPage, $total));
         }
@@ -158,7 +158,7 @@ class AcademicStaffApiController extends Controller
             if (!$faculty) {
                 return $this->apiSuccess([], 'Academic staff retrieved successfully.', 200, $this->meta(1, 20, 0));
             }
-            $rows = $this->filterBySearch($request, $this->withStatus($this->staff->forFacultyWithDetails($faculty->id)), ['full_name', 'email']);
+            $rows = $this->filterBySearch($request, $this->withStatus($this->staff->forFacultyWithDetails($faculty->id)), ['full_name', 'name_ar', 'name_en', 'email']);
             [$page, $perPage, $total, $items] = $this->paginateArray($request, $rows);
             return $this->apiSuccess($items, 'Academic staff retrieved successfully.', 200, $this->meta($page, $perPage, $total));
         }
@@ -194,11 +194,16 @@ class AcademicStaffApiController extends Controller
      */
     public function store(Request $request)
     {
-        $fullName = trim((string) $request->input('full_name', ''));
+        $names = \App\Support\BilingualName::fromRequest($request);
         $email = trim((string) $request->input('email', ''));
-        if ($fullName === '' || $email === '') {
-            return $this->apiError('Validation failed.', ['full_name' => 'Required.', 'email' => 'Required.'], 422);
+        $errors = $names['errors'];
+        if ($email === '') {
+            $errors['email'] = 'Required.';
         }
+        if ($errors) {
+            return $this->apiError('Validation failed.', $errors, 422);
+        }
+        $fullName = $names['full_name'];
 
         $departmentId = $request->input('department_id') !== null && $request->input('department_id') !== '' ? (int) $request->input('department_id') : null;
         $rankId = $request->input('academic_rank_id') !== null && $request->input('academic_rank_id') !== '' ? (int) $request->input('academic_rank_id') : null;
@@ -219,7 +224,10 @@ class AcademicStaffApiController extends Controller
                 $rankId,
                 $request->input('staff_number'),
                 $request->input('bio'),
-                $password
+                $password,
+                \App\Support\BilingualName::localeOf($request),
+                $names['name_ar'],
+                $names['name_en']
             );
         } elseif ($request->attributes->get('uip_role') === 'faculty') {
             $faculty = $this->faculties->findByUserId($userId);
@@ -237,7 +245,10 @@ class AcademicStaffApiController extends Controller
                 $rankId,
                 $request->input('staff_number'),
                 $request->input('bio'),
-                $password
+                $password,
+                \App\Support\BilingualName::localeOf($request),
+                $names['name_ar'],
+                $names['name_en']
             );
         } else {
             return $this->apiError('Only university or faculty accounts can invite academic staff.', null, 403);

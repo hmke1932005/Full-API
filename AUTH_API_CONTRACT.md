@@ -128,7 +128,8 @@ use the Bcrypt algorithm."** السبب: القديم بيستخدم دوال PH
 **Request body:**
 ```json
 {
-  "full_name": "string, required, 2-150 char",
+  "name_ar": "string, required, 2-150 char, حروف عربية (اسم الجامعة بالعربي لو role=university)",
+  "name_en": "string, required, 2-150 char, حروف إنجليزية (اسم الجامعة بالإنجليزي لو role=university)",
   "email": "string, required, email",
   "password": "string, required, min 8, confirmed (يعني لازم password_confirmation)",
   "role": "string, required — لازم يكون من roleLabels() المتاحة للتسجيل العام فقط",
@@ -136,6 +137,8 @@ use the Bcrypt algorithm."** السبب: القديم بيستخدم دوال PH
   "faculty_id": "int, optional", "department_id": "int, optional", "program_id": "int, optional"
 }
 ```
+> كل حساب (طالب/جامعة/دكتور/مشرف/أدمن…) لازم يكون له اسم بالعربي `name_ar` وبالإنجليزي `name_en`. عمود `users.full_name` بيتحسب تلقائيًا (حسب لغة الطلب `X-Locale`) للتوافق مع الكود القديم ومبقاش يتبعت من العميل. نفس الحقلين مطلوبين في: `POST /admin/users`، `POST /students`، `POST /academic-staff`، `POST /supervisors`، وتعديل البروفايل (`/students/me`، `/*/settings/profile`). الاستيراد الجماعي بيستخدم عمودي `name_ar` و`name_en`. فشل التحقق بيرجع 422 مع `errors.name_ar` / `errors.name_en`.
+
 **فشل بسبب role غير صالح (422):** `{"success": false, "message": "Please choose a valid account type."}`
 
 ---

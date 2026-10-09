@@ -81,8 +81,15 @@ class AcademicStaffManagementService
         ?string $staffNumber,
         ?string $bio,
         ?string $password = null,
-        string $locale = 'ar'
+        string $locale = 'ar',
+        ?string $nameAr = null,
+        ?string $nameEn = null
     ): array {
+        $names = \App\Support\BilingualName::resolveOrLegacy($fullName, $nameAr, $nameEn, $locale);
+        if (!$names['ok']) {
+            return ['success' => false, 'message' => reset($names['errors']), 'errors' => $names['errors']];
+        }
+        $fullName = $names['full_name'];
         $email = mb_strtolower(trim($email));
 
         if ($password !== null && trim($password) !== '' && mb_strlen(trim($password)) < self::MIN_PASSWORD_LENGTH) {
@@ -138,7 +145,9 @@ class AcademicStaffManagementService
         $tempPassword = $password !== null && trim($password) !== '' ? trim($password) : $this->generateTempPassword();
 
         $user = $this->users->createBareWithRole([
-            'full_name'     => trim($fullName),
+            'full_name'     => $names['full_name'],
+            'name_ar'       => $names['name_ar'],
+            'name_en'       => $names['name_en'],
             'email'         => $email,
             'password_hash' => password_hash($tempPassword, PASSWORD_DEFAULT),
             'status'        => 'active',
@@ -305,8 +314,8 @@ class AcademicStaffManagementService
      * ميوقفش باقي الصفوف، بس بيترجع في summary.results عشان الواجهة تعرض
      * جدول نتائج (نجح/فشل + السبب) بدل all-or-nothing.
      *
-     * أعمدة الصف المتوقعة (lowercase، من TabularFileReader): full_name
-     * (أو name)، email، department (اسم أو id)، rank (اسم أو id)،
+     * أعمدة الصف المتوقعة (lowercase، من TabularFileReader): name_ar و
+     * name_en (الاتنين إجباري)، email، department (اسم أو id)، rank (اسم أو id)،
      * staff_number، bio، password (اختياري لكل صف).
      *
      * @param array<int,array<string,string>> $rows
@@ -322,10 +331,17 @@ class AcademicStaffManagementService
 
             $fullName = trim((string) ($row['full_name'] ?? $row['name'] ?? ''));
             $email = trim((string) ($row['email'] ?? ''));
-            if ($fullName === '' || $email === '') {
+            if ($email === '') {
                 $results[] = ['row' => $rowNumber, 'email' => $email, 'success' => false, 'message' => $locale === 'ar'
-                    ? 'الاسم أو البريد الإلكتروني ناقص.'
-                    : 'Missing name or email.'];
+                    ? 'البريد الإلكتروني ناقص.'
+                    : 'Missing email.'];
+                continue;
+            }
+            $rowNames = \App\Support\BilingualName::resolve($row['name_ar'] ?? $row['arabic_name'] ?? '', $row['name_en'] ?? $row['english_name'] ?? '', $locale);
+            if (!$rowNames['ok']) {
+                $results[] = ['row' => $rowNumber, 'email' => $email, 'success' => false, 'message' => ($locale === 'ar'
+                    ? 'الاسم بالعربي والإنجليزي مطلوبين (أعمدة name_ar و name_en): '
+                    : 'Arabic and English names are required (columns name_ar and name_en): ') . implode(' ', $rowNames['errors'])];
                 continue;
             }
 
@@ -335,7 +351,7 @@ class AcademicStaffManagementService
             $bio = trim((string) ($row['bio'] ?? '')) ?: null;
             $password = trim((string) ($row['password'] ?? '')) ?: null;
 
-            $result = $this->invite($universityId, $actingUserId, $fullName, $email, $facultyId, $departmentId, $rankId, $staffNumber, $bio, $password, $locale);
+            $result = $this->invite($universityId, $actingUserId, $rowNames['full_name'], $email, $facultyId, $departmentId, $rankId, $staffNumber, $bio, $password, $locale, $rowNames['name_ar'], $rowNames['name_en']);
 
             $results[] = ['row' => $rowNumber, 'email' => $email, 'success' => $result['success'], 'message' => $result['message']];
             if ($result['success']) {

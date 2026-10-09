@@ -304,15 +304,16 @@ class StudentsApiController extends Controller
             return $this->apiError('Only university or faculty accounts can add students.', null, 403);
         }
 
-        $fullName = trim((string) $request->input('full_name', ''));
+        $names = \App\Support\BilingualName::fromRequest($request, $locale);
         $email = trim((string) $request->input('email', ''));
-        if ($fullName === '' || mb_strlen($fullName) > 150 || $email === '' || mb_strlen($email) > 190
-            || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return $this->apiError('Validation failed.', [
-                'full_name' => 'Required, max 150 chars.',
-                'email'     => 'Required, valid email, max 190 chars.',
-            ], 422);
+        $errors = $names['errors'];
+        if ($email === '' || mb_strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $errors['email'] = 'Required, valid email, max 190 chars.';
         }
+        if ($errors) {
+            return $this->apiError('Validation failed.', $errors, 422);
+        }
+        $fullName = $names['full_name'];
 
         $facultyId = $scope['role'] === 'faculty' ? $scope['facultyId'] : $this->nullableInt($request, 'faculty_id');
 
@@ -331,7 +332,9 @@ class StudentsApiController extends Controller
             $this->nullableInt($request, 'current_semester'),
             $request->input('study_start_date'),
             $request->input('password') !== null ? (string) $request->input('password') : null,
-            $request->has('send_email') ? $request->boolean('send_email') : true
+            $request->has('send_email') ? $request->boolean('send_email') : true,
+            $names['name_ar'],
+            $names['name_en']
         );
 
         if (!$result['success']) {
@@ -449,7 +452,7 @@ class StudentsApiController extends Controller
         }
 
         return $this->apiSuccess([
-            'user'                    => $user ? ['id' => $user->id, 'full_name' => $user->full_name, 'email' => $user->email] : null,
+            'user'                    => $user ? ['id' => $user->id, 'full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en, 'email' => $user->email] : null,
             'university_name'         => $university?->name('en'),
             'faculty_name'            => $faculty ? $faculty->name($locale) : null,
             'department_name'         => $department ? $department->name($locale) : null,
@@ -554,7 +557,7 @@ class StudentsApiController extends Controller
         $attempted = false;
         $failedMessages = [];
 
-        if ($request->input('full_name') !== null || $request->file('avatar')) {
+        if ($request->input('full_name') !== null || $request->input('name_ar') !== null || $request->input('name_en') !== null || $request->file('avatar')) {
             $attempted = true;
             $r = $this->management->updateProfile(
                 $id,
@@ -563,7 +566,9 @@ class StudentsApiController extends Controller
                 $request->input('full_name'),
                 $request->file('avatar'),
                 $locale,
-                $scope['facultyId']
+                $scope['facultyId'],
+                $request->input('name_ar') !== null ? (string) $request->input('name_ar') : null,
+                $request->input('name_en') !== null ? (string) $request->input('name_en') : null
             );
             if (!$r['success']) {
                 $failedMessages[] = $r['message'];
@@ -742,9 +747,20 @@ class StudentsApiController extends Controller
 
         $changed = false;
 
-        $fullName = $request->input('full_name');
-        if ($fullName !== null) {
-            $fullName = trim((string) $fullName);
+        if ($request->input('name_ar') !== null || $request->input('name_en') !== null) {
+            $names = \App\Support\BilingualName::resolve(
+                $request->input('name_ar', $user->name_ar),
+                $request->input('name_en', $user->name_en),
+                \App\Support\BilingualName::localeOf($request)
+            );
+            if (!$names['ok']) {
+                return $this->apiError('Validation failed.', $names['errors'], 422);
+            }
+            $user->fill(\App\Support\BilingualName::columns($names));
+            $user->save();
+            $changed = true;
+        } elseif ($request->input('full_name') !== null) {
+            $fullName = trim((string) $request->input('full_name'));
             if ($fullName === '') {
                 return $this->apiError('full_name cannot be empty.', null, 422);
             }
@@ -855,6 +871,8 @@ class StudentsApiController extends Controller
         return [
             'id'                       => (int) $s['id'],
             'full_name'                => $s['full_name'],
+            'name_ar'                  => $s['name_ar'] ?? null,
+            'name_en'                  => $s['name_en'] ?? null,
             'email'                    => $s['email'],
             'phone'                    => $s['phone'] ?? null,
             'avatar_path'              => $s['avatar_path'] ?? null,

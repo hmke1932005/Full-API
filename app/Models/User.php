@@ -18,7 +18,7 @@ class User extends Authenticatable
     protected $table = 'users';
 
     protected $fillable = [
-        'uuid', 'full_name', 'email', 'phone', 'password_hash', 'avatar_path',
+        'uuid', 'full_name', 'name_ar', 'name_en', 'email', 'phone', 'password_hash', 'avatar_path',
         'preferred_language', 'theme_preference', 'status', 'email_verified_at',
         'last_login_at', 'last_login_ip', 'two_factor_enabled', 'remember_token',
         // 2FA enrollment — دول كانوا ناقصين من
@@ -49,6 +49,12 @@ class User extends Authenticatable
     public function getAuthPassword()
     {
         return $this->password_hash;
+    }
+
+    /** الاسم حسب اللغة (ar/en) مع fallback للتانية ثم full_name القديم. */
+    public function nameFor(string $locale = 'ar'): string
+    {
+        return \App\Support\BilingualName::pick($this->name_ar, $this->name_en, $locale, (string) $this->full_name);
     }
 
     public function refreshTokens()

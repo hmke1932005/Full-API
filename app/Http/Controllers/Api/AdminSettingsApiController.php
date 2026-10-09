@@ -141,16 +141,20 @@ class AdminSettingsApiController extends Controller
 
         $userId = (int) $request->attributes->get('uip_user_id');
         $user = User::find($userId);
-        $name = trim((string) $request->input('full_name', ''));
-
-        if ($user === null || $name === '') {
+        if ($user === null) {
             return $this->apiError('Please provide a valid name.', null, 422);
         }
 
-        $before = ['full_name' => $user->full_name];
-        $user->fill(['full_name' => $name]);
+        $names = \App\Support\BilingualName::fromRequest($request);
+        if (!$names['ok']) {
+            return $this->apiError('Please provide the name in both Arabic and English.', $names['errors'], 422);
+        }
+
+        $before = ['full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en];
+        $after = \App\Support\BilingualName::columns($names);
+        $user->fill($after);
         $user->save();
-        $this->auditLog->record($userId, 'admin.profile_update', 'User', $user->id, $before, ['full_name' => $name]);
+        $this->auditLog->record($userId, 'admin.profile_update', 'User', $user->id, $before, $after);
 
         return $this->apiSuccess($user->toArray(), 'Profile updated successfully.');
     }

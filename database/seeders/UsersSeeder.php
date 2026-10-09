@@ -39,11 +39,11 @@ ON DUPLICATE KEY UPDATE name_ar = VALUES(name_ar);
 SQL,
 
             <<<'SQL'
-INSERT INTO users (uuid, full_name, email, password_hash, status, email_verified_at) VALUES
-(UUID(), 'Demo Student',    'student@uip.demo',    '$2b$10$/je0yLNggES2qBBU5PPRzeqM2PZy8//vup3pcPbRz3.M8fXxeqzue', 'active', NOW()),
-(UUID(), 'Demo University', 'university@uip.demo', '$2b$10$/je0yLNggES2qBBU5PPRzeqM2PZy8//vup3pcPbRz3.M8fXxeqzue', 'active', NOW()),
-(UUID(), 'Demo Admin',      'admin@uip.demo',      '$2b$10$/je0yLNggES2qBBU5PPRzeqM2PZy8//vup3pcPbRz3.M8fXxeqzue', 'active', NOW())
-ON DUPLICATE KEY UPDATE full_name = VALUES(full_name);
+INSERT INTO users (uuid, full_name, name_ar, name_en, email, password_hash, status, email_verified_at) VALUES
+(UUID(), 'Demo Student',    'طالب تجريبي',   'Demo Student',    'student@uip.demo',    '$2b$10$/je0yLNggES2qBBU5PPRzeqM2PZy8//vup3pcPbRz3.M8fXxeqzue', 'active', NOW()),
+(UUID(), 'Demo University', 'جامعة تجريبية', 'Demo University', 'university@uip.demo', '$2b$10$/je0yLNggES2qBBU5PPRzeqM2PZy8//vup3pcPbRz3.M8fXxeqzue', 'active', NOW()),
+(UUID(), 'Demo Admin',      'مسؤول تجريبي',  'Demo Admin',      'admin@uip.demo',      '$2b$10$/je0yLNggES2qBBU5PPRzeqM2PZy8//vup3pcPbRz3.M8fXxeqzue', 'active', NOW())
+ON DUPLICATE KEY UPDATE full_name = VALUES(full_name), name_ar = VALUES(name_ar), name_en = VALUES(name_en);
 SQL,
 
             <<<'SQL'

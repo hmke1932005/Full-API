@@ -46,6 +46,15 @@ class UserRepository
 
             $this->provisionRoleProfile($user->id, $roleSlug);
 
+            // University accounts: official names mirror the account's Arabic/English names.
+            if ($roleSlug === 'university' && !empty($userData['name_ar']) && !empty($userData['name_en'])
+                && !DB::table('universities')->where('user_id', $user->id)->exists()) {
+                DB::table('universities')->insert([
+                    'user_id' => $user->id, 'official_name_ar' => $userData['name_ar'],
+                    'official_name_en' => $userData['name_en'], 'country' => '',
+                ]);
+            }
+
             return $user;
         });
     }
@@ -489,6 +498,8 @@ class UserRepository
         }
         $user->fill(array_filter([
             'full_name' => $data['full_name'] ?? null,
+            'name_ar'   => $data['name_ar'] ?? null,
+            'name_en'   => $data['name_en'] ?? null,
             'email'     => $data['email'] ?? null,
             'phone'     => array_key_exists('phone', $data) ? $data['phone'] : null,
             'status'    => $data['status'] ?? null,

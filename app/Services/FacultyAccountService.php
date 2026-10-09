@@ -67,6 +67,8 @@ class FacultyAccountService
         $user = User::create([
             'uuid'          => (string) Str::uuid(),
             'full_name'     => $faculty->name($locale) ?: $faculty->name('en'),
+            'name_ar'       => $faculty->name_ar ?: $faculty->name('ar'),
+            'name_en'       => $faculty->name_en ?: $faculty->name('en'),
             'email'         => $email,
             'password_hash' => password_hash($finalPassword, PASSWORD_DEFAULT),
             'status'        => 'active',

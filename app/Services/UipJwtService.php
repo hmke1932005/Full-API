@@ -261,6 +261,8 @@ class UipJwtService
                 'id'    => $userId,
                 'role'  => $role,
                 'name'  => $user->full_name ?? null,
+                'name_ar' => $user->name_ar ?? null,
+                'name_en' => $user->name_en ?? null,
                 'email' => $user->email ?? null,
             ],
         ];

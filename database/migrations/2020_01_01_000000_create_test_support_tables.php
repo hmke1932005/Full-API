@@ -40,6 +40,8 @@ return new class extends Migration {
         Schema::table('users', function (Blueprint $table) {
             $table->uuid('uuid')->nullable()->after('id');
             $table->string('full_name')->nullable()->after('uuid');
+            $table->string('name_ar', 150)->nullable();
+            $table->string('name_en', 150)->nullable();
             $table->string('password_hash')->nullable()->after('full_name');
             $table->string('status')->default('active')->after('password_hash');
             $table->string('name')->nullable()->change();

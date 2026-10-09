@@ -92,8 +92,15 @@ class StudentManagementService
         ?int $currentSemester = null,
         ?string $studyStartDate = null,
         ?string $password = null,
-        bool $sendEmail = true
+        bool $sendEmail = true,
+        ?string $nameAr = null,
+        ?string $nameEn = null
     ): array {
+        $names = \App\Support\BilingualName::resolveOrLegacy($fullName, $nameAr, $nameEn, $locale);
+        if (!$names['ok']) {
+            return ['success' => false, 'message' => reset($names['errors']), 'errors' => $names['errors']];
+        }
+        $fullName = $names['full_name'];
         $email = mb_strtolower(trim($email));
         $password = $password !== null ? trim($password) : null;
         $manualPassword = $password !== null && $password !== '';
@@ -160,7 +167,9 @@ class StudentManagementService
         $tempPassword = $manualPassword ? $password : $this->generateTempPassword();
 
         $user = $this->users->createWithRole([
-            'full_name'     => trim($fullName),
+            'full_name'     => $names['full_name'],
+            'name_ar'       => $names['name_ar'],
+            'name_en'       => $names['name_en'],
             'email'         => $email,
             'password_hash' => password_hash($tempPassword, PASSWORD_DEFAULT),
             'status'        => 'active',
@@ -260,7 +269,7 @@ class StudentManagementService
     }
 
     /**
-     * Bulk import (CSV/XLSX rows keyed by lower-cased header): full_name, email, student_number,
+     * Bulk import (CSV/XLSX rows keyed by lower-cased header): name_ar, name_en (both required), email, student_number,
      * faculty, department, academic_year, current_semester, group, password (optional).
      * faculty/department/group accept an id or an exact Arabic/English name. A faculty-scoped
      * admin ($forcedFacultyId) can only import into their own faculty.
@@ -297,14 +306,21 @@ class StudentManagementService
         foreach (array_values($rows) as $i => $row) {
             $n = $i + 2;
             $fullName = trim((string) ($row['full_name'] ?? $row['name'] ?? ''));
+            $rowNameAr = trim((string) ($row['name_ar'] ?? $row['arabic_name'] ?? ''));
+            $rowNameEn = trim((string) ($row['name_en'] ?? $row['english_name'] ?? ''));
             $email = trim((string) ($row['email'] ?? ''));
             $fail = function (string $msg) use (&$results, &$errors, $n, $email) {
                 $results[] = ['row' => $n, 'email' => $email, 'success' => false, 'message' => $msg];
                 $errors[] = "Row {$n} ({$email}): {$msg}";
             };
 
-            if ($fullName === '' || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                $fail($locale === 'ar' ? 'الاسم أو البريد الإلكتروني ناقص أو غير صالح.' : 'Missing name or a valid email.');
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $fail($locale === 'ar' ? 'البريد الإلكتروني ناقص أو غير صالح.' : 'Missing or invalid email.');
+                continue;
+            }
+            $rowNames = \App\Support\BilingualName::resolve($rowNameAr, $rowNameEn, $locale);
+            if (!$rowNames['ok']) {
+                $fail(($locale === 'ar' ? 'الاسم بالعربي والإنجليزي مطلوبين (أعمدة name_ar و name_en): ' : 'Arabic and English names are required (columns name_ar and name_en): ') . implode(' ', $rowNames['errors']));
                 continue;
             }
 
@@ -352,7 +368,8 @@ class StudentManagementService
                 $int($row['academic_year'] ?? ''), $groupId, $locale, null,
                 $int($row['current_semester'] ?? ''), null,
                 trim((string) ($row['password'] ?? '')) ?: null,
-                $sendEmail
+                $sendEmail,
+                $rowNames['name_ar'], $rowNames['name_en']
             );
 
             $results[] = ['row' => $n, 'email' => $email, 'success' => $res['success'], 'message' => $res['message'],
@@ -652,7 +669,9 @@ class StudentManagementService
         ?string $fullName,
         ?array $avatarFile,
         string $locale = 'ar',
-        $scopeFacultyId = null
+        $scopeFacultyId = null,
+        ?string $nameAr = null,
+        ?string $nameEn = null
     ): array {
         $student = $this->students->findOwned($id, $universityId, $scopeFacultyId);
         if (!$student) {
@@ -664,12 +683,21 @@ class StudentManagementService
             return ['success' => false, 'message' => $locale === 'ar' ? 'الطالب غير موجود.' : 'Student not found.'];
         }
 
-        $before = ['full_name' => $user->full_name, 'avatar_path' => $user->avatar_path];
+        $before = ['full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en, 'avatar_path' => $user->avatar_path];
         $changes = [];
 
-        $fullName = $fullName !== null ? trim($fullName) : null;
-        if ($fullName !== null && $fullName !== '') {
-            $changes['full_name'] = $fullName;
+        if ($nameAr !== null || $nameEn !== null) {
+            // Both names are always edited together so neither can be left blank/stale.
+            $names = \App\Support\BilingualName::resolve($nameAr ?? $user->name_ar, $nameEn ?? $user->name_en, $locale);
+            if (!$names['ok']) {
+                return ['success' => false, 'message' => reset($names['errors']), 'errors' => $names['errors']];
+            }
+            $changes += \App\Support\BilingualName::columns($names);
+        } else {
+            $fullName = $fullName !== null ? trim($fullName) : null;
+            if ($fullName !== null && $fullName !== '') {
+                $changes['full_name'] = $fullName;
+            }
         }
 
         if ($avatarFile && (int) ($avatarFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
