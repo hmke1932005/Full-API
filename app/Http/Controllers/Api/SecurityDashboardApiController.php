@@ -42,6 +42,7 @@ class SecurityDashboardApiController extends Controller
             'notifications'      => $this->dashboard->notificationsFeed($role ?? 'security_officer', 8),
             'recent_events'      => $this->dashboard->recentEvents(8),
             'severity_breakdown' => $this->dashboard->incidentsBySeverity(),
+            'activity'           => $this->dashboard->activity((int) $request->query('days', 7)),
         ], 'Dashboard data retrieved successfully.');
     }
 }

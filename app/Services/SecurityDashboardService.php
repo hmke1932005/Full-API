@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use App\Repositories\BlockedIpRepository;
 use App\Repositories\RiskScoreRepository;
 use App\Repositories\SecurityAlertRepository;
@@ -72,6 +74,63 @@ class SecurityDashboardService
     public function recentEvents(int $limit = 8): array
     {
         return array_slice($this->securityLogs->recent(7, 200), 0, $limit);
+    }
+
+    /**
+     * سلسلة زمنية يومية حقيقية (الأقدم أولًا، بطول $days بالظبط) للرسم "النشاط الأمني":
+     *  - incidents: الحوادث حسب detected_at من جدول security_incidents.
+     *  - events: تسجيلات الدخول (user_sessions.created_at) + صفوف security_logs لو الجدول موجود
+     *    + أحداث ملفات storage/logs/security. كل مصدر معزول بـ try/catch فلو واحد وقع الباقي يشتغل.
+     * @return array<int,array{date:string,incidents:int,events:int}>
+     */
+    public function activity(int $days = 7): array
+    {
+        $days = max(1, min(90, $days));
+        $start = now()->startOfDay()->subDays($days - 1);
+
+        $buckets = [];
+        for ($i = 0; $i < $days; $i++) {
+            $buckets[$start->copy()->addDays($i)->format('Y-m-d')] = ['incidents' => 0, 'events' => 0];
+        }
+
+        $tally = function (string $key, $rows, string $col) use (&$buckets) {
+            foreach ($rows as $v) {
+                $d = substr((string) (is_object($v) ? $v->{$col} : $v), 0, 10);
+                if (isset($buckets[$d])) {
+                    $buckets[$d][$key]++;
+                }
+            }
+        };
+
+        try {
+            $tally('incidents', DB::table('security_incidents')->where('detected_at', '>=', $start)->get(['detected_at']), 'detected_at');
+        } catch (\Throwable $e) {
+        }
+        try {
+            $tally('events', DB::table('user_sessions')->where('created_at', '>=', $start)->get(['created_at']), 'created_at');
+        } catch (\Throwable $e) {
+        }
+        try {
+            if (Schema::hasTable('security_logs')) {
+                $tally('events', DB::table('security_logs')->where('created_at', '>=', $start)->get(['created_at']), 'created_at');
+            }
+        } catch (\Throwable $e) {
+        }
+        try {
+            foreach ($this->securityLogs->readDays($days) as $ev) {
+                $d = substr((string) ($ev['time'] ?? ''), 0, 10);
+                if (isset($buckets[$d])) {
+                    $buckets[$d]['events']++;
+                }
+            }
+        } catch (\Throwable $e) {
+        }
+
+        $out = [];
+        foreach ($buckets as $date => $v) {
+            $out[] = ['date' => $date, 'incidents' => $v['incidents'], 'events' => $v['events']];
+        }
+        return $out;
     }
 
     /** @return array{low:int,medium:int,high:int,critical:int} توزيع الحوادث حسب الخطورة */
