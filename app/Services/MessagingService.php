@@ -158,6 +158,9 @@ class MessagingService
         }
 
         $this->conversations->markRead($conversationId, $userId);
+        if ($beforeId === null) {
+            $this->notifications->markConversationNotificationsRead($userId, $conversationId);
+        }
 
         $others = $this->applyAvatarPrivacy($this->conversations->otherParticipants($conversationId, $userId));
         $messages = array_map(
@@ -407,7 +410,12 @@ class MessagingService
     private function messagesLinkFor($recipientId, int $conversationId): string
     {
         $role = $this->roles->primaryRoleFor((int) $recipientId);
-        $prefix = str_replace('_', '-', $role);
+        // البريفيكس لازم يطابق الراوتات في الفرونت (security / data-analysis ...)
+        // مش اسم الدور (security_admin / data_analyst)، فنأخذه من home_route.
+        $home = (string) config("roles.home_route.{$role}", '');
+        $prefix = $home !== ''
+            ? explode('/', trim($home, '/'))[0]
+            : str_replace('_', '-', $role);
         return "/{$prefix}/messages/{$conversationId}";
     }
 
@@ -868,6 +876,7 @@ class MessagingService
         }
 
         $this->conversations->markRead($conversationId, $userId);
+        $this->notifications->markConversationNotificationsRead($userId, $conversationId);
     }
 
     /** حالة القراءة/التسليم لكل مستلم لرسالة واحدة (Sent/Delivered/Read). */

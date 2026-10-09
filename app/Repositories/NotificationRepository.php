@@ -183,6 +183,15 @@ class NotificationRepository
         return $this->update($id, $userId, ['is_read' => 0, 'read_at' => null]);
     }
 
+    public function markConversationNotificationsRead($userId, int $conversationId): int
+    {
+        return Notification::where('user_id', $userId)
+            ->where('type', 'new_message')
+            ->where('is_read', 0)
+            ->where('link_url', 'like', '%/messages/' . $conversationId)
+            ->update(['is_read' => 1, 'read_at' => now()]);
+    }
+
     public function markAllRead($userId): void
     {
         Notification::where('user_id', $userId)

@@ -172,6 +172,12 @@ class NotificationService
         return $this->notifications->markUnread($id, $userId);
     }
 
+    /** بتعلّم إشعارات new_message بتاعة محادثة معينة كمقروءة (لما اليوزر يفتح المحادثة). */
+    public function markConversationNotificationsRead($userId, int $conversationId): void
+    {
+        $this->notifications->markConversationNotificationsRead($userId, $conversationId);
+    }
+
     public function markAllRead($userId): void
     {
         $this->notifications->markAllRead($userId);
