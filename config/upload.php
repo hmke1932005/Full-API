@@ -30,6 +30,9 @@ return [
         'avatars'   => ['jpg', 'jpeg', 'png', 'webp'],
         'projects'  => ['pdf', 'doc', 'docx', 'zip', 'ppt', 'pptx'],
         'logos'     => ['jpg', 'jpeg', 'png', 'webp', 'svg'],
+        // University signature / stamp / dean signature printed on certificates.
+        // PNG only (transparency), no svg on purpose (XSS from the same origin).
+        'branding'  => ['png'],
         // صورة السؤال التوضيحية — بدون svg عن قصد (XSS من نفس الأوريجن).
         'question_images' => ['jpg', 'jpeg', 'png', 'webp', 'gif'],
         // Graduation Projects (Research Projects + Team Collaboration) —
@@ -151,6 +154,7 @@ return [
         'projects'  => 'uploads/projects',
         'reports'   => 'uploads/reports',
         'logos'     => 'uploads/logos',
+        'branding'  => 'uploads/branding',
         'question_images' => 'uploads/question-images',
         'incident_evidence' => 'uploads/incident_evidence',
         'security_reports'  => 'uploads/security_reports',

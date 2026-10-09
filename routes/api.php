@@ -205,6 +205,9 @@ Route::prefix('v1')->group(function () {
         Route::patch('/me', [UniversitiesApiController::class, 'updateMe']);
         Route::post('/me/avatar', [UniversitiesApiController::class, 'uploadAvatar']);
         Route::post('/me/logo', [UniversitiesApiController::class, 'uploadLogo']);
+        Route::post('/me/branding/{kind}', [UniversitiesApiController::class, 'uploadBranding'])->where('kind', 'signature|stamp|dean_signature');
+        Route::delete('/me/branding/{kind}', [UniversitiesApiController::class, 'deleteBranding'])->where('kind', 'signature|stamp|dean_signature');
+        Route::patch('/me/dean', [UniversitiesApiController::class, 'updateDean']);
         Route::patch('/me/preferences', [UniversitiesApiController::class, 'updatePreferences']);
         Route::patch('/me/notification-preferences', [UniversitiesApiController::class, 'updateNotificationPreferences']);
         Route::patch('/me/visibility', [UniversitiesApiController::class, 'updateVisibility']);

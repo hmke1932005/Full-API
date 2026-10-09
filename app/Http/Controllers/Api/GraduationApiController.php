@@ -227,7 +227,7 @@ class GraduationApiController extends Controller
         return $this->apiSuccess([
             'student'    => $data['student'],
             'graduation' => $data['graduation']->toArray(),
-            'university' => $university?->toArray(),
+            'university' => $university ? array_merge($university->toArray(), $university->brandingUrls()) : null,
         ], 'Certificate retrieved successfully.');
     }
 

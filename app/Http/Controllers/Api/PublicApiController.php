@@ -349,9 +349,14 @@ class PublicApiController extends Controller
         }
 
         $stats = $this->universities->withProfileStats((int) $university->id);
+        // Certificate signature/stamp/dean details are for certificates only, not the public profile page.
+        if ($stats) {
+            unset($stats['signature_path'], $stats['stamp_path'], $stats['dean_signature_path'],
+                $stats['dean_name_en'], $stats['dean_name_ar'], $stats['dean_title_en'], $stats['dean_title_ar']);
+        }
 
         return $this->apiSuccess([
-            'university' => $stats ?? $university->toArray(),
+            'university' => $stats ?? $university->makeHidden(['signature_path', 'stamp_path', 'dean_signature_path', 'dean_name_en', 'dean_name_ar', 'dean_title_en', 'dean_title_ar'])->toArray(),
             'projects'   => $this->projects->publishedByUniversity((int) $university->id),
         ], 'University profile retrieved successfully.');
     }

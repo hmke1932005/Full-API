@@ -10,6 +10,7 @@ use App\Repositories\UniversityRepository;
 use App\Services\AuditLogService;
 use App\Services\FileUploadService;
 use App\Services\NotificationPreferencesService;
+use App\Services\UniversityBrandingService;
 use Illuminate\Http\Request;
 
 /**
@@ -39,7 +40,8 @@ class UniversitiesApiController extends Controller
         private SettingRepository $settings,
         private FileUploadService $uploads,
         private AuditLogService $auditLog,
-        private NotificationPreferencesService $notifications
+        private NotificationPreferencesService $notifications,
+        private UniversityBrandingService $branding
     ) {
     }
 
@@ -123,7 +125,7 @@ class UniversitiesApiController extends Controller
         $stats = $this->universities->withProfileStats((int) $university->id);
 
         return $this->apiSuccess([
-            'university'               => array_merge($university->toArray(), $stats ?? []),
+            'university'               => array_merge($university->toArray(), $stats ?? [], $university->brandingUrls()),
             'user'                     => $user?->toArray(),
             'share_url'                => $this->publicBaseUrl() . '/u/' . ($user->uuid ?? ''),
             'auto_approve_threshold'   => (int) $this->settingsValue($userId, 'auto_approve_threshold', '80'),
@@ -247,6 +249,98 @@ class UniversitiesApiController extends Controller
         $this->auditLog->record($userId, 'university.logo_update', 'University', $university->id, null, ['logo_path' => $stored['stored_path']]);
 
         return $this->apiSuccess(['logo_path' => $university->logo_path], 'Logo updated successfully.');
+    }
+
+    // -- Certificate branding (signature / stamp / dean signature + dean details) ----
+
+    /**
+     * POST /api/v1/universities/me/branding/{kind} — multipart field `file` (PNG).
+     * kind: signature | stamp | dean_signature. Role جامعة بس، والجامعة بتتاخد من
+     * التوكن (مش من أي id جاي من العميل).
+     */
+    public function uploadBranding(Request $request, string $kind)
+    {
+        if ($request->attributes->get('uip_role') !== 'university') {
+            return $this->apiError('Only university accounts can update certificate images.', null, 403);
+        }
+        if (!isset(University::BRANDING_KINDS[$kind])) {
+            return $this->apiError('Unknown image type.', null, 404);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $user = User::find($userId);
+        $university = $this->universities->getOrCreate($userId, (string) ($user->full_name ?? ''));
+        $column = University::BRANDING_KINDS[$kind];
+        $before = $university->{$column};
+
+        try {
+            $path = $this->branding->store($university, $kind, $request->file('file'));
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        $this->auditLog->record(
+            $userId, 'university.branding_update', 'University', $university->id,
+            [$column => $before], [$column => $path], $request->ip()
+        );
+
+        $urls = $university->brandingUrls();
+        return $this->apiSuccess($urls + ['url' => $urls[$kind . '_url']], 'Image saved successfully.');
+    }
+
+    /** DELETE /api/v1/universities/me/branding/{kind} — Role جامعة بس. */
+    public function deleteBranding(Request $request, string $kind)
+    {
+        if ($request->attributes->get('uip_role') !== 'university') {
+            return $this->apiError('Only university accounts can update certificate images.', null, 403);
+        }
+        if (!isset(University::BRANDING_KINDS[$kind])) {
+            return $this->apiError('Unknown image type.', null, 404);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $user = User::find($userId);
+        $university = $this->universities->getOrCreate($userId, (string) ($user->full_name ?? ''));
+
+        $removed = $this->branding->remove($university, $kind);
+        if ($removed !== null) {
+            $this->auditLog->record(
+                $userId, 'university.branding_remove', 'University', $university->id,
+                [University::BRANDING_KINDS[$kind] => $removed], null, $request->ip()
+            );
+        }
+
+        return $this->apiSuccess($university->brandingUrls(), 'Image removed successfully.');
+    }
+
+    /** PATCH /api/v1/universities/me/dean — اسم ومنصب العميد (عربي/إنجليزي). Role جامعة بس. */
+    public function updateDean(Request $request)
+    {
+        if ($request->attributes->get('uip_role') !== 'university') {
+            return $this->apiError('Only university accounts can update dean details.', null, 403);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $user = User::find($userId);
+        $university = $this->universities->getOrCreate($userId, (string) ($user->full_name ?? ''));
+
+        $fields = ['dean_name_en', 'dean_name_ar', 'dean_title_en', 'dean_title_ar'];
+        $before = $university->only($fields);
+
+        try {
+            $saved = $this->branding->saveDean($university, $request->only($fields));
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        if ($saved) {
+            $this->auditLog->record(
+                $userId, 'university.dean_update', 'University', $university->id,
+                $before, $saved, $request->ip()
+            );
+        }
+
+        return $this->apiSuccess($university->brandingUrls(), 'Dean details updated successfully.');
     }
 
     /** PATCH /api/v1/universities/me/preferences — تفضيلات workflow الاعتماد. Role جامعة بس. */
