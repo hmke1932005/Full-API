@@ -91,6 +91,26 @@ class UipAuthMiddleware
         $request->attributes->set('uip_user_id', (int) $claims['sub']);
         $request->attributes->set('uip_role', (string) ($claims['role'] ?? ''));
 
+        // MFA Requirements Policy — لو دور المستخدم ملزم بـ 2FA ومفعّلهوش وخلصت مهلة التسجيل،
+        // كل الـ API بيتقفل ماعدا /auth/* (منها endpoints تفعيل 2FA + logout + permissions)
+        // و /session/* (heartbeat/release) لحد ما يفعّل 2FA. بتتطبق على كل ريكوست محمي
+        // فالجلسات المفتوحة بتتقيّد فورًا لما السياسة تتغير.
+        if (!$request->is('api/v1/auth/*', 'api/v1/session/*')) {
+            $mfa = app(\App\Services\MfaPolicyService::class)->status((int) $claims['sub'], $claimRole);
+            if ($mfa['restricted']) {
+                $ar = $request->header('X-Locale', 'en') === 'ar';
+                return response()->json([
+                    'success' => false,
+                    'message' => $ar
+                        ? 'لازم تفعّل المصادقة الثنائية (2FA) قبل ما تكمل استخدام المنصة.'
+                        : 'You must enable two-factor authentication before you can keep using the platform.',
+                    'data'    => $mfa,
+                    'errors'  => ['code' => 'mfa_setup_required'],
+                    'meta'    => (object) [],
+                ], 403);
+            }
+        }
+
         return $next($request);
     }
 }

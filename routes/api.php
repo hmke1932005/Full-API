@@ -158,6 +158,10 @@ Route::prefix('v1')->group(function () {
         // محتاج Bearer token — يطابق AuthMiddleware القديمة (الجزء الخاص بالـ API بس)
         Route::middleware('uip.auth')->group(function () {
             Route::get('/permissions', [\App\Http\Controllers\Api\MyPermissionsApiController::class, 'show']);
+            // سياسة MFA Requirements — تفعيل 2FA الإجباري (مفتوحة حتى للحساب المقيّد).
+            Route::get('/mfa/status', [\App\Http\Controllers\Api\Auth\MfaEnrollmentController::class, 'status']);
+            Route::post('/mfa/setup', [\App\Http\Controllers\Api\Auth\MfaEnrollmentController::class, 'setup'])->middleware('throttle:20,1');
+            Route::post('/mfa/confirm', [\App\Http\Controllers\Api\Auth\MfaEnrollmentController::class, 'confirm'])->middleware('throttle:10,1');
             Route::get('/sessions', [SessionsController::class, 'index']);
             Route::delete('/sessions/{id}', [SessionsController::class, 'revoke']);
         });

@@ -8,10 +8,13 @@ use App\Repositories\UserRepository;
 /**
  * منقولة من app/Services/MfaPolicyService.php القديمة — بند 25 batch 3.
  * getPolicy()/appliesToRole()/updatePolicy() بس (اللي
- * SecurityPoliciesApiController محتاجاها). evaluate()/clearGrace()
- * القديمة (بتتنادى من AuthService فورًا بعد لوجين ناجح من غير 2FA) مش
- * منقولة هنا عمدًا — نفس فجوة enforcement الموثّقة في SessionPolicyService:
- * مفيش نقطة حقيقية في AuthService الحالي تستدعيهم دلوقتي.
+ * SecurityPoliciesApiController محتاجاها).
+ *
+ * الإنفاذ (enforcement): status() بتحسب حالة المستخدم مقابل السياسة،
+ * وبتنادى عليها LoginController (علشان تحوّله لصفحة التفعيل) و
+ * UipAuthMiddleware (علشان تقفل باقي الـ API لحد ما يفعّل 2FA).
+ * عدّاد الـ grace بيبدأ أول مرة نلاقي فيها المستخدم محتاج 2FA ومعندوش،
+ * وبيتصفّر لما يفعّل 2FA (UserRepository::enableTwoFactor).
  */
 class MfaPolicyService
 {
@@ -56,6 +59,58 @@ class MfaPolicyService
     public function appliesToRole(string $role): bool
     {
         return in_array($role, $this->getPolicy()['enforced_roles'], true);
+    }
+
+
+    /**
+     * حالة المستخدم مقابل سياسة MFA.
+     *
+     * @return array{required:bool,enrolled:bool,restricted:bool,grace_days:int,grace_ends_at:?string,days_left:?int}
+     */
+    public function status(int $userId, string $role): array
+    {
+        $policy = $this->getPolicy();
+        $result = [
+            'required'      => false,
+            'enrolled'      => false,
+            'restricted'    => false,
+            'grace_days'    => (int) $policy['grace_period_days'],
+            'grace_ends_at' => null,
+            'days_left'     => null,
+        ];
+
+        if (!in_array($role, $policy['enforced_roles'], true)) {
+            return $result;
+        }
+
+        $user = $this->users->findById($userId);
+        if (!$user) {
+            return $result;
+        }
+
+        $result['required'] = true;
+
+        if ($user->two_factor_enabled) {
+            $result['enrolled'] = true;
+            return $result;
+        }
+
+        $graceDays = (int) $policy['grace_period_days'];
+
+        $started = $user->mfa_grace_started_at;
+        if (!$started) {
+            $started = now();
+            $this->users->setMfaGraceStart($userId, $started->format('Y-m-d H:i:s'));
+        }
+
+        $ends = $started->copy()->addDays($graceDays);
+        $result['grace_ends_at'] = $ends->toIso8601String();
+        $result['restricted'] = $graceDays === 0 || now()->greaterThanOrEqualTo($ends);
+        $result['days_left'] = $result['restricted']
+            ? 0
+            : (int) ceil(now()->diffInSeconds($ends, false) / 86400);
+
+        return $result;
     }
 
     /** @throws \InvalidArgumentException on bad input */

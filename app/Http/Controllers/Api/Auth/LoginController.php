@@ -21,7 +21,7 @@ use Illuminate\Support\Facades\Validator;
  *
  * ⚠️ لسه متعمّد مش موجود (بند منفصل — Security Portal، بند 25 في خطة
  * الهجرة): IP / Country / Device restriction policies، Concurrent Session
- * Limits، MFA mandatory-policy enforcement. دول واجهة إدارة كاملة
+ * Limits. دول واجهة إدارة كاملة
  * (allow/deny lists، GeoIP) هتتنقل مع باقي الـ Security Portal مرة واحدة.
  *
  * Maintenance mode enforcement (AdminSettingsApiController::toggleMaintenance()):
@@ -249,10 +249,19 @@ class LoginController extends Controller
 
         SecurityLog::write('Successful login', ['user_id' => $user->id, 'ip' => $request->ip()]);
 
+        // MFA Requirements Policy: لو الدور ملزم بـ 2FA ومفعّلهوش، بنبدأ عدّاد المهلة (لو لسه)،
+        // ولو المهلة خلصت (أو 0 = فورًا) بنوديه مباشرة لصفحة التفعيل. التوكن بيتصدر عادي
+        // (محتاجه علشان يفعّل) واليوزر مقيّد في UipAuthMiddleware لحد ما يخلّص.
+        $mfa = app(\App\Services\MfaPolicyService::class)->status((int) $user->id, $role);
+        $redirect = $mfa['restricted'] ? '/auth/mfa-setup' : $this->roles->homeRouteFor($role);
+        if ($mfa['restricted']) {
+            SecurityLog::write('Login restricted - MFA enrollment required', ['user_id' => $user->id, 'role' => $role, 'ip' => $request->ip()]);
+        }
+
         return AuthCookies::attach(response()->json([
             'success' => true,
             'message' => 'Login successful.',
-            'data'    => array_merge(['redirect' => $this->roles->homeRouteFor($role)], $tokens),
+            'data'    => array_merge(['redirect' => $redirect, 'mfa' => $mfa], $tokens),
             'errors'  => null,
             'meta'    => (object) [],
         ]), $request);
