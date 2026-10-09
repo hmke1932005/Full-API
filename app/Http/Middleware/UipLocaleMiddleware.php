@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\MessageTranslator;
 use Closure;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -34,6 +36,27 @@ class UipLocaleMiddleware
 
         app()->setLocale($locale);
 
-        return $next($request);
+        $response = $next($request);
+
+        // عربي: ترجمة message و errors في ريسبونس الـ JSON (الـ envelope الموحّد) بشكل مركزي.
+        if ($locale === 'ar' && $response instanceof JsonResponse) {
+            $data = $response->getData(false);
+            if (is_object($data)) {
+                $touched = false;
+                if (isset($data->message) && is_string($data->message)) {
+                    $data->message = MessageTranslator::translate($data->message);
+                    $touched = true;
+                }
+                if (isset($data->errors) && (is_string($data->errors) || is_array($data->errors) || is_object($data->errors))) {
+                    $data->errors = MessageTranslator::translateDeep($data->errors);
+                    $touched = true;
+                }
+                if ($touched) {
+                    $response->setData($data);
+                }
+            }
+        }
+
+        return $response;
     }
 }
