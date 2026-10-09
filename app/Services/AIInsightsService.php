@@ -73,6 +73,24 @@ class AIInsightsService
         return $this->repo->history($limit);
     }
 
+    /** @return array<string,mixed>|null */
+    public function find(int $id): ?array
+    {
+        return $this->repo->find($id);
+    }
+
+    /** @param int[] $ids @return int عدد الصفوف اللي اتمسحت */
+    public function deleteByIds(array $ids): int
+    {
+        return $this->repo->deleteByIds($ids);
+    }
+
+    /** @return int عدد الصفوف اللي اتمسحت */
+    public function deleteAll(): int
+    {
+        return $this->repo->deleteAll();
+    }
+
     /**
      * بتشغّل التحليل فوق digest بيانات حقيقية طازة وبتخزّن النتيجة. دايمًا
      * بتكتب صف history، حتى لو فشلت.

@@ -57,4 +57,36 @@ class AIInsightRepository
             ->map(fn ($row) => (array) $row)
             ->all();
     }
+
+    /** تقرير واحد بالـ id (مع result_json واسم اللي ولّده)، أو null. */
+    public function find(int $id): ?array
+    {
+        $row = DB::table('ai_insight_reports as r')
+            ->leftJoin('users as u', 'u.id', '=', 'r.generated_by')
+            ->select('r.*', 'u.full_name as generated_by_name')
+            ->where('r.id', $id)
+            ->first();
+
+        return $row ? (array) $row : null;
+    }
+
+    /**
+     * مسح صفوف محددة من سجل التوليد. @param int[] $ids
+     * @return int عدد الصفوف اللي اتمسحت فعلًا
+     */
+    public function deleteByIds(array $ids): int
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), fn ($id) => $id > 0)));
+        if (!$ids) {
+            return 0;
+        }
+
+        return DB::table('ai_insight_reports')->whereIn('id', $ids)->delete();
+    }
+
+    /** مسح سجل التوليد بالكامل. @return int عدد الصفوف اللي اتمسحت */
+    public function deleteAll(): int
+    {
+        return DB::table('ai_insight_reports')->delete();
+    }
 }

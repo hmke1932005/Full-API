@@ -1304,6 +1304,11 @@ Route::prefix('v1')->group(function () {
         Route::prefix('ai-insights')->middleware('uip.can:data_analysis.trends.view')->group(function () {
             Route::get('/', [DataAnalysisAiInsightsApiController::class, 'index']);
             Route::post('/regenerate', [DataAnalysisAiInsightsApiController::class, 'regenerate']);
+            // تصدير تقرير + إدارة سجل التوليد. المسارات الحرفية قبل {id}.
+            Route::get('/export', [DataAnalysisAiInsightsApiController::class, 'export']);
+            Route::post('/delete-selected', [DataAnalysisAiInsightsApiController::class, 'destroySelected']);
+            Route::post('/delete-all', [DataAnalysisAiInsightsApiController::class, 'destroyAll']);
+            Route::delete('/{id}', [DataAnalysisAiInsightsApiController::class, 'destroy'])->where('id', '[0-9]+');
         });
 
         // بند 24 batch 6 — Team Workspace (Collaboration، enhancement
