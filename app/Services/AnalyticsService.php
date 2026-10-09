@@ -104,7 +104,7 @@ class AnalyticsService
     {
         $rows = $this->projects->categoryDistribution($limit, $filters);
         return array_map(fn ($r) => [
-            'label' => ['en' => $r['category'], 'ar' => $r['category']],
+            'label' => ['en' => $r['category'], 'ar' => $r['category_ar'] ?? $r['category']],
             'value' => (int) $r['total'],
         ], $rows);
     }
@@ -142,7 +142,7 @@ class AnalyticsService
             return ($b['growth_pct'] ?? -1000) <=> ($a['growth_pct'] ?? -1000);
         });
         return array_map(fn ($r) => [
-            'label'      => ['en' => $r['category'], 'ar' => $r['category']],
+            'label'      => ['en' => $r['category'], 'ar' => $r['category_ar'] ?? $r['category']],
             'current'    => $r['current'],
             'previous'   => $r['previous'],
             'growth_pct' => $r['growth_pct'],

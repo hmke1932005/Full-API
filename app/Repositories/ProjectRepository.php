@@ -320,7 +320,7 @@ class ProjectRepository
      */
     public function facultyCategoryBreakdownForUniversity($universityId, int $limit = 6): array
     {
-        return DB::table('projects as p')
+        $rows = $this->withCategoryAr(DB::table('projects as p')
             ->join('students as s', 's.user_id', '=', 'p.owner_id')
             ->where('p.university_id', $universityId)
             ->where('p.status', '!=', 'draft')
@@ -334,7 +334,14 @@ class ProjectRepository
             ->orderByDesc('total')
             ->limit($limit)
             ->get()
-            ->map(fn ($r) => (array) $r)->all();
+            ->map(fn ($r) => (array) $r)->all());
+
+        // students.faculty نص حر (name_en غالبًا) — نضيف الاسم العربي من جدول faculties لو متطابق.
+        $facultyAr = DB::table('faculties')->where('university_id', $universityId)->pluck('name_ar', 'name_en')->all();
+        return array_map(function ($r) use ($facultyAr) {
+            $r['faculty_ar'] = $facultyAr[$r['faculty'] ?? ''] ?? ($r['faculty'] ?? null);
+            return $r;
+        }, $rows);
     }
 
     /**
@@ -918,9 +925,31 @@ class ProjectRepository
      * (AnalyticsService::categoryDistribution() لصفحة Trends بتاعة الباحث).
      * @return array<int,array{category:string,total:int}>
      */
+    /**
+     * خريطة اسم التصنيف الإنجليزي → العربي من جدول categories. عمود
+     * projects.category بيخزّن name_en (ProjectPublishingService::resolveCategory)،
+     * فبنستخدمها نضيف category_ar للتحليلات من غير تغيير الـ GROUP BY.
+     * @return array<string,string>
+     */
+    private function categoryArMap(): array
+    {
+        static $map = null;
+        return $map ??= DB::table('categories')->pluck('name_ar', 'name_en')->all();
+    }
+
+    /** يضيف category_ar لكل صف فيه عمود category (fallback: نفس النص). */
+    private function withCategoryAr(array $rows): array
+    {
+        $map = $this->categoryArMap();
+        return array_map(function ($r) use ($map) {
+            $r['category_ar'] = $map[$r['category'] ?? ''] ?? ($r['category'] ?? null);
+            return $r;
+        }, $rows);
+    }
+
     public function categoryDistribution(int $limit = 6, array $filters = []): array
     {
-        return DB::table('projects')
+        return $this->withCategoryAr(DB::table('projects')
             ->where('status', '!=', 'draft')
             ->whereNotNull('category')
             ->where('category', '!=', '')
@@ -932,7 +961,7 @@ class ProjectRepository
             ->orderByDesc('total')
             ->limit($limit)
             ->get()
-            ->map(fn ($r) => (array) $r)->all();
+            ->map(fn ($r) => (array) $r)->all());
     }
 
     /**
@@ -963,12 +992,12 @@ class ProjectRepository
             ->limit($limit)
             ->get();
 
-        return $rows->map(function ($r) {
+        return $this->withCategoryAr($rows->map(function ($r) {
             $current = (int) $r->current_count;
             $previous = (int) $r->previous_count;
             $growth = $previous > 0 ? round((($current - $previous) / $previous) * 100, 1) : ($current > 0 ? 100.0 : null);
             return ['category' => $r->category, 'current' => $current, 'previous' => $previous, 'growth_pct' => $growth];
-        })->all();
+        })->all());
     }
 
     /**
@@ -1077,12 +1106,12 @@ class ProjectRepository
             ->limit($limit)
             ->get();
 
-        return $rows->map(function ($r) {
+        return $this->withCategoryAr($rows->map(function ($r) {
             $current = (int) $r->current_count;
             $previous = (int) $r->previous_count;
             $growth = $previous > 0 ? round((($current - $previous) / $previous) * 100, 1) : ($current > 0 ? 100.0 : null);
             return ['category' => $r->category, 'current' => $current, 'previous' => $previous, 'growth_pct' => $growth];
-        })->all();
+        })->all());
     }
 
     /**
