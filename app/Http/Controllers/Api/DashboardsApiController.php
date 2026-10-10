@@ -200,7 +200,7 @@ class DashboardsApiController extends Controller
             'supervisor'  => $supervisor->toArray(),
             'students'    => $students,
             'projects'    => $projects,
-            'pending'     => array_values(array_filter($projects, fn ($p) => $p['status'] === 'submitted')),
+            'pending'     => array_values(array_filter($projects, fn ($p) => (is_array($p) ? ($p['status'] ?? null) : ($p->status ?? null)) === 'submitted')),
             'scopes'      => $this->supervisorAssignments->forSupervisorWithLabels($supervisor->id),
             'permissions' => $supervisor->permissions !== '' && $supervisor->permissions !== null
                 ? explode(',', $supervisor->permissions)

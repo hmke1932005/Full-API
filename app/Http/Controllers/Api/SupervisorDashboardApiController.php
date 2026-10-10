@@ -51,7 +51,7 @@ class SupervisorDashboardApiController extends Controller
         }
 
         $projects = $this->assignments->scopedProjects($supervisor->id, $supervisor->university_id);
-        $pending = array_filter($projects, fn ($p) => $p['status'] === 'submitted');
+        $pending = array_filter($projects, fn ($p) => (is_array($p) ? ($p['status'] ?? null) : ($p->status ?? null)) === 'submitted');
 
         return $this->apiSuccess([
             'supervisor'       => $supervisor->toArray(),
