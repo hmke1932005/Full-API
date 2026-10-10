@@ -251,12 +251,17 @@ class GoogleAuthController extends Controller
             if (!$user->email_verified_at) {
                 $user->forceFill(['password_hash' => password_hash(Str::random(64), PASSWORD_BCRYPT)])->save();
                 DB::table('refresh_tokens')->where('user_id', $user->id)->delete();
+                // أي لينك تأكيد/استرجاع كان اتطلب من اللي حجز الإيميل يتبطل.
+                DB::table('email_verification_tokens')->where('user_id', $user->id)->whereNull('used_at')->update(['used_at' => now()]);
+                DB::table('password_reset_tokens')->where('user_id', $user->id)->whereNull('used_at')->update(['used_at' => now()]);
             }
             $this->link($user, $g);
             SecurityLog::write('Google account linked', ['user_id' => $user->id, 'ip' => $request->ip()]);
         }
-        if (!$user->email_verified_at) {
-            $user->forceFill(['email_verified_at' => now()])->save();
+        if (!$user->email_verified_at || $user->status === 'pending') {
+            // جوجل أثبت ملكية الإيميل -> الحساب يتفعّل (pending -> active).
+            app(\App\Services\EmailVerificationService::class)->markVerified((int) $user->id);
+            $user->refresh();
         }
         if (!$user->avatar_path) {
             $this->importAvatar($user, $g['picture'] ?? null);

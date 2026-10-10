@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\EmailVerificationService;
 use App\Services\PasswordPolicyService;
+use App\Services\RoleService;
 use App\Services\StudentJoinRequestService;
 use App\Support\SecurityLog;
 use Illuminate\Http\Request;
@@ -29,7 +31,9 @@ class RegisterController extends Controller
     public function __construct(
         private PasswordPolicyService $passwordPolicy,
         private StudentJoinRequestService $joinRequests,
-        private \App\Services\DeviceRestrictionPolicyService $deviceRestriction
+        private \App\Services\DeviceRestrictionPolicyService $deviceRestriction,
+        private EmailVerificationService $verification,
+        private RoleService $roles
     ) {
     }
 
@@ -115,7 +119,15 @@ class RegisterController extends Controller
             ], 403);
         }
 
-        if (User::where('email', $data['email'])->exists()) {
+        $existing = User::whereRaw('LOWER(email) = ?', [strtolower($data['email'])])->first();
+        // حساب سابق لسه pending ومتأكدش إيميله ومفيش جوجل مربوط بيه: محدش أثبت إنه بتاعه أصلًا (ممكن حد سجّل
+        // بإيميل مش بتاعه). فنسمح لصاحب الإيميل الحقيقي يسجّل فوقه بدل ما نقفل الإيميل عليه، والتأكيد بيروح
+        // للإيميل نفسه فمحدش غيره يقدر يفعّله.
+        $reclaimable = $existing
+            && EmailVerificationService::blocksLogin($existing)
+            && !DB::table('user_social_accounts')->where('user_id', $existing->id)->exists()
+            && $this->roles->primaryRoleFor($existing->id) === 'student';
+        if ($existing && !$reclaimable) {
             return response()->json([
                 'success' => false,
                 'message' => 'An account with this email already exists.',
@@ -133,28 +145,49 @@ class RegisterController extends Controller
         $department_id = $request->input('department_id');
         $program_id    = $request->input('program_id');
 
-        $user = DB::transaction(function () use ($data, $university_id, $faculty_id, $department_id, $program_id) {
+        $user = DB::transaction(function () use ($data, $university_id, $faculty_id, $department_id, $program_id, $reclaimable, $existing) {
             $newHash = password_hash($data['password'], PASSWORD_BCRYPT);
 
-            $user = User::create([
-                'uuid'                => (string) Str::uuid(),
-                'full_name'           => $data['full_name'],
-                'name_ar'             => $data['name_ar'],
-                'name_en'             => $data['name_en'],
-                'email'               => $data['email'],
-                'phone'               => request()->input('phone'),
-                'password_hash'       => $newHash,
-                'preferred_language'  => request()->input('preferred_language', 'ar'),
-                'status'              => 'pending',
-            ]);
-
-            $roleId = DB::table('roles')->where('slug', $data['role'])->value('id');
-            if ($roleId) {
-                DB::table('user_roles')->insert(['user_id' => $user->id, 'role_id' => $roleId]);
+            if ($reclaimable) {
+                // نعيد استخدام صف الحساب المحجوز نفسه (من غير مسح — فيه جداول سجلات بتشاور عليه): بيانات جديدة
+                // كاملة وباسورد جديد، ونقفل أي جلسة/لينك قديم. الدور وصف الطالب موجودين أصلًا.
+                DB::table('refresh_tokens')->where('user_id', $existing->id)->delete();
+                DB::table('password_reset_tokens')->where('user_id', $existing->id)->whereNull('used_at')->update(['used_at' => now()]);
+                $existing->forceFill([
+                    'full_name'          => $data['full_name'],
+                    'name_ar'            => $data['name_ar'],
+                    'name_en'            => $data['name_en'],
+                    'phone'              => request()->input('phone'),
+                    'password_hash'      => $newHash,
+                    'preferred_language' => request()->input('preferred_language', 'ar'),
+                    'status'             => 'pending',
+                    'email_verified_at'  => null,
+                ])->save();
+                $user = $existing->fresh();
+                $this->passwordPolicy->recordPasswordChange($user->id, $newHash);
+            } else {
+                $user = User::create([
+                    'uuid'                => (string) Str::uuid(),
+                    'full_name'           => $data['full_name'],
+                    'name_ar'             => $data['name_ar'],
+                    'name_en'             => $data['name_en'],
+                    'email'               => $data['email'],
+                    'phone'               => request()->input('phone'),
+                    'password_hash'       => $newHash,
+                    'preferred_language'  => request()->input('preferred_language', 'ar'),
+                    'status'              => 'pending',
+                ]);
             }
 
-            $this->provisionRoleProfile($user->id, $data['role'], $data['name_ar'], $data['name_en']);
-            $this->passwordPolicy->recordPasswordChange($user->id, $newHash);
+            if (!$reclaimable) {
+                $roleId = DB::table('roles')->where('slug', $data['role'])->value('id');
+                if ($roleId) {
+                    DB::table('user_roles')->insert(['user_id' => $user->id, 'role_id' => $roleId]);
+                }
+
+                $this->provisionRoleProfile($user->id, $data['role'], $data['name_ar'], $data['name_en']);
+                $this->passwordPolicy->recordPasswordChange($user->id, $newHash);
+            }
 
             // لو الدور student واختار جامعة في الفورم (مش "Decide later")،
             // ابعت طلب الانضمام على طول — best-effort زي القديم: فشل هنا
@@ -177,15 +210,18 @@ class RegisterController extends Controller
             return $user;
         });
 
-        // TODO: إصدار email_verification_tokens + إرسال إيميل التحقق
-        // (AuthService::createEmailVerificationToken + MailService).
+        // الحساب pending: مبيدخلش لحد ما صاحب الإيميل يضغط لينك التأكيد (أو الأدمن يفعّله).
+        $emailSent = $this->verification->issueAndSend($user);
 
-        SecurityLog::write('User registered', ['user_id' => $user->id, 'email' => $user->email, 'role' => $data['role']]);
+        SecurityLog::write('User registered', ['user_id' => $user->id, 'email' => $user->email, 'role' => $data['role'], 'reclaimed' => (bool) $reclaimable]);
 
+        $ar = $request->header('X-Locale', 'en') === 'ar';
         return response()->json([
             'success' => true,
-            'message' => 'Account created successfully.',
-            'data'    => ['user_id' => $user->id],
+            'message' => $ar
+                ? 'تم إنشاء الحساب. بعتنالك رسالة على بريدك — اضغط على رابط التأكيد عشان تقدر تدخل.'
+                : 'Account created. We emailed you a confirmation link — confirm your email to sign in.',
+            'data'    => ['user_id' => $user->id, 'requires_verification' => true, 'email_sent' => $emailSent, 'email' => $user->email],
             'errors'  => null,
             'meta'    => (object) [],
         ], 201);

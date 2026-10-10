@@ -61,6 +61,8 @@ class ResetPasswordController extends Controller
         ]);
 
         DB::table('password_reset_tokens')->where('id', $row->id)->update(['used_at' => now()]);
+        // اللينك وصل لإيميل الحساب -> ده إثبات ملكية الإيميل (يفعّل حساب لسه pending).
+        app(\App\Services\EmailVerificationService::class)->markVerified((int) $row->user_id);
         $this->passwordPolicy->recordPasswordChange($row->user_id, $newHash);
 
         SecurityLog::write('Password reset completed', ['user_id' => $row->user_id]);

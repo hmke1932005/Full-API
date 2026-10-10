@@ -154,6 +154,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/forgot-password', [ForgotPasswordController::class, 'submit']);
         Route::post('/reset-password', [ResetPasswordController::class, 'submit']);
         Route::get('/verify-email', [VerifyEmailController::class, 'handle']);
+        Route::post('/resend-verification', [\App\Http\Controllers\Api\Auth\ResendVerificationController::class, 'submit'])->middleware('throttle:5,1');
         Route::get('/confirm-email-change', [ConfirmEmailChangeController::class, 'handle']);
         Route::get('/roles', [RoleSelectionController::class, 'index']);
         Route::get('/universities', [UniversitiesController::class, 'index']);

@@ -30,7 +30,8 @@ class VerifyEmailController extends Controller
             return $this->apiError('This verification link is invalid or has expired.', null, 422);
         }
 
-        DB::table('users')->where('id', $row->user_id)->update(['email_verified_at' => now()]);
+        // يثبّت الإيميل ويفعّل الحساب (pending -> active)، ويقفل باقي لينكات التأكيد.
+        app(\App\Services\EmailVerificationService::class)->markVerified((int) $row->user_id);
         DB::table('email_verification_tokens')->where('id', $row->id)->update(['used_at' => now()]);
 
         return $this->apiSuccess(null, 'Email verified successfully.');

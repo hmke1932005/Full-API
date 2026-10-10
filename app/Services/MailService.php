@@ -334,6 +334,31 @@ class MailService
     }
 
     /** إيميل إعادة تعيين كلمة السر — بيرجّع نتيجة الإرسال الفعلية. */
+    /** لينك تأكيد الإيميل بعد التسجيل — الحساب مبيشتغلش قبل الضغط عليه. */
+    public function sendEmailVerification(string $toEmail, string $fullName, string $verifyUrl, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+
+        return $this->deliver(
+            $toEmail,
+            $ar ? 'أكّد بريدك الإلكتروني' : 'Confirm your email address',
+            $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
+            [
+                $ar
+                    ? 'شكرًا لتسجيلك. اضغط على الزر أدناه لتأكيد أن هذا البريد بريدك وتفعيل حسابك. الرابط صالح لمدة 24 ساعة.'
+                    : 'Thanks for signing up. Click the button below to confirm this email address is yours and activate your account. The link is valid for 24 hours.',
+                $ar
+                    ? 'لو ماكنتش أنت اللي سجّل بهذا البريد، تجاهل هذه الرسالة وماحدش هيقدر يستخدم الحساب.'
+                    : "If you didn't sign up with this email, ignore this message — the account can't be used without this confirmation.",
+            ],
+            ['label' => $ar ? 'تأكيد البريد' : 'Confirm email', 'url' => $verifyUrl],
+            $locale,
+            [],
+            'sendEmailVerification',
+            'info'
+        );
+    }
+
     public function sendPasswordReset(string $toEmail, string $fullName, string $resetUrl, string $locale = 'ar'): bool
     {
         $ar = $locale === 'ar';

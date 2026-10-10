@@ -129,6 +129,21 @@ class LoginController extends Controller
             ], 422);
         }
 
+        // حساب اتسجّل بالباسورد ولسه إيميله متأكدش ومحدش فعّله: مبيدخلش. (بعد التحقق من الباسورد
+        // عشان مفيش حد يعرف إن الإيميل ده مسجّل من غير ما يعرف باسورده.)
+        if (\App\Services\EmailVerificationService::blocksLogin($user)) {
+            SecurityLog::write('Login blocked - email not verified', ['user_id' => $user->id, 'ip' => $request->ip()]);
+            return response()->json([
+                'success' => false,
+                'message' => $locale === 'ar'
+                    ? 'لازم تأكّد بريدك الإلكتروني الأول. افتح الرسالة اللي وصلتك واضغط على رابط التأكيد، أو اطلب رسالة جديدة. ممكن كمان مدير المنصة يفعّل حسابك.'
+                    : 'Please confirm your email first. Open the message we sent you and click the confirmation link, or request a new one. A platform admin can also activate your account.',
+                'data'    => ['email_not_verified' => true, 'email' => $user->email],
+                'errors'  => ['code' => 'email_not_verified'],
+                'meta'    => (object) [],
+            ], 403);
+        }
+
         $role = $this->roles->primaryRoleFor($user->id);
 
         $viaStaffPortal = $request->input('portal') === 'staff';
