@@ -78,7 +78,20 @@ class UserSessionService
 
     public function singleSessionEnabled(): bool
     {
-        return (bool) config('security.single_session.enabled', true);
+        if (!(bool) config('security.single_session.enabled', true)) {
+            return false;
+        }
+        // لو الأدمن فعّل حد جلسات متزامنة أكبر من 1 من Security > Policies، يبقى المقصود صراحة
+        // إن أكتر من جلسة تتفتح — فمنع "الجلسة الواحدة" الافتراضي مينفعش يلغي السياسة دي.
+        try {
+            $p = app(SessionPolicyService::class)->getPolicy();
+            if (!empty($p['enforce_concurrent_limit']) && (int) $p['concurrent_limit'] > 1) {
+                return false;
+            }
+        } catch (\Throwable $e) {
+            // نفضل على الافتراضي
+        }
+        return true;
     }
 
     /** المدة (ثواني) اللي الجلسة بتفضل "حية" بعد آخر نبضة. */

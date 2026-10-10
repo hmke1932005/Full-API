@@ -179,6 +179,22 @@ class LoginController extends Controller
             }
         }
 
+        // Password expiration policy: كلمة السر انتهت => الدخول بيترفض لحد ما تتغيّر (عن طريق "نسيت كلمة السر").
+        $expiry = app(\App\Services\PasswordPolicyService::class)->expiryStatus($user->id);
+        if ($expiry['expired']) {
+            SecurityLog::write('Login blocked - password expired', ['user_id' => $user->id, 'ip' => $request->ip()]);
+            return response()->json([
+                'success' => false,
+                'message' => $locale === 'ar'
+                    ? 'انتهت صلاحية كلمة المرور. استخدم "نسيت كلمة السر" لتعيين كلمة جديدة.'
+                    : 'Your password has expired. Use "Forgot password" to set a new one.',
+                'data'    => ['password_expired' => true, 'email' => $user->email],
+                'errors'  => ['code' => 'password_expired'],
+                'meta'    => (object) [],
+            ], 403);
+        }
+        $request->attributes->set('uip_password_expiry', $expiry);
+
         return $this->finishLogin($request, $user, $role, $locale);
     }
 
@@ -286,7 +302,7 @@ class LoginController extends Controller
         return AuthCookies::attach(response()->json([
             'success' => true,
             'message' => 'Login successful.',
-            'data'    => array_merge(['redirect' => $redirect, 'mfa' => $mfa], $tokens),
+            'data'    => array_merge(['redirect' => $redirect, 'mfa' => $mfa, 'password_expiry' => $request->attributes->get('uip_password_expiry')], $tokens),
             'errors'  => null,
             'meta'    => (object) [],
         ]), $request);

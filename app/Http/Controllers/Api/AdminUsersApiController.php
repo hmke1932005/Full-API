@@ -95,9 +95,15 @@ class AdminUsersApiController extends Controller
 
         $data = $request->validate([
             'email'     => 'required|email',
-            'password'  => 'required|min:8',
+            'password'  => 'required|string',
             'role'      => 'required',
         ]);
+
+        try {
+            app(\App\Services\PasswordPolicyService::class)->assertValid($data['password']);
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
 
         $names = \App\Support\BilingualName::fromRequest($request);
         if (!$names['ok']) {
@@ -112,17 +118,21 @@ class AdminUsersApiController extends Controller
             return $this->apiError('That role does not exist.', null, 422);
         }
 
+        $passwordHash = password_hash($data['password'], PASSWORD_BCRYPT);
+
         $user = $this->users->createWithRole([
             'full_name'          => $names['full_name'],
             'name_ar'            => $names['name_ar'],
             'name_en'            => $names['name_en'],
             'email'              => $data['email'],
             'phone'              => $request->input('phone') ?: null,
-            'password_hash'      => password_hash($data['password'], PASSWORD_BCRYPT),
+            'password_hash'      => $passwordHash,
             'preferred_language' => 'ar',
             'status'             => 'active',
             'email_verified_at'  => now(),
         ], $data['role']);
+
+        app(\App\Services\PasswordPolicyService::class)->recordPasswordChange($user->id, $passwordHash);
 
         $this->auditLog->record($request->attributes->get('uip_user_id'), 'user.create', 'User', $user->id, null, [
             'email' => $user->email, 'role' => $data['role'],

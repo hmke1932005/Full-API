@@ -33,6 +33,16 @@ class UipAuthOptionalMiddleware
                     $valid = false;
                 }
 
+                // MFA policy: حساب مقيّد (لازم يفعّل 2FA) بيتعامل كضيف هنا بدل ما يتخطى القيد عن طريق مسارات الاجتماعات.
+                if ($valid) {
+                    try {
+                        $mfa = app(\App\Services\MfaPolicyService::class)->status((int) $claims['sub'], (string) ($claims['role'] ?? ''));
+                        $valid = empty($mfa['restricted']);
+                    } catch (\Throwable $e) {
+                        // نكمل زي الأول لو القراءة فشلت
+                    }
+                }
+
                 if ($valid) {
                     if ($sid) {
                         $request->attributes->set('uip_session_id', $sid);

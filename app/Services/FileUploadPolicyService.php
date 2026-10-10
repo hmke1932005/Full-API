@@ -107,6 +107,7 @@ class FileUploadPolicyService
         $globalAllowed = array_filter(array_map('trim', explode(',', $p['allowed_extensions'])));
         $intersected = array_values(array_intersect($categoryAllowed, $globalAllowed));
 
-        return $intersected ?: $categoryAllowed;
+        // تقاطع صارم: لو مفيش تقاطع، يبقى مفيش نوع مسموح (قبل كده كان بيرجع لقائمة الفئة كلها فيبطل التقييد).
+        return $intersected;
     }
 }

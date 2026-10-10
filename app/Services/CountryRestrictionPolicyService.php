@@ -74,6 +74,13 @@ class CountryRestrictionPolicyService
             'fail_open'         => !empty($input['fail_open']),
         ];
 
+        // حماية الأدمن من قفل نفسه: بلده الحالية لازم تفضل مسموحة بالسياسة الجديدة.
+        if ($ip && !$this->evaluateWith($policy, $ip)['allowed']) {
+            throw new \InvalidArgumentException(
+                'This policy would block the country you are connecting from right now (or it cannot be determined while "fail open" is off) and you would lose access.'
+            );
+        }
+
         $saved = $this->policies->updateValue(self::POLICY_KEY, json_encode($policy, JSON_UNESCAPED_UNICODE), $adminUserId);
         if (!$saved) {
             throw new \RuntimeException('Could not save the country restriction policy.');
@@ -91,8 +98,11 @@ class CountryRestrictionPolicyService
      */
     public function evaluate(string $ip): array
     {
-        $policy = $this->getPolicy();
+        return $this->evaluateWith($this->getPolicy(), $ip);
+    }
 
+    private function evaluateWith(array $policy, string $ip): array
+    {
         if ($policy['mode'] === 'disabled') {
             return ['allowed' => true, 'reason' => 'disabled', 'country_code' => null];
         }
@@ -120,7 +130,7 @@ class CountryRestrictionPolicyService
     {
         $codes = array_map(
             static fn ($c) => strtoupper(trim($c)),
-            explode(',', str_replace(["\r\n", "\n"], ',', $raw))
+            preg_split('/[,\n\r;\s]+/u', $raw) ?: []
         );
         $codes = array_values(array_unique(array_filter($codes, static fn ($c) => $c !== '')));
 

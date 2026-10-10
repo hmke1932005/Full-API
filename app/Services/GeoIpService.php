@@ -51,7 +51,10 @@ class GeoIpService
         }
 
         $result = $this->lookupRemote($ip);
-        $this->cache->put($ip, $result['code'], $result['name'], $result['status']);
+        // فشل مؤقت (المزوّد واقع/timeout) متتخزّنش 30 يوم — وإلا الدولة تفضل "غير معروفة" لكل الفترة دي.
+        if ($result['status'] !== 'error') {
+            $this->cache->put($ip, $result['code'], $result['name'], $result['status']);
+        }
 
         return $result;
     }

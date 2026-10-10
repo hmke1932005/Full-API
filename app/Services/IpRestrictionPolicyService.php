@@ -67,6 +67,13 @@ class IpRestrictionPolicyService
 
         $policy = ['mode' => $mode, 'allowlist' => $allowlist, 'denylist' => $denylist];
 
+        // حماية الأدمن من قفل نفسه: عنوانه الحالي لازم يفضل مسموح بالسياسة الجديدة.
+        if ($ip && !$this->allowsWith($policy, $ip)) {
+            throw new \InvalidArgumentException(
+                "This policy would block your current IP address ({$ip}) and you would lose access. Add your address to the allowlist (or remove it from the denylist) first."
+            );
+        }
+
         $saved = $this->policies->updateValue(self::POLICY_KEY, json_encode($policy, JSON_UNESCAPED_UNICODE), $adminUserId);
         if (!$saved) {
             throw new \RuntimeException('Could not save the IP restriction policy.');
@@ -84,8 +91,11 @@ class IpRestrictionPolicyService
             return true;
         }
 
-        $policy = $this->getPolicy();
+        return $this->allowsWith($this->getPolicy(), $ip);
+    }
 
+    private function allowsWith(array $policy, string $ip): bool
+    {
         if ($policy['mode'] === 'allowlist') {
             return $this->matchesAny($ip, $policy['allowlist']);
         }
@@ -142,7 +152,7 @@ class IpRestrictionPolicyService
     /** @return string[] */
     private function parseEntries(string $raw): array
     {
-        $entries = array_map('trim', explode(',', str_replace(["\r\n", "\n"], ',', $raw)));
+        $entries = array_map('trim', preg_split('/[,\n\r;\s]+/u', $raw) ?: []);
         $entries = array_values(array_unique(array_filter($entries, static fn ($e) => $e !== '')));
 
         foreach ($entries as $entry) {

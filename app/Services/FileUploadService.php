@@ -47,7 +47,9 @@ class FileUploadService
             throw new \RuntimeException($this->errorMessage($file->getError()));
         }
 
-        $maxKb = $maxKbOverride ?? $this->uploadPolicy->defaultMaxKb();
+        // السياسة سقف عام: الـ override الخاص بكل فئة ممكن يضيّق بس مش يوسّع فوق سقف الأدمن.
+        $policyMaxKb = $this->uploadPolicy->defaultMaxKb();
+        $maxKb = $maxKbOverride !== null ? min($maxKbOverride, $policyMaxKb) : $policyMaxKb;
         $maxBytes = $maxKb * 1024;
         // مُتسجّل هنا قبل move() — UploadedFile::move() بينقل ملف الـ tmp
         // فعليًا (rename) وبيرجّع كائن File جديد للمسار الجديد، من غير ما
@@ -60,7 +62,7 @@ class FileUploadService
         }
 
         $categoryAllowed = $allowedOverride ?? (array) config("upload.allowed.{$category}", []);
-        $allowed = $allowedOverride !== null ? $categoryAllowed : $this->uploadPolicy->effectiveAllowed($categoryAllowed);
+        $allowed = $this->uploadPolicy->effectiveAllowed($categoryAllowed);
         $extension = strtolower((string) $file->getClientOriginalExtension());
         if (!$extension || !in_array($extension, $allowed, true)) {
             throw new \RuntimeException('File type not allowed. Accepted: ' . implode(', ', $allowed));

@@ -37,6 +37,11 @@ class UipRateLimitMiddleware
         // مستقل وحد أعلى: الحفظ التلقائي وأحداث الـ secure mode بيستهلكوا طلبات
         // كتير، ولو شاركوا الـ bucket العام (60/دقيقة) طالب في نص امتحان ممكن
         // ياخد 429 ويتأخر حفظ إجاباته. لسه فيه سقف (مش مفتوح) ضد أي إساءة استخدام.
+        // السياسة متوقفة من Security > Policies => مفيش حد خالص (قبل كده كان بيرجع لـ 60 من الـ config).
+        if ($this->policyDisabled()) {
+            return $next($request);
+        }
+
         $isExamAttempt = $this->isExamAttemptRequest($request);
         $limit = $isExamAttempt
             ? (int) config('security.exam_attempt_rate_limit_per_min', 240)
@@ -67,6 +72,16 @@ class UipRateLimitMiddleware
     private function isExamAttemptRequest(Request $request): bool
     {
         return $request->is('api/v1/exam-system/attempts/*');
+    }
+
+    /** true بس لو السياسة اتقرت بنجاح وenabled=false؛ أي خطأ في القراءة => نفضل محميين بالـ config. */
+    private function policyDisabled(): bool
+    {
+        try {
+            return !$this->rateLimitPolicy->getPolicy()['enabled'];
+        } catch (\Throwable $e) {
+            return false;
+        }
     }
 
     /** السياسة المخزّنة لو متاحة ومفعّلة، وإلا الـ config الثابت — عمرها ما ترمي استثناء يوقف الطلب. */

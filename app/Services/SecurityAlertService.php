@@ -147,7 +147,18 @@ class SecurityAlertService
             );
         }
 
-        if ($location) {
+        // Advanced > monitoring.alert_on_new_ip: الأدمن يقدر يطفّي تنبيه "دخول من مكان جديد".
+        $alertOnNew = true;
+        try {
+            $row = app(\App\Repositories\SecurityPolicyRepository::class)->findByKey('monitoring.alert_on_new_ip');
+            if ($row) {
+                $alertOnNew = in_array(strtolower(trim((string) $row->value)), ['1', 'true', 'on', 'yes'], true);
+            }
+        } catch (\Throwable $e) {
+            // نفضل على الافتراضي (شغال)
+        }
+
+        if ($location && $alertOnNew) {
             $seen = DB::table('user_sessions')
                 ->where('user_id', $userId)
                 ->when($sessionId, fn ($q) => $q->where('id', '!=', $sessionId))

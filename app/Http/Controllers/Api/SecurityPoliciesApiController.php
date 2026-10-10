@@ -57,6 +57,10 @@ class SecurityPoliciesApiController extends Controller
             'login.lockout_policy', 'password.policy', 'upload.policy', 'session.policy',
             'mfa.policy', 'rate_limit.policy', 'ip_restriction.policy',
             'country_restriction.policy', 'device_restriction.policy',
+            // مفاتيح قديمة مكررة لسياسات منظّمة فوق (الإنفاذ الحقيقي بيقرا الـ JSON policies) — إظهارها
+            // كان بيخلّي الأدمن يعدّلها ومفيش أي أثر. المفتاح الوحيد اللي لسه عام ومتطبّق: monitoring.alert_on_new_ip.
+            'password.min_length', 'password.require_special', 'session.timeout_minutes',
+            'login.max_failed_attempts', 'login.lockout_minutes',
         ];
         $generic = array_values(array_map(
             fn ($p) => $p->toArray(),

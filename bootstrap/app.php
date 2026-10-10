@@ -82,6 +82,8 @@ return Application::configure(basePath: dirname(__DIR__))
             // Device Restrictions Policy على كل الـ API (register / forgot-password / public…)
             // مش بس login — بعد Cors عشان رد الـ 403 يطلع بهيدرز CORS.
             \App\Http\Middleware\UipDeviceRestrictionMiddleware::class,
+            // IP + Country Restrictions على كل الـ API (قبل كده كانوا متخزّنين بس ومش متطبقين).
+            \App\Http\Middleware\UipNetworkRestrictionMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

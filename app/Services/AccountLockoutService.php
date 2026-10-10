@@ -179,7 +179,9 @@ class AccountLockoutService
         ]);
 
         try {
-            app(SecurityAlertService::class)->accountLocked((int) $user->id, (string) $user->email, $ip, $permanent, $lockedUntil?->toDateTimeString());
+            if (!empty($policy['notify_inapp'])) {
+                app(SecurityAlertService::class)->accountLocked((int) $user->id, (string) $user->email, $ip, $permanent, $lockedUntil?->toDateTimeString());
+            }
         } catch (\Throwable $e) {
             Log::warning('Lockout alert failed: ' . $e->getMessage());
         }
