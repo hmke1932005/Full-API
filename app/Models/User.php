@@ -17,6 +17,30 @@ class User extends Authenticatable
 
     protected $table = 'users';
 
+    /**
+     * الحذف soft delete (deleted_at) بس عمود email عليه unique، فالصف المحذوف كان بيفضل ماسك الإيميل:
+     * التسجيل/الدعوة بنفس الإيميل بعد الحذف كانت بتقع بـ 500 (duplicate key) لأن كل البحث بيتجاهل المحذوفين.
+     * قبل أي إنشاء حساب جديد بنحرّر الإيميل من أي صف محذوف (بنغيّره لقيمة tombstone؛ الصف نفسه وسجلاته بتفضل).
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (User $user) {
+            $email = trim((string) $user->email);
+            if ($email === '') {
+                return;
+            }
+            $trashed = \Illuminate\Support\Facades\DB::table('users')
+                ->whereNotNull('deleted_at')
+                ->whereRaw('LOWER(email) = ?', [strtolower($email)])
+                ->get(['id', 'email']);
+            foreach ($trashed as $row) {
+                \Illuminate\Support\Facades\DB::table('users')->where('id', $row->id)->update([
+                    'email' => substr('deleted-' . $row->id . '-' . time() . '-' . $row->email, 0, 190),
+                ]);
+            }
+        });
+    }
+
     protected $fillable = [
         'uuid', 'full_name', 'name_ar', 'name_en', 'email', 'phone', 'password_hash', 'avatar_path',
         'preferred_language', 'theme_preference', 'status', 'email_verified_at',
