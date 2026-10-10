@@ -72,8 +72,9 @@ class TwoFactorChallengeController extends Controller
 
         $role = (string) ($claims['role'] ?? $this->roles->primaryRoleFor($user->id));
 
+        $trustCookie = null;
         if ($request->boolean('remember_device')) {
-            $this->trustedDevice->trustCurrentDevice($user->id, $request->ip(), $request->userAgent());
+            $trustCookie = $this->trustedDevice->trustCurrentDevice($user->id, $request->ip(), $request->userAgent());
         }
 
         $this->lockout->registerSuccessfulLogin($user);
@@ -86,10 +87,17 @@ class TwoFactorChallengeController extends Controller
 
         SecurityLog::write('Successful login (2FA)', ['user_id' => $user->id, 'ip' => $request->ip()]);
 
-        return AuthCookies::attach($this->apiSuccess(
+        $response = AuthCookies::attach($this->apiSuccess(
             array_merge(['redirect' => $this->roles->homeRouteFor($role)], $tokens),
             'Two-factor verification successful.'
         ), $request);
+
+        // كوكي "الجهاز الموثوق" لازم تتحط على الرد صراحةً (الـ api group مفيهوش queued cookies).
+        if ($trustCookie) {
+            $response->headers->setCookie($trustCookie);
+        }
+
+        return $response;
     }
 
     /** POST /api/v1/auth/two-factor/cancel */

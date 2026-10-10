@@ -4,8 +4,8 @@ namespace App\Services;
 
 use App\Models\TrustedDevice;
 use App\Support\SecurityLog;
-use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\Cookie;
 
 /**
  * نسخة طبق الأصل من TrustedDeviceService القديمة — نفس selector:validator
@@ -18,7 +18,13 @@ class TrustedDeviceService
     public const COOKIE_NAME = 'uip_trusted_device';
     private const TTL_DAYS = 30;
 
-    public function trustCurrentDevice(int $userId, string $ip, ?string $userAgent): void
+    /**
+     * بيسجّل الجهاز ويرجّع الكوكي — **لازم** المنادي يحطها على الرد بإيده
+     * ($response->headers->setCookie($cookie)). كنا بنستخدم Cookie::queue() بس ده بيحتاج
+     * AddQueuedCookiesToResponse (موجود في web group بس)، والـ API هنا من غير web group،
+     * فالكوكي كانت بتضيع ومبتوصلش للمتصفح أبدًا = الجهاز مبيتحفظش.
+     */
+    public function trustCurrentDevice(int $userId, string $ip, ?string $userAgent): Cookie
     {
         $selector = bin2hex(random_bytes(9));
         $validator = bin2hex(random_bytes(32));
@@ -34,20 +40,29 @@ class TrustedDeviceService
             'expires_at'   => now()->addDays(self::TTL_DAYS),
         ]);
 
-        Cookie::queue(Cookie::make(
+        $sameSite = strtolower((string) env('AUTH_COOKIE_SAMESITE', 'lax'));
+        if (!in_array($sameSite, ['strict', 'lax', 'none'], true)) {
+            $sameSite = 'lax';
+        }
+        $secure = app()->environment('production') || (bool) config('session.secure', false) || $sameSite === 'none';
+        $domain = trim((string) env('AUTH_COOKIE_DOMAIN', ''));
+
+        $cookie = new Cookie(
             self::COOKIE_NAME,
             $selector . ':' . $validator,
-            self::TTL_DAYS * 24 * 60,
+            time() + self::TTL_DAYS * 86400,
             '/',
-            null,
-            (bool) config('session.secure', false),
-            true,
+            $domain !== '' ? $domain : null,
+            $secure,
+            true,   // HttpOnly
             false,
-            config('session.same_site', 'lax')
-        ));
+            $sameSite
+        );
 
         SecurityLog::write('Device remembered for 2FA', ['user_id' => $userId, 'ip' => $ip]);
         Log::channel(config('logging.default'))->info('Device remembered for 2FA', ['user_id' => $userId, 'ip' => $ip]);
+
+        return $cookie;
     }
 
     /** True لو الكوكي بتاعة الريكوست الحالي trusted device صالح لنفس المستخدم ده. Best-effort دايمًا. */
