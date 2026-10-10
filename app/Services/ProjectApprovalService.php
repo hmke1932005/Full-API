@@ -38,7 +38,8 @@ class ProjectApprovalService
         private AuditLogService $auditLog,
         private NotificationService $notifications,
         private AIAnalysisRepository $aiAnalysis,
-        private FacultyRepository $faculties
+        private FacultyRepository $faculties,
+        private ProjectNotifier $notifier
     ) {
     }
 
@@ -102,12 +103,13 @@ class ProjectApprovalService
             Log::info('Project approved by university', ['project_id' => $project->id, 'university_id' => $universityId]);
 
             $title = $project->title_en ?: $project->title_ar;
-            $this->notifications->notify(
-                $project->owner_id,
+            $this->notifier->notifyTeam(
+                $project,
                 'project_approved',
                 "\"{$title}\" was approved and published",
                 $comments,
-                '/student/projects/' . $project->uuid
+                '/student/projects/' . $project->uuid,
+                $reviewerId
             );
         }
 
@@ -133,12 +135,13 @@ class ProjectApprovalService
             Log::info('Project rejected by university', ['project_id' => $project->id, 'university_id' => $universityId]);
 
             $title = $project->title_en ?: $project->title_ar;
-            $this->notifications->notify(
-                $project->owner_id,
+            $this->notifier->notifyTeam(
+                $project,
                 'project_rejected',
                 "\"{$title}\" was rejected",
                 $comments,
-                '/student/projects/' . $project->uuid
+                '/student/projects/' . $project->uuid,
+                $reviewerId
             );
         }
 
@@ -165,12 +168,13 @@ class ProjectApprovalService
             Log::info('University requested changes', ['project_id' => $project->id, 'university_id' => $universityId]);
 
             $title = $project->title_en ?: $project->title_ar;
-            $this->notifications->notify(
-                $project->owner_id,
+            $this->notifier->notifyTeam(
+                $project,
                 'project_changes_requested',
                 "Changes requested on \"{$title}\"",
                 $comments,
-                '/student/projects/' . $project->uuid . '/edit'
+                '/student/projects/' . $project->uuid . '/edit',
+                $reviewerId
             );
         }
 
@@ -225,12 +229,13 @@ class ProjectApprovalService
             Log::info('Project approved by faculty', ['project_id' => $project->id, 'faculty_id' => $facultyId]);
 
             $title = $project->title_en ?: $project->title_ar;
-            $this->notifications->notify(
-                $project->owner_id,
+            $this->notifier->notifyTeam(
+                $project,
                 'project_approved',
                 "\"{$title}\" was approved and published",
                 $comments,
-                '/student/projects/' . $project->uuid
+                '/student/projects/' . $project->uuid,
+                $reviewerId
             );
         }
 
@@ -256,12 +261,13 @@ class ProjectApprovalService
             Log::info('Project rejected by faculty', ['project_id' => $project->id, 'faculty_id' => $facultyId]);
 
             $title = $project->title_en ?: $project->title_ar;
-            $this->notifications->notify(
-                $project->owner_id,
+            $this->notifier->notifyTeam(
+                $project,
                 'project_rejected',
                 "\"{$title}\" was rejected",
                 $comments,
-                '/student/projects/' . $project->uuid
+                '/student/projects/' . $project->uuid,
+                $reviewerId
             );
         }
 
@@ -287,12 +293,13 @@ class ProjectApprovalService
             Log::info('Faculty requested changes', ['project_id' => $project->id, 'faculty_id' => $facultyId]);
 
             $title = $project->title_en ?: $project->title_ar;
-            $this->notifications->notify(
-                $project->owner_id,
+            $this->notifier->notifyTeam(
+                $project,
                 'project_changes_requested',
                 "Changes requested on \"{$title}\"",
                 $comments,
-                '/student/projects/' . $project->uuid . '/edit'
+                '/student/projects/' . $project->uuid . '/edit',
+                $reviewerId
             );
         }
 
@@ -343,12 +350,13 @@ class ProjectApprovalService
             'reject'  => "\"{$title}\" was rejected",
             default   => "Changes requested on \"{$title}\"",
         };
-        $this->notifications->notify(
-            $project->owner_id,
+        $this->notifier->notifyTeam(
+            $project,
             $type,
             $headline,
             $comments,
-            '/student/projects/' . $project->uuid . ($action === 'request_changes' ? '/edit' : '')
+            '/student/projects/' . $project->uuid . ($action === 'request_changes' ? '/edit' : ''),
+            $reviewerId
         );
 
         return true;

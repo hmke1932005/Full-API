@@ -36,7 +36,8 @@ class ProjectGradingService
     public function __construct(
         private ProjectGradeRepository $grades,
         private AuditLogService $auditLog,
-        private NotificationService $notifications
+        private NotificationService $notifications,
+        private ProjectNotifier $notifier
     ) {
     }
 
@@ -187,14 +188,15 @@ class ProjectGradingService
         if ($finalize) {
             $title = $project->title_en ?: $project->title_ar;
             $scoreLabel = $hasAnyScore ? (round($totalScore, 1) . '/' . round($totalMax, 1) . ($letter ? " ({$letter})" : '')) : '';
-            $this->notifications->notify(
-                $project->owner_id,
+            $this->notifier->notifyTeam(
+                $project,
                 'project_graded',
                 $locale === 'ar' ? "تم تقييم مشروعك \"{$title}\"" : "Your project \"{$title}\" was graded",
                 $locale === 'ar'
                     ? ($scoreLabel !== '' ? "الدرجة: {$scoreLabel}." : 'راجع تفاصيل التقييم من صفحة المشروع.')
                     : ($scoreLabel !== '' ? "Score: {$scoreLabel}." : 'See the project page for the full breakdown.'),
-                '/student/projects/' . $project->uuid
+                '/student/projects/' . $project->uuid,
+                $graderUserId
             );
         }
 

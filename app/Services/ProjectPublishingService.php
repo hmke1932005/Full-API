@@ -38,7 +38,8 @@ class ProjectPublishingService
         private ProjectLinkRepository $links,
         private DepartmentRepository $departments,
         private CategoryRepository $categories,
-        private MediaProbeService $mediaProbe
+        private MediaProbeService $mediaProbe,
+        private ProjectNotifier $notifier
     ) {
     }
 
@@ -114,52 +115,14 @@ class ProjectPublishingService
         $this->syncLinkByType($project, $data['repository_url'] ?? null, 'github');
         $this->syncLinkByType($project, $data['demo_url'] ?? null, 'live_demo');
 
+        $this->notifier->linkSupervisor($project);
         if ($status === 'submitted') {
-            $this->notifyReviewers($project, $student);
+            $this->notifier->notifySubmitted($project);
         }
 
         Log::info('Project created', ['project_id' => $project->id, 'owner_id' => $ownerId, 'status' => $status]);
 
         return $project;
-    }
-
-    /**
-     * بتوصل للمراجع فور ما الطالب يقدّم — الجامعة دايمًا، والكلية بتاعته
-     * كمان لو منتمي لكلية عندها حساب دخول خاص بيها (migration 106).
-     */
-    private function notifyReviewers(Project $project, $student): void
-    {
-        if (!$student) {
-            return;
-        }
-
-        $title = $project->title_en ?: $project->title_ar;
-
-        if ($student->university_id) {
-            $university = $this->universities->find($student->university_id);
-            if ($university?->user_id) {
-                $this->notifications->notify(
-                    $university->user_id,
-                    'project_submitted',
-                    'New project submitted for review',
-                    ($title ?: 'A student') . ' was submitted for your approval.',
-                    '/university/approvals'
-                );
-            }
-        }
-
-        if ($student->faculty_id) {
-            $faculty = $this->faculties->find($student->faculty_id);
-            if ($faculty?->user_id) {
-                $this->notifications->notify(
-                    $faculty->user_id,
-                    'project_submitted',
-                    'New project submitted for review',
-                    ($title ?: 'A student') . ' was submitted for your approval.',
-                    '/faculty/approvals'
-                );
-            }
-        }
     }
 
     /** @return Project[] */
@@ -199,8 +162,7 @@ class ProjectPublishingService
 
         $updated = $this->projects->updateOwned($uuid, $ownerId, ['status' => 'submitted']);
         if ($updated) {
-            $student = $this->students->findByUserId($ownerId);
-            $this->notifyReviewers($project, $student);
+            $this->notifier->notifySubmitted($this->projects->findOwnedByUuid($uuid, $ownerId));
             Log::info('Project submitted for review', ['project_id' => $project->id, 'owner_id' => $ownerId]);
         }
         return $updated;
@@ -250,6 +212,7 @@ class ProjectPublishingService
         ]);
 
         if ($updated) {
+            $this->notifier->linkSupervisor($this->projects->findOwnedByUuid($uuid, $ownerId));
             $this->syncLinkByType($project, $data['repository_url'] ?? null, 'github');
             $this->syncLinkByType($project, $data['demo_url'] ?? null, 'live_demo');
             Log::info('Project updated', ['project_id' => $project->id, 'owner_id' => $ownerId]);

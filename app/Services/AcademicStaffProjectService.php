@@ -47,10 +47,10 @@ class AcademicStaffProjectService
         $map = [];
 
         $rows = DB::table('projects')->where('university_id', $staff->university_id)
-            ->whereNotNull('supervisor_name')->where('supervisor_name', 'like', '%' . $fullName . '%')
+            ->whereNotNull('supervisor_name')->where('supervisor_name', '!=', '')
             ->get(['id', 'supervisor_name']);
         foreach ($rows as $r) {
-            if ($name !== '' && str_contains($this->normName($r->supervisor_name), $name)) {
+            if ($name !== '' && \App\Support\PersonName::matches($r->supervisor_name, $fullName)) {
                 $map[(int) $r->id] = 'supervisor';
             }
         }

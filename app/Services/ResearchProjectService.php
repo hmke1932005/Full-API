@@ -39,7 +39,8 @@ class ResearchProjectService
         private ProjectTeamMemberRepository $team,
         private AuditLogService $auditLog,
         private CategoryRepository $categories,
-        private ProjectDiscussionRepository $discussion
+        private ProjectDiscussionRepository $discussion,
+        private ProjectNotifier $notifier
     ) {
     }
 
@@ -171,6 +172,7 @@ class ResearchProjectService
         $ok = $this->projects->updateOwned($uuid, $ownerId, ['status' => 'submitted']);
         if ($ok) {
             $this->auditLog->record($ownerId, 'project.submit', 'Project', $project->id, ['status' => 'draft'], ['status' => 'submitted']);
+            $this->notifier->notifySubmitted($this->projects->findOwnedByUuid($uuid, $ownerId));
         }
         return $ok;
     }
