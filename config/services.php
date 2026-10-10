@@ -28,6 +28,12 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // Sign in with Google. GOOGLE_CLIENT_IDS = Web client ID (بيستخدمه زرار الويب وتطبيق الأندرويد
+    // مع بعض). ممكن تحط أكتر من ID مفصولين بفاصلة.
+    'google' => [
+        'client_ids' => env('GOOGLE_CLIENT_IDS', env('GOOGLE_CLIENT_ID', '')),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

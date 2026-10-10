@@ -164,6 +164,16 @@ class LoginController extends Controller
             }
         }
 
+        return $this->finishLogin($request, $user, $role, $locale);
+    }
+
+    /**
+     * كل اللي بعد التحقق من هوية الحساب (باسورد أو جوجل): قيود نوع الجهاز حسب الدور، تصفير
+     * محاولات الفشل، وضع الصيانة، الجلسة الواحدة، الـ 2FA، وإصدار التوكنز. اتفصل عن submit()
+     * عشان GoogleAuthController يعدّي من نفس الحراسات بالظبط بدل ما نكرر الكود.
+     */
+    public function finishLogin(Request $request, User $user, string $role, string $locale)
+    {
         // Device Restrictions Policy (وضع by_role) — الدور اتعرف دلوقتي والحساب اتأكد منه،
         // فنطبّق قاعدة الدور ده على نوع الجهاز (مثلًا الطالب ممنوع موبايل والأدمن لأ).
         if (!$this->deviceRestriction->isAllowed($request->userAgent(), $role)) {
@@ -265,5 +275,6 @@ class LoginController extends Controller
             'errors'  => null,
             'meta'    => (object) [],
         ]), $request);
+
     }
 }

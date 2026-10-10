@@ -370,3 +370,22 @@ DB_CONNECTION=mysql
 DB_HOST / DB_PORT / DB_DATABASE / DB_USERNAME / DB_PASSWORD
 ```
 ⚠️ **لازم يكون نفس `JWT_SECRET`** لو عايز تسمح بمرحلة انتقالية يفكّ فيها لارافيل توكنات صادرة من النظام القديم (والعكس).
+
+---
+
+## Google Sign-In (ويب + أندرويد)
+
+الفرونت بيجيب Google **ID token** (زرار Google Identity Services في المتصفح، أو Credential Manager في الـ APK) ويبعته للسيرفر، والسيرفر هو اللي بيتحقق منه (التوقيع RS256 بشهادات جوجل، `iss`، `aud` ∈ `GOOGLE_CLIENT_IDS`، `exp`، `email_verified`).
+
+### `GET /api/v1/auth/google/config`
+عام. `data: { enabled: bool, client_id: string|null }` — `enabled=false` لو `GOOGLE_CLIENT_IDS` فاضي (الفرونت يخبّي الزرار).
+
+### `POST /api/v1/auth/google`  (throttle 20/min)
+Body: `{ "id_token": "..." }`
+- **الإيميل (أو حساب جوجل) عنده حساب** → نفس رد `/auth/login` بالظبط (توكنز، أو `requires_2fa` + `challenge_token`)، ومن نفس حراسات اللوجين (`LoginController::finishLogin`): قفل الحساب/الإيقاف، قيود الجهاز، الصيانة، الجلسة الواحدة، 2FA، MFA. أول دخول بيربط الحساب (`user_social_accounts`) ويأكّد الإيميل ويجيب صورة جوجل لو الحساب معندوش صورة. أدوار الستاف (`admin`, `data_analyst`, `security_*`) مبتدخلش بجوجل (422).
+- **مفيش حساب** → 200: `data: { needs_registration: true, registration_token, profile: { email, name, picture, name_ar, name_en }, missing: ["name_ar"|"name_en"] }`. `registration_token` JWT قصير (15 دقيقة، `typ=google_signup`) — مفيش أي حاجة اتسجلت لسه.
+- توكن غلط/منتهي/aud غلط → 401.
+
+### `POST /api/v1/auth/google/complete`  (throttle 10/min)
+Body: `{ registration_token, name_ar, name_en, university_id?, faculty_id?, department_id?, program_id?, preferred_language? }`
+بينشئ حساب **طالب** (`status=active`, `email_verified_at=now`) بإيميل جوجل والاسمين اللي اتأكدوا (`BilingualName`)، وبيحمّل صورة جوجل لـ `avatar_path` (best-effort)، وبيبعت طلب الانضمام للجامعة لو اتحددت، وبعدها نفس رد اللوجين. `registration_token` منتهي → 422 `errors.code = signup_expired`. الحساب بيتعمل له باسورد عشوائي مجهول؛ لو الطالب عايز يدخل بالإيميل كمان يستخدم "نسيت كلمة السر".

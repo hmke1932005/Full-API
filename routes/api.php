@@ -145,6 +145,10 @@ Route::prefix('v1')->group(function () {
         // بدون Middleware — يطابق القديم بالظبط
         Route::post('/login', [LoginController::class, 'submit']);
         Route::post('/register', [RegisterController::class, 'submit']);
+        // Sign in / sign up with Google (ويب + أندرويد).
+        Route::get('/google/config', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'config']);
+        Route::post('/google', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'submit'])->middleware('throttle:20,1');
+        Route::post('/google/complete', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'complete'])->middleware('throttle:10,1');
         Route::post('/refresh-token', [RefreshTokenController::class, 'submit']);
         Route::post('/logout', [LogoutController::class, 'handle']);
         Route::post('/forgot-password', [ForgotPasswordController::class, 'submit']);
