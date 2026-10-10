@@ -466,13 +466,17 @@ class MessagingService
         ];
     }
 
-    private function classifyKind(string $extension): string
+    private function classifyKind(string $extension, ?string $originalName = null, ?string $mime = null): string
     {
         $extension = strtolower($extension);
+        // Recorded voice notes are audio-only .webm files; by extension alone they would be classed as video.
+        if (($originalName !== null && preg_match('/^voice-message-/i', $originalName)) || ($mime !== null && str_starts_with(strtolower($mime), 'audio/'))) {
+            return 'audio';
+        }
         $map = [
             'image'    => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'svg'],
             'video'    => ['mp4', 'webm', 'mov', 'avi', 'mkv'],
-            'audio'    => ['mp3', 'wav', 'ogg', 'm4a'],
+            'audio'    => ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'opus', 'weba'],
             'archive'  => ['zip', 'rar', '7z'],
             'code'     => ['php', 'js', 'ts', 'py', 'java', 'c', 'cpp', 'cs', 'go', 'rb', 'html', 'css', 'sql', 'sh', 'yml', 'yaml'],
             'document' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'json', 'xml', 'txt', 'md', 'log'],
@@ -489,7 +493,7 @@ class MessagingService
     private function storeAttachment(int $messageId, $uploaderId, int $conversationId, UploadedFile $file): void
     {
         $stored = $this->uploads->store($file, 'messages', 'conv_' . $conversationId);
-        $kind = $this->classifyKind($stored['extension']);
+        $kind = $this->classifyKind($stored['extension'], $file->getClientOriginalName(), $file->getClientMimeType());
         $absolutePath = public_path($stored['stored_path']);
 
         [$width, $height] = $kind === 'image' ? $this->imageDimensions($absolutePath) : [null, null];
