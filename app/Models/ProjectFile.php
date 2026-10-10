@@ -14,6 +14,9 @@ class ProjectFile extends Model
 {
     protected $table = 'project_files';
 
+    // الجدول فيه created_at بس (من غير updated_at) — من غير السطر ده Eloquent بيحاول يكتب updated_at ويفشل بـ SQLSTATE 42S22.
+    public const UPDATED_AT = null;
+
     protected $fillable = [
         'project_id', 'uploaded_by', 'file_type', 'file_path',
         'original_name', 'mime_type', 'size_bytes',

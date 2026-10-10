@@ -49,6 +49,20 @@ class ResearchProjectService
         return $this->projects->forOwner($ownerId);
     }
 
+    /** مشاريعي: اللي أنا مالكها + اللي اتضفت عليها كعضو فريق مقبول (طالب/معيد/دكتور). @return Project[] */
+    public function listForUser($userId): array
+    {
+        $owned = $this->projects->forOwner($userId);
+        $sharedIds = \Illuminate\Support\Facades\DB::table('project_team_members')
+            ->where('user_id', $userId)->where('status', 'accepted')->pluck('project_id')->all();
+        $shared = $sharedIds
+            ? Project::whereIn('id', $sharedIds)->where('owner_id', '!=', $userId)->orderByDesc('created_at')->get()->all()
+            : [];
+        $all = array_merge($owned, $shared);
+        usort($all, fn ($a, $b) => strcmp((string) $b->created_at, (string) $a->created_at));
+        return $all;
+    }
+
     public function findOwned(string $uuid, $ownerId): ?Project
     {
         return $this->projects->findOwnedByUuid($uuid, $ownerId);
@@ -327,16 +341,16 @@ class ResearchProjectService
         return $deleted;
     }
 
+    /** لازم القيم ترجع جوه enum عمود project_files.file_type: document|image|video|video_link|presentation|source_code|other */
     private function classifyFileType(string $extension): string
     {
         $extension = strtolower($extension);
         return match (true) {
             in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp'], true) => 'image',
             in_array($extension, ['mp4', 'mov', 'webm', 'avi'], true)        => 'video',
-            in_array($extension, ['pdf'], true)                             => 'pdf',
-            in_array($extension, ['doc', 'docx'], true)                     => 'document',
+            in_array($extension, ['pdf', 'doc', 'docx', 'xls', 'xlsx'], true) => 'document',
             in_array($extension, ['ppt', 'pptx'], true)                     => 'presentation',
-            in_array($extension, ['zip', 'rar', '7z'], true)                => 'archive',
+            in_array($extension, ['zip', 'rar', '7z'], true)                => 'source_code',
             default                                                          => 'other',
         };
     }

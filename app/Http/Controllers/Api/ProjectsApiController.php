@@ -115,7 +115,7 @@ class ProjectsApiController extends Controller
     public function index(Request $request)
     {
         $userId = (int) $request->attributes->get('uip_user_id');
-        $rows = $this->projects->listForOwner($userId);
+        $rows = $this->projects->listForUser($userId);
 
         $search = trim((string) $request->input('search', (string) $request->input('q', '')));
         if ($search !== '') {
@@ -490,6 +490,35 @@ class ProjectsApiController extends Controller
             return $this->apiError($e->getMessage(), null, 422);
         }
 
+        return $this->apiSuccess($member->toRowArray(), 'Team member added successfully.', 201);
+    }
+
+    /** GET /api/v1/projects/{id}/team/search?q= — بحث بالاسم/الإيميل/الكود، المالك بس. */
+    public function searchTeamCandidates(Request $request, $id)
+    {
+        try {
+            $rows = $this->studentTeam->searchCandidates((string) $id, (int) $request->attributes->get('uip_user_id'), (string) $request->input('q', ''));
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 404);
+        }
+        return $this->apiSuccess($rows, 'Candidates retrieved successfully.');
+    }
+
+    /** POST /api/v1/projects/{id}/team/add-user {user_id, role} — إضافة حساب موجود (طالب/دكتور/معيد). */
+    public function addTeamUser(Request $request, $id)
+    {
+        if ((string) $request->attributes->get('uip_role') !== 'student') {
+            return $this->apiError('Only student accounts can add team members.', null, 403);
+        }
+        $userId = (int) $request->input('user_id', 0);
+        if ($userId <= 0) {
+            return $this->apiError('Validation failed.', ['user_id' => 'Required.'], 422);
+        }
+        try {
+            $member = $this->studentTeam->addUserMember((string) $id, (int) $request->attributes->get('uip_user_id'), $userId, (string) $request->input('role', ''), (string) ($request->input('locale') ?: 'ar'));
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
         return $this->apiSuccess($member->toRowArray(), 'Team member added successfully.', 201);
     }
 

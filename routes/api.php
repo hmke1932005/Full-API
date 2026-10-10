@@ -742,6 +742,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/{id}/team', [ProjectsApiController::class, 'team']);
         Route::post('/{id}/team/invite', [ProjectsApiController::class, 'inviteTeamMember']);
         Route::post('/{id}/team/manual', [ProjectsApiController::class, 'addManualTeamMember']);
+        Route::get('/{id}/team/search', [ProjectsApiController::class, 'searchTeamCandidates']);
+        Route::post('/{id}/team/add-user', [ProjectsApiController::class, 'addTeamUser']);
         Route::delete('/{id}/team/{memberId}', [ProjectsApiController::class, 'removeTeamMember']);
 
         // بند 11 مرحلة 2 — بانر تغذية راجعة المراجع، مالك المشروع بس.

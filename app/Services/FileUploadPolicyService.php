@@ -17,9 +17,9 @@ class FileUploadPolicyService
     private const POLICY_KEY = 'upload.policy';
 
     private const DEFAULTS = [
-        'max_size_kb'         => 10240,
+        'max_size_kb'         => 51200,
         'restrict_extensions' => false,
-        'allowed_extensions'  => 'pdf,doc,docx,xls,xlsx,ppt,pptx,jpg,jpeg,png,webp,gif,svg,zip,csv,json,xml',
+        'allowed_extensions'  => 'pdf,doc,docx,xls,xlsx,ppt,pptx,jpg,jpeg,png,webp,gif,svg,zip,rar,csv,json,xml',
     ];
 
     public function __construct(

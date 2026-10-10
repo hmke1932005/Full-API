@@ -42,7 +42,7 @@ return [
         // empty allow-list from config() and rejected every upload
         // regardless of file type ("File type not allowed. Accepted: ").
         'research-projects' => [
-            'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'zip',
+            'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'zip', 'rar',
             'png', 'jpg', 'jpeg', 'gif', 'webp',
             'mp4', 'mov', 'webm',
         ],
