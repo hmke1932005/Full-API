@@ -62,6 +62,17 @@ class MailService
 
         try {
             app(MailConfigService::class)->apply();
+
+            // لو الـ mailer الفعّال log/array (الافتراضي لو MAIL_MAILER مش متظبط ومفيش مزوّد محفوظ من
+            // Admin > Settings > Mail) الإيميل بيتكتب في storage/logs/laravel.log بس ومبيتبعتش لحد —
+            // فمينفعش نرجّع "اتبعت بنجاح" (ده كان سبب إن التسجيل يقول "بعتنالك رسالة" ومفيش حاجة توصل).
+            if (!app()->environment('testing') && in_array((string) config('mail.default'), ['log', 'array'], true)) {
+                $this->lastError = 'No real mail provider is configured (mailer is "' . config('mail.default') . '"). Set MAIL_MAILER=smtp/brevo in .env or configure it in Admin > Settings > Mail.';
+                Log::error("{$logContext}: email NOT sent — {$this->lastError}", ['email' => $toEmail]);
+
+                return false;
+            }
+
             Mail::to($toEmail)->send(new GenericMail($subject, $heading, $lines, $button, $locale, $meta, $variant, $replyTo['email'] ?? null, $replyTo['name'] ?? null));
 
             return true;
