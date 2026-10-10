@@ -138,7 +138,7 @@ class LoginController extends Controller
                 'message' => $locale === 'ar'
                     ? 'لازم تأكّد بريدك الإلكتروني الأول. افتح الرسالة اللي وصلتك واضغط على رابط التأكيد، أو اطلب رسالة جديدة. ممكن كمان مدير المنصة يفعّل حسابك.'
                     : 'Please confirm your email first. Open the message we sent you and click the confirmation link, or request a new one. A platform admin can also activate your account.',
-                'data'    => ['email_not_verified' => true, 'email' => $user->email],
+                'data'    => ['email_not_verified' => true, 'email' => $user->email, 'activation_fallback' => \App\Http\Controllers\Api\Auth\ActivateWithoutEmailController::mode() !== 'off'],
                 'errors'  => ['code' => 'email_not_verified'],
                 'meta'    => (object) [],
             ], 403);

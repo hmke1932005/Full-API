@@ -155,6 +155,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/reset-password', [ResetPasswordController::class, 'submit']);
         Route::get('/verify-email', [VerifyEmailController::class, 'handle']);
         Route::post('/resend-verification', [\App\Http\Controllers\Api\Auth\ResendVerificationController::class, 'submit'])->middleware('throttle:5,1');
+        // تفعيل طوارئ لما لينك التأكيد مش بيوصل (متحكّم فيه بـ EMAIL_ACTIVATION_FALLBACK).
+        Route::post('/activate-without-email', [\App\Http\Controllers\Api\Auth\ActivateWithoutEmailController::class, 'submit'])->middleware('throttle:10,1');
         Route::get('/confirm-email-change', [ConfirmEmailChangeController::class, 'handle']);
         Route::get('/roles', [RoleSelectionController::class, 'index']);
         Route::get('/universities', [UniversitiesController::class, 'index']);

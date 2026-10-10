@@ -40,6 +40,9 @@ return [
         'live_seconds' => (int) env('SESSION_LIVE_SECONDS', 120),
     ],
 
+    // تفعيل حساب pending من غير لينك الإيميل (زرار "فعّل حسابي دلوقتي" في صفحة الدخول). always | outage | off
+    'email_activation_fallback' => env('EMAIL_ACTIVATION_FALLBACK', 'always'),
+
     'geoip' => [
         'enabled'      => (bool) env('GEOIP_ENABLED', true),
         'provider_url' => env('GEOIP_PROVIDER_URL', 'https://ipapi.co/{ip}/country/'),
