@@ -771,6 +771,16 @@ class StudentsApiController extends Controller
             $changed = true;
         }
 
+        $phone = \App\Support\ProfilePhone::fromRequest($request, \App\Support\BilingualName::localeOf($request));
+        if (!$phone['ok']) {
+            return $this->apiError('Validation failed.', ['phone' => $phone['error']], 422);
+        }
+        if ($phone['present']) {
+            $user->fill(['phone' => $phone['value']]);
+            $user->save();
+            $changed = true;
+        }
+
         if ($request->input('bio') !== null) {
             $self->fill(['bio' => $request->input('bio')]);
             $self->save();
@@ -794,7 +804,7 @@ class StudentsApiController extends Controller
 
         if (!$changed) {
             return $this->apiError(
-                'No updatable fields provided. Students may update full_name, bio, and avatar — '
+                'No updatable fields provided. Students may update their name, phone, bio, and avatar — '
                 . 'faculty/department/academic/status changes are university- or faculty-managed.',
                 null,
                 422

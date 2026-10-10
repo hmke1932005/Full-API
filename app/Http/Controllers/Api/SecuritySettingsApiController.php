@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Repositories\SettingRepository;
 use App\Repositories\UserRepository;
 use App\Services\AuditLogService;
+use App\Services\FileUploadService;
 use App\Services\NotificationPreferencesService;
 use App\Services\PasswordPolicyService;
 use App\Services\TrustedDeviceService;
@@ -26,8 +27,8 @@ use Illuminate\Support\Facades\Validator;
  * listForUser()/revoke() اللي كانت ناقصة من نسخة اللارافيل (بند 25
  * batch 6 كمّلهم في TrustedDeviceService نفسها، مش هنا).
  *
- * مفيش صورة بروفايل (avatar) هنا — SecuritySettings.jsx معندهاش رفع
- * صورة، بعكس DataAnalysisSettings.jsx، فمفيش uploadAvatar() مختلق.
+ * صورة البروفايل (POST /settings/avatar → uploadAvatar()) اتضافت عشان كارت
+ * الهوية المشترك (IdentityProfile.jsx) بيعرض رفع الصورة في كل البورتالات.
  *
  * فروق موثّقة عن القديمة، متسقة مع كل كنترولرز Settings اللارافيل
  * التانية:
@@ -57,13 +58,50 @@ class SecuritySettingsApiController extends Controller
         private AuditLogService $auditLog,
         private TwoFactorService $twoFactor,
         private TrustedDeviceService $trustedDevice,
-        private NotificationPreferencesService $notifications
+        private NotificationPreferencesService $notifications,
+        private FileUploadService $uploads
     ) {
     }
 
     private function isSecurityStaff(Request $request): bool
     {
         return in_array($request->attributes->get('uip_role'), ['security_admin', 'security_officer', 'admin'], true);
+    }
+
+    /** POST /api/v1/security/settings/avatar — the person's own profile photo (users.avatar_path). */
+    public function uploadAvatar(Request $request)
+    {
+        if (!$this->isSecurityStaff($request)) {
+            return $this->apiError('Only Security Portal accounts can update this profile photo.', null, 403);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $user = User::find($userId);
+        if (!$user) {
+            return $this->apiError('User not found.', null, 404);
+        }
+
+        $file = $request->file('avatar');
+        if (!$file) {
+            return $this->apiError('avatar file is required.', null, 422);
+        }
+
+        try {
+            $stored = $this->uploads->store($file, 'avatars', (string) $user->id);
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        if ($user->avatar_path) {
+            $this->uploads->delete($user->avatar_path);
+        }
+
+        $before = ['avatar_path' => $user->avatar_path];
+        $user->fill(['avatar_path' => $stored['stored_path']]);
+        $user->save();
+        $this->auditLog->record($userId, 'security.avatar_update', 'User', $user->id, $before, ['avatar_path' => $user->avatar_path]);
+
+        return $this->apiSuccess(['avatar_path' => $user->avatar_path], 'Photo updated successfully.');
     }
 
     /** GET /api/v1/security/settings */
@@ -146,8 +184,16 @@ class SecuritySettingsApiController extends Controller
             return $this->apiError('Please provide the name in both Arabic and English.', $names['errors'], 422);
         }
 
-        $before = ['full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en];
+        $phone = \App\Support\ProfilePhone::fromRequest($request, \App\Support\BilingualName::localeOf($request));
+        if (!$phone['ok']) {
+            return $this->apiError('Validation failed.', ['phone' => $phone['error']], 422);
+        }
+
+        $before = ['full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en, 'phone' => $user->phone];
         $after = \App\Support\BilingualName::columns($names);
+        if ($phone['present']) {
+            $after['phone'] = $phone['value'];
+        }
         $user->fill($after);
         $user->save();
         $this->auditLog->record($userId, 'security.profile_update', 'User', $user->id, $before, $after);

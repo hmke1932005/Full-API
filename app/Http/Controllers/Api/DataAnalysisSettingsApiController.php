@@ -176,8 +176,16 @@ class DataAnalysisSettingsApiController extends Controller
             return $this->apiError('Please provide the name in both Arabic and English.', $names['errors'], 422);
         }
 
-        $before = ['full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en];
+        $phone = \App\Support\ProfilePhone::fromRequest($request, \App\Support\BilingualName::localeOf($request));
+        if (!$phone['ok']) {
+            return $this->apiError('Validation failed.', ['phone' => $phone['error']], 422);
+        }
+
+        $before = ['full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en, 'phone' => $user->phone];
         $after = \App\Support\BilingualName::columns($names);
+        if ($phone['present']) {
+            $after['phone'] = $phone['value'];
+        }
         $user->fill($after);
         $user->save();
         $this->auditLog->record($userId, 'data_analysis.profile_update', 'User', $user->id, $before, $after);

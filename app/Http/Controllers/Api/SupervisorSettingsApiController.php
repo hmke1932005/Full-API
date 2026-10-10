@@ -8,6 +8,7 @@ use App\Repositories\SupervisorAssignmentRepository;
 use App\Repositories\SupervisorRepository;
 use App\Repositories\UserRepository;
 use App\Services\AuditLogService;
+use App\Services\FileUploadService;
 use App\Services\NotificationPreferencesService;
 use App\Services\PasswordPolicyService;
 use Illuminate\Http\Request;
@@ -18,9 +19,9 @@ use Illuminate\Support\Facades\Validator;
  * — بند 9 (Supervisors)، جزء 2. سطح إعدادات مقيّد لحساب لوجين المشرف نفسه
  * (api/v1/supervisor/settings/*)، بيطابق
  * App\Controllers\Supervisor\SupervisorSettingsController (web) القديمة
- * بالظبط: بروفايل روستر للقراءة بس (department/title/permissions/نطاقات
- * مُسندة — الجامعة الداعية بس اللي تعدّلهم عبر
- * /api/v1/supervisors/{id})، تفضيلات إشعارات مستوى-فئة، وتغيير باسورد
+ * بالظبط: بروفايل: المشرف نفسه يعدّل اسمه (عربي/إنجليزي) وتليفونه ولقبه وقسمه
+ * وصورته (updateProfile/uploadAvatar)، أما الصلاحيات والنطاقات والإيميل
+ * والحالة فالجامعة الداعية بس اللي تعدّلهم عبر /api/v1/supervisors/{id}، تفضيلات إشعارات مستوى-فئة، وتغيير باسورد
  * حقيقي. مفيش avatar/2FA/theme toggle هنا لأن القديمة ماكانتش عاملاهم
  * لحساب المشرف (على عكس باقي بورتالات الـ Settings).
  *
@@ -46,7 +47,8 @@ class SupervisorSettingsApiController extends Controller
         private UserRepository $users,
         private PasswordPolicyService $passwordPolicy,
         private NotificationPreferencesService $notifications,
-        private AuditLogService $auditLog
+        private AuditLogService $auditLog,
+        private FileUploadService $uploads
     ) {
     }
 
@@ -60,14 +62,150 @@ class SupervisorSettingsApiController extends Controller
         $userId = (int) $request->attributes->get('uip_user_id');
         $supervisor = $this->supervisors->findActiveByUserId($userId);
 
+        $user = User::find($userId);
+
         return $this->apiSuccess([
             'supervisor'              => $supervisor,
+            'profile'                 => $user ? $this->profileRow($user) : null,
             'scopes'                  => $supervisor ? $this->assignments->forSupervisorWithLabels($supervisor->id) : [],
             'notification_categories' => $this->notifications->categoryLabels(),
             'muted_categories'        => $this->notifications->mutedCategoriesFor($userId),
             'digest_frequency'        => $this->notifications->digestFrequencyFor($userId),
             'quiet_hours'             => $this->notifications->quietHoursFor($userId),
         ], 'Settings retrieved successfully.');
+    }
+
+    /** The account fields the supervisor owns (users row) — shape shared by index() and updateProfile(). */
+    private function profileRow(User $user): array
+    {
+        return [
+            'full_name'   => $user->full_name,
+            'name_ar'     => $user->name_ar,
+            'name_en'     => $user->name_en,
+            'email'       => $user->email,
+            'phone'       => $user->phone,
+            'avatar_path' => $user->avatar_path,
+        ];
+    }
+
+    /**
+     * PATCH /api/v1/supervisor/settings/profile — the supervisor fixes their
+     * OWN name (Arabic + English), phone, academic title and department
+     * without going back to the university. Email, permissions, supervision
+     * scope and status stay university-managed. Role مشرف بس.
+     */
+    public function updateProfile(Request $request)
+    {
+        if ($request->attributes->get('uip_role') !== 'supervisor') {
+            return $this->apiError('Only supervisor accounts can update this profile.', null, 403);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $user = User::find($userId);
+        $supervisor = $this->supervisors->findActiveByUserId($userId);
+        if (!$user || !$supervisor) {
+            return $this->apiError('Your supervisor account is not currently active.', null, 404);
+        }
+
+        $locale = \App\Support\BilingualName::localeOf($request);
+        $userFill = [];
+        $supFill = [];
+
+        if ($request->has('name_ar') || $request->has('name_en')) {
+            $names = \App\Support\BilingualName::resolve(
+                $request->input('name_ar', $user->name_ar),
+                $request->input('name_en', $user->name_en),
+                $locale
+            );
+            if (!$names['ok']) {
+                return $this->apiError('Validation failed.', $names['errors'], 422);
+            }
+            // users.* AND the roster row both carry the name — keep them identical.
+            $userFill = \App\Support\BilingualName::columns($names);
+            $supFill = \App\Support\BilingualName::columns($names);
+        }
+
+        $phone = \App\Support\ProfilePhone::fromRequest($request, $locale);
+        if (!$phone['ok']) {
+            return $this->apiError('Validation failed.', ['phone' => $phone['error']], 422);
+        }
+        if ($phone['present']) {
+            $userFill['phone'] = $phone['value'];
+        }
+
+        foreach (['title' => 100, 'department' => 150] as $field => $max) {
+            if ($request->has($field)) {
+                $value = trim((string) preg_replace('/\s+/u', ' ', (string) $request->input($field, '')));
+                if (mb_strlen($value) > $max) {
+                    return $this->apiError('Validation failed.', [$field => "Maximum {$max} characters."], 422);
+                }
+                $supFill[$field] = $value !== '' ? $value : null;
+            }
+        }
+
+        if (!$userFill && !$supFill) {
+            return $this->apiError('No updatable fields provided.', null, 422);
+        }
+
+        $before = [
+            'name_ar' => $user->name_ar, 'name_en' => $user->name_en, 'phone' => $user->phone,
+            'title' => $supervisor->title, 'department' => $supervisor->department,
+        ];
+
+        if ($userFill) {
+            $user->fill($userFill);
+            $user->save();
+        }
+        if ($supFill) {
+            $supervisor->fill($supFill);
+            $supervisor->save();
+        }
+
+        $this->auditLog->record($userId, 'supervisor.profile_update', 'Supervisor', $supervisor->id, $before, [
+            'name_ar' => $user->name_ar, 'name_en' => $user->name_en, 'phone' => $user->phone,
+            'title' => $supervisor->title, 'department' => $supervisor->department,
+        ]);
+
+        return $this->apiSuccess([
+            'supervisor' => $supervisor->fresh(),
+            'profile'    => $this->profileRow($user->fresh()),
+        ], 'Profile updated successfully.');
+    }
+
+    /** POST /api/v1/supervisor/settings/avatar — the supervisor's own profile photo (users.avatar_path). */
+    public function uploadAvatar(Request $request)
+    {
+        if ($request->attributes->get('uip_role') !== 'supervisor') {
+            return $this->apiError('Only supervisor accounts can update this profile photo.', null, 403);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $user = User::find($userId);
+        if (!$user) {
+            return $this->apiError('User not found.', null, 404);
+        }
+
+        $file = $request->file('avatar');
+        if (!$file) {
+            return $this->apiError('avatar file is required.', null, 422);
+        }
+
+        try {
+            $stored = $this->uploads->store($file, 'avatars', (string) $user->id);
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+
+        if ($user->avatar_path) {
+            $this->uploads->delete($user->avatar_path);
+        }
+
+        $before = ['avatar_path' => $user->avatar_path];
+        $user->fill(['avatar_path' => $stored['stored_path']]);
+        $user->save();
+        $this->auditLog->record($userId, 'supervisor.avatar_update', 'User', $user->id, $before, ['avatar_path' => $user->avatar_path]);
+
+        return $this->apiSuccess(['avatar_path' => $user->avatar_path], 'Photo updated successfully.');
     }
 
     /** PATCH /api/v1/supervisor/settings/notifications — Role مشرف بس. */

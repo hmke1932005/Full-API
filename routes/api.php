@@ -1496,6 +1496,8 @@ Route::prefix('v1')->group(function () {
     // api/v1/supervisor/settings/* القديمة (SupervisorSettingsApiController).
     Route::prefix('supervisor/settings')->middleware('uip.auth')->group(function () {
         Route::get('/', [SupervisorSettingsApiController::class, 'index']);
+        Route::patch('/profile', [SupervisorSettingsApiController::class, 'updateProfile']);
+        Route::post('/avatar', [SupervisorSettingsApiController::class, 'uploadAvatar']);
         Route::patch('/notifications', [SupervisorSettingsApiController::class, 'updateNotificationPreferences']);
         Route::patch('/password', [SupervisorSettingsApiController::class, 'updatePassword']);
     });
@@ -1820,6 +1822,7 @@ Route::prefix('v1')->group(function () {
         // مفيهاش تعارض مع بعض — كل واحدة segment مختلف.
         Route::prefix('settings')->group(function () {
             Route::get('/', [SecuritySettingsApiController::class, 'index']);
+            Route::post('/avatar', [SecuritySettingsApiController::class, 'uploadAvatar']);
             Route::patch('/notifications', [SecuritySettingsApiController::class, 'updateNotificationPreferences']);
             Route::patch('/profile', [SecuritySettingsApiController::class, 'updateProfile']);
             Route::patch('/preferences', [SecuritySettingsApiController::class, 'updatePreferences']);

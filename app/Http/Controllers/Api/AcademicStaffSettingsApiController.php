@@ -75,7 +75,7 @@ class AcademicStaffSettingsApiController extends Controller
         ], 'Settings retrieved successfully.');
     }
 
-    /** PATCH /api/v1/academic-staff/settings/profile — bio بس. */
+    /** PATCH /api/v1/academic-staff/settings/profile — الاسم (عربي/إنجليزي) + التليفون + النبذة، كلهم اختياريين. */
     public function updateProfile(Request $request)
     {
         if ($err = $this->requireAcademicStaff($request)) {
@@ -84,16 +84,56 @@ class AcademicStaffSettingsApiController extends Controller
 
         $userId = (int) $request->attributes->get('uip_user_id');
         $staff = $this->staff->findByUserId($userId);
-        if (!$staff) {
+        $user = User::find($userId);
+        if (!$staff || !$user) {
             return $this->apiError('Academic staff profile not found.', null, 404);
         }
 
-        $bio = trim((string) $request->input('bio', ''));
+        $locale = \App\Support\BilingualName::localeOf($request);
+        $userFill = [];
 
-        $before = ['bio' => $staff->bio];
-        $staff->fill(['bio' => $bio !== '' ? $bio : null]);
-        $staff->save();
-        $this->auditLog->record($userId, 'academic_staff.profile_update', 'AcademicStaff', $staff->id, $before, ['bio' => $staff->bio]);
+        // The staff member owns their own name — no need to bounce typos
+        // through the university/faculty admin. Only touched when sent.
+        if ($request->has('name_ar') || $request->has('name_en')) {
+            $names = \App\Support\BilingualName::resolve(
+                $request->input('name_ar', $user->name_ar),
+                $request->input('name_en', $user->name_en),
+                $locale
+            );
+            if (!$names['ok']) {
+                return $this->apiError('Validation failed.', $names['errors'], 422);
+            }
+            $userFill = \App\Support\BilingualName::columns($names);
+        }
+
+        $phone = \App\Support\ProfilePhone::fromRequest($request, $locale);
+        if (!$phone['ok']) {
+            return $this->apiError('Validation failed.', ['phone' => $phone['error']], 422);
+        }
+        if ($phone['present']) {
+            $userFill['phone'] = $phone['value'];
+        }
+
+        $before = [
+            'full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en,
+            'phone' => $user->phone, 'bio' => $staff->bio,
+        ];
+
+        if ($userFill) {
+            $user->fill($userFill);
+            $user->save();
+        }
+
+        if ($request->has('bio')) {
+            $bio = trim((string) $request->input('bio', ''));
+            $staff->fill(['bio' => $bio !== '' ? mb_substr($bio, 0, 1000) : null]);
+            $staff->save();
+        }
+
+        $this->auditLog->record($userId, 'academic_staff.profile_update', 'AcademicStaff', $staff->id, $before, [
+            'full_name' => $user->full_name, 'name_ar' => $user->name_ar, 'name_en' => $user->name_en,
+            'phone' => $user->phone, 'bio' => $staff->bio,
+        ]);
 
         return $this->apiSuccess($this->staff->withProfileDetailsByUserId($userId), 'Profile updated successfully.');
     }
