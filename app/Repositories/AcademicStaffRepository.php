@@ -32,6 +32,36 @@ class AcademicStaffRepository
         return AcademicStaff::where('user_id', $userId)->first();
     }
 
+    /**
+     * صف academic_staff للمشرف/المعيد (بيتعمل مرة واحدة). الرتبة "معيد" (Demonstrator)
+     * لو موجودة في academic_ranks، والكلية/القسم فاضيين (المشرف نطاقه على مستوى
+     * الجامعة). بيستخدمه UipSupervisorAsStaffMiddleware بس.
+     */
+    public function ensureForSupervisor($supervisor): AcademicStaff
+    {
+        $existing = $this->findByUserId($supervisor->user_id);
+        if ($existing) {
+            return $existing;
+        }
+
+        // الرتب الافتراضية للمنصة (university_id NULL) — "معيد" ثم "معيد مساعد تدريس".
+        $rankId = DB::table('academic_ranks')
+            ->whereNull('university_id')
+            ->whereIn('name_en', ['Demonstrator', 'Teaching Assistant'])
+            ->where('is_active', 1)
+            ->orderBy('sort_order')
+            ->value('id');
+
+        return AcademicStaff::create([
+            'user_id'           => $supervisor->user_id,
+            'university_id'     => $supervisor->university_id,
+            'academic_rank_id'  => $rankId ?: null,
+            'status'            => 'active',
+            'invitation_status' => 'accepted',
+            'accepted_at'       => now(),
+        ]);
+    }
+
     /** @param int|null $facultyId لو موجودة، بتشترط كمان إن faculty_id بتاع العضو نفسه يطابقها */
     public function findOwnedByUniversity($id, $universityId, $facultyId = null): ?AcademicStaff
     {

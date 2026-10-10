@@ -270,9 +270,9 @@ Route::prefix('v1')->group(function () {
         Route::post('/', [AcademicStaffApiController::class, 'store']);
         Route::post('/import', [AcademicStaffApiController::class, 'import']);
 
-        Route::get('/search', [\App\Http\Controllers\Api\AcademicStaffSearchApiController::class, 'index']);
-        Route::get('/me', [AcademicStaffApiController::class, 'me']);
-        Route::post('/me/avatar', [AcademicStaffApiController::class, 'uploadAvatar']);
+        Route::get('/search', [\App\Http\Controllers\Api\AcademicStaffSearchApiController::class, 'index'])->middleware('uip.staff_alias');
+        Route::get('/me', [AcademicStaffApiController::class, 'me'])->middleware('uip.staff_alias');
+        Route::post('/me/avatar', [AcademicStaffApiController::class, 'uploadAvatar'])->middleware('uip.staff_alias');
         Route::get('/ranks', [AcademicStaffApiController::class, 'ranks']);
         Route::post('/ranks', [AcademicStaffApiController::class, 'storeRank']);
 
@@ -318,7 +318,7 @@ Route::prefix('v1')->group(function () {
     // docblock ExamSystemApiController). question-banks/{bankId}/questions
     // لازم يتسجل قبل questions/{id} العام — نفس ترتيب الـ nested routes
     // في باقي البنود.
-    Route::prefix('exam-system')->middleware('uip.auth')->group(function () {
+    Route::prefix('exam-system')->middleware(['uip.auth', 'uip.staff_alias'])->group(function () {
         Route::get('question-banks', [ExamSystemApiController::class, 'indexBanks']);
         Route::post('question-banks', [ExamSystemApiController::class, 'storeBank']);
         Route::get('question-banks/{id}', [ExamSystemApiController::class, 'showBank'])->where('id', '[0-9]+');
@@ -1003,7 +1003,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // Courses (المواد): university / faculty / doctor manage them, students enrol, doctors see the roster.
-    Route::prefix('courses')->middleware('uip.auth')->group(function () {
+    Route::prefix('courses')->middleware(['uip.auth', 'uip.staff_alias'])->group(function () {
         Route::get('/', [CourseApiController::class, 'index']);
         Route::post('/', [CourseApiController::class, 'store']);
         Route::get('/meta', [CourseApiController::class, 'meta']);

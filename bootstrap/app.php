@@ -52,6 +52,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'uip.can' => \App\Http\Middleware\UipPermissionMiddleware::class,
             // قفل الامتحان: يمنع الـ AI Assistant طول ما الطالب جوّه محاولة شغالة.
             'uip.exam_lock' => \App\Http\Middleware\UipExamLockMiddleware::class,
+            // المشرف/المعيد يستخدم سطح الدكتور (امتحانات/بنوك/مواد) — شوف docblock الميدلوير.
+            'uip.staff_alias' => \App\Http\Middleware\UipSupervisorAsStaffMiddleware::class,
 
             // بند 17 — يطابق app/Middleware/FeedCommentRateLimitMiddleware.php
             // القديمة. غطا إضافي فوق UipRateLimitMiddleware العام (اللي
