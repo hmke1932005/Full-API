@@ -354,6 +354,48 @@ class ProjectApprovalService
         return true;
     }
 
+    /**
+     * كل اللي المراجع (جامعة/كلية) محتاج يشوفه جنب بيانات المشروع: المشرف، الفريق،
+     * الروابط، سجل القرارات (مين قرر وإمتى)، والدرجة الرسمية لو اتحفظت.
+     * @return array<string,mixed>
+     */
+    public function reviewExtras(\App\Models\Project $project): array
+    {
+        $db = \Illuminate\Support\Facades\DB::class;
+        $team = $db::table('project_team_members as m')
+            ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
+            ->where('m.project_id', $project->id)->whereIn('m.status', ['accepted', 'pending'])
+            ->orderBy('m.id')
+            ->get(['m.id', 'm.role', 'm.status', 'm.member_name', 'm.invited_email', 'm.student_number', 'u.full_name'])
+            ->map(fn ($m) => [
+                'id' => $m->id, 'role' => $m->role, 'status' => $m->status,
+                'display_name' => $m->full_name ?: ($m->member_name ?: $m->invited_email),
+                'student_number' => $m->student_number,
+            ])->all();
+
+        $links = $db::table('project_links')->where('project_id', $project->id)->orderByDesc('is_primary')
+            ->get(['type', 'label', 'url', 'is_primary'])->map(fn ($l) => (array) $l)->all();
+
+        $history = $db::table('project_approvals as a')
+            ->leftJoin('users as u', 'u.id', '=', 'a.reviewer_id')
+            ->where('a.project_id', $project->id)->orderByDesc('a.created_at')->orderByDesc('a.id')
+            ->get(['a.decision', 'a.comments', 'a.decided_at', 'a.created_at', 'u.full_name as reviewer_name'])
+            ->map(fn ($h) => (array) $h)->all();
+
+        $grade = $db::table('project_grades as g')
+            ->leftJoin('users as u', 'u.id', '=', 'g.graded_by')
+            ->where('g.project_id', $project->id)
+            ->first(['g.total_score', 'g.max_score', 'g.letter_grade', 'g.status', 'g.overall_comments', 'g.graded_at', 'u.full_name as grader_name']);
+
+        return [
+            'supervisor_name' => $project->supervisor_name,
+            'team'            => $team,
+            'links'           => $links,
+            'history'         => $history,
+            'grade'           => $grade ? (array) $grade : null,
+        ];
+    }
+
     private function recordDecision(int $projectId, $reviewerId, string $decision, ?string $comments, bool $aiAcknowledged = false, ?array $aiSnapshot = null): void
     {
         ProjectApproval::create([
@@ -536,6 +578,17 @@ class ProjectApprovalService
         ];
     }
 
+    /** سجل القرارات + الدرجة النهائية (final بس) للطالب المالك/عضو الفريق. */
+    public function feedbackForProject(\App\Models\Project $project): array
+    {
+        $x = $this->reviewExtras($project);
+        $grade = $x['grade'];
+        if ($grade && ($grade['status'] ?? '') !== 'final') {
+            $grade = null; // الدرجة المسودة متتعرضش للطالب
+        }
+        return ['history' => $x['history'], 'grade' => $grade, 'supervisor_name' => $x['supervisor_name']];
+    }
+
     private function lastDecision(int $projectId): ?string
     {
         $row = ProjectApproval::where('project_id', $projectId)->orderByDesc('created_at')->first();
@@ -561,7 +614,7 @@ class ProjectApprovalService
             'title'      => ['en' => $r['title_en'] ?: $title, 'ar' => $r['title_ar'] ?: $title],
             'student'    => ['en' => $r['owner_name'], 'ar' => $r['owner_name']],
             'faculty'    => ['en' => $r['owner_faculty'] ?: '—', 'ar' => $r['owner_faculty'] ?: '—'],
-            'supervisor' => ['en' => '—', 'ar' => '—'], // تعيين المشرف: لسه مش متعمول له موديل
+            'supervisor' => ['en' => $r['supervisor_name'] ?: '—', 'ar' => $r['supervisor_name'] ?: '—'],
             'score'      => $readiness !== null ? (float) $readiness->overall_score : null,
             'category'   => $r['category'] ?: null,
             'predictedCategory'        => $classification->predicted_category ?? null,

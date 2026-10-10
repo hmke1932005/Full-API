@@ -174,15 +174,22 @@ class ProjectsApiController extends Controller
     public function approvalStatus(Request $request, $id)
     {
         $userId = (int) $request->attributes->get('uip_user_id');
-        $project = $this->projects->findOwned((string) $id, $userId);
+        $project = $this->projects->findAccessible((string) $id, $userId);
         if (!$project) {
             return $this->apiError('Project not found.', null, 404);
         }
+        $feedback = $this->approvals->feedbackForProject($project);
+        $history = $feedback['history'];
 
         return $this->apiSuccess([
             'status'          => $project->status,
             'submitted_at'    => $project->created_at,
-            'latest_decision' => $this->approvals->latestDecisionForOwner((string) $project->uuid, $userId),
+            'latest_decision' => $history ? [
+                'decision' => $history[0]['decision'], 'comments' => $history[0]['comments'], 'decided_at' => $history[0]['decided_at'],
+            ] : null,
+            'history'         => $history,
+            'grade'           => $feedback['grade'],
+            'supervisor_name' => $feedback['supervisor_name'],
         ], 'Approval status retrieved successfully.');
     }
 

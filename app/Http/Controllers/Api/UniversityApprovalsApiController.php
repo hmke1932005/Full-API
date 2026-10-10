@@ -71,7 +71,7 @@ class UniversityApprovalsApiController extends Controller
         }
 
         $locale = (string) app()->getLocale();
-        $files = array_map(fn ($f) => $f->toRowArray($locale), $this->files->forProject($project->id));
+        $files = array_map(fn ($f) => $f->toRowArray($locale), $this->files->forProjectLatest($project->id));
 
         $owner = User::find($project->owner_id);
         $student = Student::where('user_id', $project->owner_id)->first();
@@ -100,6 +100,7 @@ class UniversityApprovalsApiController extends Controller
             ] : null,
             'requires_ai_acknowledgment' => $this->approvals->requiresAiAcknowledgment($id),
             'can_approve'                => $this->can($request),
+            'review'                     => $this->approvals->reviewExtras($project),
         ], 'Project retrieved successfully.');
     }
 

@@ -184,7 +184,7 @@ class StudentTeamService
      */
     public function searchCandidates(string $projectUuid, $ownerId, string $query, int $limit = 10): array
     {
-        $project = $this->projects->findOwnedByUuid($projectUuid, $ownerId);
+        $project = $this->findManageable($projectUuid, $ownerId);
         if (!$project) {
             throw new \RuntimeException('Project not found.');
         }
@@ -192,12 +192,12 @@ class StudentTeamService
         if (mb_strlen($query) < 2) {
             return [];
         }
-        $uniId = $this->universityOf($project, $ownerId);
+        $uniId = $this->universityOf($project, $project->owner_id);
         $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $query) . '%';
         $already = \Illuminate\Support\Facades\DB::table('project_team_members')
             ->where('project_id', $project->id)->whereNotNull('user_id')->where('status', '!=', 'rejected')
             ->pluck('user_id')->all();
-        $exclude = array_merge($already, [(int) $ownerId]);
+        $exclude = array_merge($already, [(int) $project->owner_id, (int) $ownerId]);
 
         $rows = \Illuminate\Support\Facades\DB::table('users as u')
             ->leftJoin('students as s', 's.user_id', '=', 'u.id')
@@ -232,18 +232,18 @@ class StudentTeamService
      */
     public function addUserMember(string $projectUuid, $ownerId, int $targetUserId, string $role, string $locale = 'ar'): ProjectTeamMember
     {
-        $project = $this->projects->findOwnedByUuid($projectUuid, $ownerId);
+        $project = $this->findManageable($projectUuid, $ownerId);
         if (!$project) {
             throw new \RuntimeException('Project not found.');
         }
         $this->assertRoom($project->id);
 
         $target = $this->users->findById($targetUserId);
-        if (!$target || (int) $target->id === (int) $ownerId) {
+        if (!$target || (int) $target->id === (int) $project->owner_id) {
             throw new \RuntimeException($locale === 'ar' ? 'المستخدم غير موجود.' : 'User not found.');
         }
         $db = \Illuminate\Support\Facades\DB::class;
-        $uniId = $this->universityOf($project, $ownerId);
+        $uniId = $this->universityOf($project, $project->owner_id);
         $student = $db::table('students')->where('user_id', $target->id)->where('university_id', $uniId)->first();
         $staff = $db::table('academic_staff')->where('user_id', $target->id)->where('university_id', $uniId)->where('status', 'active')->first();
         if (!$student && !$staff) {
@@ -310,6 +310,20 @@ class StudentTeamService
             $this->auditLog->record($ownerId, 'student.team_remove', 'Project', $project->id, null, ['member_id' => $memberId]);
         }
         return $deleted;
+    }
+
+    /** المالك، أو طالب عضو فريق مقبول (student_member) — بيقدر يضيف زملاء. غير كده null. */
+    private function findManageable(string $uuid, $userId)
+    {
+        $project = $this->projects->findByUuid($uuid);
+        if (!$project) {
+            return null;
+        }
+        if ((string) $project->owner_id === (string) $userId) {
+            return $project;
+        }
+        $m = $this->team->findAcceptedMember($project->id, $userId);
+        return ($m && $m->role === 'student_member') ? $project : null;
     }
 
     /** جامعة المشروع، أو جامعة المالك الطالب لو المشروع نفسه معندوش university_id. */
