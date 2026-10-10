@@ -48,6 +48,7 @@ class ProjectTeamMember extends Model
             'invited_email'  => $this->invited_email,
             'role'           => $this->role,
             'status'         => $this->status,
+            'invited_by'     => $this->invited_by !== null ? (int) $this->invited_by : null,
         ];
     }
 }

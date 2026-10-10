@@ -237,9 +237,26 @@ class ResearchProjectService
         return $this->files->priorVersionsForProject($project->id);
     }
 
+    /**
+     * المالك، أو طالب عضو فريق مقبول (student_member / collaborator) — بيقدر يرفع ويستبدل ملفات.
+     * الدكاترة/المعيدين وأي دور تاني مبيرفعوش.
+     */
+    private function findContributable(string $uuid, $userId): ?Project
+    {
+        $project = $this->projects->findByUuid($uuid);
+        if (!$project) {
+            return null;
+        }
+        if ((string) $project->owner_id === (string) $userId) {
+            return $project;
+        }
+        $m = $this->team->findAcceptedMember($project->id, $userId);
+        return ($m && in_array($m->role, ['student_member', 'collaborator'], true)) ? $project : null;
+    }
+
     public function addFile(string $uuid, $ownerId, $uploadedFile): ProjectFile
     {
-        $project = $this->projects->findOwnedByUuid($uuid, $ownerId);
+        $project = $this->findContributable($uuid, $ownerId);
         if (!$project) {
             throw new \RuntimeException('Project not found.');
         }
@@ -275,7 +292,7 @@ class ResearchProjectService
      */
     public function replaceFile(string $uuid, $ownerId, $fileId, $uploadedFile): ProjectFile
     {
-        $project = $this->projects->findOwnedByUuid($uuid, $ownerId);
+        $project = $this->findContributable($uuid, $ownerId);
         if (!$project) {
             throw new \RuntimeException('Project not found.');
         }
@@ -316,7 +333,7 @@ class ResearchProjectService
     /** تاريخ الإصدارات الكامل (الأحدث الأول) لـ"عائلة" ملف واحدة. @return ProjectFile[] */
     public function fileVersionHistory(string $uuid, $ownerId, $fileId): array
     {
-        $project = $this->projects->findOwnedByUuid($uuid, $ownerId);
+        $project = $this->findAccessible($uuid, $ownerId);
         if (!$project) {
             return [];
         }
@@ -325,13 +342,17 @@ class ResearchProjectService
 
     public function deleteFile(string $uuid, $ownerId, $fileId): bool
     {
-        $project = $this->projects->findOwnedByUuid($uuid, $ownerId);
+        $project = $this->findContributable($uuid, $ownerId);
         if (!$project || !$this->canEdit($project)) {
             return false;
         }
 
         $file = $this->files->findForProject($fileId, $project->id);
         if (!$file) {
+            return false;
+        }
+        // العضو بيمسح الملفات اللي هو رفعها بس؛ المالك بيمسح أي ملف.
+        if ((string) $project->owner_id !== (string) $ownerId && (string) $file->uploaded_by !== (string) $ownerId) {
             return false;
         }
 

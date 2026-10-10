@@ -33,6 +33,12 @@ class ProjectFile extends Model
     /** file_type القيم اللي المعرض بيعتبرها وسائط مرئية/قابلة للتشغيل، مقابل مستندات عادية. */
     private const MEDIA_TYPES = ['image', 'video', 'video_link'];
 
+    /** مين رفع الملف (للعرض عند المراجع والفريق). */
+    public function uploader()
+    {
+        return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
     public function isMedia(): bool
     {
         return in_array($this->file_type, self::MEDIA_TYPES, true);
@@ -108,6 +114,8 @@ class ProjectFile extends Model
             'size_human'    => self::humanSize((int) $this->size_bytes),
             'url'           => $this->file_path ? '/' . ltrim((string) $this->file_path, '/') : null,
             'version'       => (int) ($this->version ?: 1),
+            'uploaded_by'   => $this->uploaded_by !== null ? (int) $this->uploaded_by : null,
+            'uploader_name' => $this->uploader?->full_name,
             'created_at'    => $this->created_at,
         ];
     }

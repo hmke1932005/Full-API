@@ -127,7 +127,7 @@ class StudentTeamService
         string $locale = 'ar',
         string $role = 'student_member'
     ): ProjectTeamMember {
-        $project = $this->projects->findOwnedByUuid($projectUuid, $ownerId);
+        $project = $this->findManageable($projectUuid, $ownerId);
         if (!$project) {
             throw new \RuntimeException('Project not found.');
         }
@@ -143,6 +143,11 @@ class StudentTeamService
         }
 
         if (!in_array($role, self::MANUAL_ROLES, true)) {
+            $role = 'student_member';
+        }
+        // غير المالك (طالب عضو فريق) يضيف أدوار الطلبة والمتعاونين بس — مش دكتور/معيد.
+        if ((string) $project->owner_id !== (string) $ownerId
+            && !in_array($role, ['student_member', 'collaborator', 'external_collaborator'], true)) {
             $role = 'student_member';
         }
 
@@ -297,13 +302,22 @@ class StudentTeamService
 
     public function removeMember(string $projectUuid, $ownerId, $memberId): bool
     {
-        $project = $this->projects->findOwnedByUuid($projectUuid, $ownerId);
+        $project = $this->findManageable($projectUuid, $ownerId);
         if (!$project) {
             return false;
         }
         $member = $this->team->findForProject($memberId, $project->id);
         if (!$member) {
             return false;
+        }
+        // المالك يشيل أي حد. العضو يشيل بس اللي هو ضافه من الطلبة/المتعاونين، ومش المالك ولا هيئة التدريس.
+        if ((string) $project->owner_id !== (string) $ownerId) {
+            $staffRoles = self::ROLES_FOR_STAFF_USER;
+            if ((string) $member->invited_by !== (string) $ownerId
+                || in_array($member->role, $staffRoles, true)
+                || (string) $member->user_id === (string) $project->owner_id) {
+                return false;
+            }
         }
         $deleted = $this->team->deleteForProject($memberId, $project->id);
         if ($deleted) {

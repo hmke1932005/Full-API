@@ -15,13 +15,13 @@ class ProjectFileRepository
     /** @return ProjectFile[] كل صف ملف لمشروع، الأحدث الأول (كل النسخ). */
     public function forProject($projectId): array
     {
-        return ProjectFile::where('project_id', $projectId)->orderByDesc('created_at')->get()->all();
+        return ProjectFile::with('uploader:id,full_name')->where('project_id', $projectId)->orderByDesc('created_at')->get()->all();
     }
 
     /** @return ProjectFile[] بس أحدث نسخة من كل ملف — تاب الـ Files الافتراضي. */
     public function forProjectLatest($projectId): array
     {
-        return ProjectFile::where('project_id', $projectId)->where('is_latest', 1)->orderByDesc('created_at')->get()->all();
+        return ProjectFile::with('uploader:id,full_name')->where('project_id', $projectId)->where('is_latest', 1)->orderByDesc('created_at')->get()->all();
     }
 
     /**
@@ -106,7 +106,7 @@ class ProjectFileRepository
         }
         $rootId = $file->root_file_id ?: $file->id;
 
-        return ProjectFile::where('project_id', $projectId)
+        return ProjectFile::with('uploader:id,full_name')->where('project_id', $projectId)
             ->where(function ($q) use ($rootId) {
                 $q->where('id', $rootId)->orWhere('root_file_id', $rootId);
             })
@@ -117,6 +117,6 @@ class ProjectFileRepository
     /** كل نسخ الملفات الغير حالية (المُستبدَلة) في مشروع — بيغذي بانل "Previous Versions". */
     public function priorVersionsForProject($projectId): array
     {
-        return ProjectFile::where('project_id', $projectId)->where('is_latest', 0)->orderByDesc('version')->get()->all();
+        return ProjectFile::with('uploader:id,full_name')->where('project_id', $projectId)->where('is_latest', 0)->orderByDesc('version')->get()->all();
     }
 }
