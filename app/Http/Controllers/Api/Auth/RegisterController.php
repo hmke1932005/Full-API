@@ -125,7 +125,7 @@ class RegisterController extends Controller
         // للإيميل نفسه فمحدش غيره يقدر يفعّله.
         $reclaimable = $existing
             && EmailVerificationService::blocksLogin($existing)
-            && !DB::table('user_social_accounts')->where('user_id', $existing->id)->exists()
+            && !$this->hasSocialAccount((int) $existing->id)
             && $this->roles->primaryRoleFor($existing->id) === 'student';
         if ($existing && !$reclaimable) {
             return response()->json([
@@ -225,6 +225,17 @@ class RegisterController extends Controller
             'errors'  => null,
             'meta'    => (object) [],
         ], 201);
+    }
+
+    /** لو جدول user_social_accounts لسه متعملوش (migration ما اتشغلتش) منوقّعش التسجيل بـ 500 — نعتبر مفيش حساب جوجل مربوط. */
+    private function hasSocialAccount(int $userId): bool
+    {
+        try {
+            return DB::table('user_social_accounts')->where('user_id', $userId)->exists();
+        } catch (\Throwable $e) {
+            Log::warning('user_social_accounts lookup failed (run php artisan migrate)', ['error' => $e->getMessage()]);
+            return false;
+        }
     }
 
     /** يطابق UserRepository::provisionRoleProfile() القديم — صف بروفايل فاضي حسب الدور. */
