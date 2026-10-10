@@ -50,7 +50,18 @@ class SupervisorProjectsApiController extends Controller
         return null;
     }
 
-    /** GET /api/v1/supervisor/projects?status=submitted|published|rejected|draft */
+    private const PER_PAGE_DEFAULT = 10;
+    private const PER_PAGE_MAX = 50;
+
+    /**
+     * GET /api/v1/supervisor/projects?status=submitted|published|rejected|draft
+     *     &q=<search>&page=1&per_page=10
+     *
+     * الترقيم بيتم هنا (السيرفر) بدل ما الفرونت يحمّل كل المشاريع. الـ meta
+     * بترجع total/page/per_page/total_pages + counts لكل حالة (محسوبة على
+     * النتائج بعد البحث وقبل فلتر الحالة) عشان كروت الـ KPI والتابات
+     * تفضل صح مهما كانت الصفحة الحالية.
+     */
     public function index(Request $request)
     {
         if ($err = $this->requireSupervisor($request)) {
@@ -63,14 +74,48 @@ class SupervisorProjectsApiController extends Controller
         $status = $request->input('status');
         $status = in_array($status, ['submitted', 'published', 'rejected', 'draft'], true) ? $status : null;
 
-        $projects = $supervisor
-            ? $this->assignments->scopedProjects($supervisor->id, $supervisor->university_id, $status)
+        $all = $supervisor
+            ? $this->assignments->scopedProjects($supervisor->id, $supervisor->university_id)
             : [];
 
-        return $this->apiSuccess($projects, 'Supervisor project queue retrieved successfully.', 200, [
-            'status'     => $status ?? 'all',
-            'can_manage' => in_array('manage_projects', $this->supervisors->permissionsForUser($userId), true),
-            'has_scope'  => $supervisor ? !empty($this->assignments->forSupervisor($supervisor->id)) : false,
+        $assignedTotal = count($all);
+
+        $q = mb_strtolower(trim((string) $request->input('q', '')));
+        if ($q !== '') {
+            $all = array_values(array_filter($all, function ($r) use ($q) {
+                $hay = mb_strtolower(trim(($r->title_en ?? '') . ' ' . ($r->title_ar ?? '') . ' ' . ($r->owner_name ?? '')));
+                return mb_strpos($hay, $q) !== false;
+            }));
+        }
+
+        $counts = ['all' => count($all), 'submitted' => 0, 'published' => 0, 'rejected' => 0, 'draft' => 0];
+        foreach ($all as $r) {
+            $st = $r->status ?? 'draft';
+            if (isset($counts[$st])) {
+                $counts[$st]++;
+            }
+        }
+
+        $filtered = $status === null
+            ? $all
+            : array_values(array_filter($all, fn ($r) => ($r->status ?? null) === $status));
+
+        $perPage    = max(1, min(self::PER_PAGE_MAX, (int) $request->input('per_page', self::PER_PAGE_DEFAULT)));
+        $total      = count($filtered);
+        $totalPages = max(1, (int) ceil($total / $perPage));
+        $page       = max(1, min($totalPages, (int) $request->input('page', 1)));
+        $rows       = array_slice($filtered, ($page - 1) * $perPage, $perPage);
+
+        return $this->apiSuccess($rows, 'Supervisor project queue retrieved successfully.', 200, [
+            'status'         => $status ?? 'all',
+            'can_manage'     => in_array('manage_projects', $this->supervisors->permissionsForUser($userId), true),
+            'has_scope'      => $supervisor ? !empty($this->assignments->forSupervisor($supervisor->id)) : false,
+            'total'          => $total,
+            'page'           => $page,
+            'per_page'       => $perPage,
+            'total_pages'    => $totalPages,
+            'counts'         => $counts,
+            'assigned_total' => $assignedTotal,
         ]);
     }
 
