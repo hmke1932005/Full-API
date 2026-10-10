@@ -53,17 +53,23 @@ class SecurityPoliciesApiController extends Controller
             return $this->apiError('Only Security Portal staff can view policies.', null, 403);
         }
 
+        $this->ensureAdvancedRows();
+
         $excludedKeys = [
             'login.lockout_policy', 'password.policy', 'upload.policy', 'session.policy',
             'mfa.policy', 'rate_limit.policy', 'ip_restriction.policy',
             'country_restriction.policy', 'device_restriction.policy',
-            // مفاتيح قديمة مكررة لسياسات منظّمة فوق (الإنفاذ الحقيقي بيقرا الـ JSON policies) — إظهارها
-            // كان بيخلّي الأدمن يعدّلها ومفيش أي أثر. المفتاح الوحيد اللي لسه عام ومتطبّق: monitoring.alert_on_new_ip.
-            'password.min_length', 'password.require_special', 'session.timeout_minutes',
-            'login.max_failed_attempts', 'login.lockout_minutes',
         ];
         $generic = array_values(array_map(
-            fn ($p) => $p->toArray(),
+            function ($p) {
+                $row = $p->toArray();
+                // الإعدادات السريعة (Advanced) بتعرض القيمة الحيّة من السياسة المنظّمة اللي بتتطبّق فعلًا.
+                $live = $this->aliasValue((string) $p->policy_key);
+                if ($live !== null) {
+                    $row['value'] = $live;
+                }
+                return $row;
+            },
             array_filter(
                 $this->policies->all(),
                 fn ($p) => !in_array($p->policy_key, $excludedKeys, true)
@@ -96,6 +102,10 @@ class SecurityPoliciesApiController extends Controller
 
         $key = (string) $request->input('policy_key', '');
         $value = (string) $request->input('value', '');
+
+        if (in_array($key, self::ALIAS_KEYS, true)) {
+            return $this->applyAlias($request, $key, $value);
+        }
 
         if ($key === '' || !$this->policies->updateValue($key, $value, $request->attributes->get('uip_user_id'))) {
             return $this->apiError('Could not update that policy.', null, 422);
@@ -175,6 +185,99 @@ class SecurityPoliciesApiController extends Controller
     }
 
     // -- helpers --------------------------------------------------------------
+
+    /**
+     * مفاتيح Advanced القديمة: بقت "اختصارات" لنفس السياسات المنظّمة (باسورد/جلسة/قفل) اللي بتتطبّق فعلًا،
+     * فتعديلها من هنا بيغيّر السياسة الحقيقية (قبل كده كانت بتتخزّن من غير ما أي كود يقراها).
+     */
+    private const ALIAS_KEYS = [
+        'password.min_length', 'password.require_special', 'session.timeout_minutes',
+        'login.max_failed_attempts', 'login.lockout_minutes',
+    ];
+
+    /** لو أي صف من إعدادات Advanced الافتراضية اتحذف/مكانش متعمل، بنرجّعه (القيمة الحيّة بتتعرض من السياسة الفعلية). */
+    private function ensureAdvancedRows(): void
+    {
+        $defaults = [
+            ['password.min_length',        'authentication', 'الحد الأدنى لطول كلمة المرور',        'Minimum password length',        '8'],
+            ['password.require_special',   'authentication', 'إلزام رمز خاص في كلمة المرور',        'Require special character',      '1'],
+            ['session.timeout_minutes',    'session',        'مهلة انتهاء الجلسة (دقائق)',          'Session timeout (minutes)',      '60'],
+            ['login.max_failed_attempts',  'access_control', 'الحد الأقصى لمحاولات الدخول الفاشلة', 'Max failed login attempts',      '5'],
+            ['login.lockout_minutes',      'access_control', 'مدة الحظر بعد الفشل (دقائق)',        'Lockout duration (minutes)',     '15'],
+            ['monitoring.alert_on_new_ip', 'monitoring',     'تنبيه عند دخول من مكان جديد',        'Alert on login from new IP',     '1'],
+        ];
+        try {
+            foreach ($defaults as [$key, $cat, $ar, $en, $val]) {
+                if (!$this->policies->findByKey($key)) {
+                    \App\Models\SecurityPolicy::create([
+                        'policy_key' => $key, 'category' => $cat, 'name_ar' => $ar, 'name_en' => $en, 'value' => $val, 'is_active' => true,
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('ensureAdvancedRows failed: ' . $e->getMessage());
+        }
+    }
+
+    private function aliasValue(string $key): ?string
+    {
+        try {
+            return match ($key) {
+                'password.min_length'       => (string) $this->passwordPolicy->getPolicy()['min_length'],
+                'password.require_special'  => !empty($this->passwordPolicy->getPolicy()['require_special']) ? '1' : '0',
+                'session.timeout_minutes'   => (string) $this->sessionPolicy->getPolicy()['timeout_minutes'],
+                'login.max_failed_attempts' => (string) $this->lockout->getPolicy()['max_attempts'],
+                'login.lockout_minutes'     => (string) $this->lockoutMinutes($this->lockout->getPolicy()),
+                default                     => null,
+            };
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private function lockoutMinutes(array $p): int
+    {
+        $v = (int) ($p['duration_value'] ?? 15);
+        return match ($p['duration_unit'] ?? 'minutes') {
+            'hours' => $v * 60,
+            'days'  => $v * 1440,
+            default => $v,
+        };
+    }
+
+    private function applyAlias(Request $request, string $key, string $value)
+    {
+        $uid = $request->attributes->get('uip_user_id');
+        $ip = $request->ip();
+
+        try {
+            switch ($key) {
+                case 'password.min_length':
+                    $this->passwordPolicy->updatePolicy(array_merge($this->passwordPolicy->getPolicy(), ['min_length' => (int) $value]), $uid, $ip);
+                    break;
+                case 'password.require_special':
+                    $on = in_array(strtolower(trim($value)), ['1', 'true', 'on', 'yes'], true);
+                    $this->passwordPolicy->updatePolicy(array_merge($this->passwordPolicy->getPolicy(), ['require_special' => $on]), $uid, $ip);
+                    break;
+                case 'session.timeout_minutes':
+                    $this->sessionPolicy->updatePolicy(array_merge($this->sessionPolicy->getPolicy(), ['timeout_minutes' => (int) $value]), $uid, $ip);
+                    break;
+                case 'login.max_failed_attempts':
+                    $this->lockout->updatePolicy(array_merge($this->lockout->getPolicy(), ['max_attempts' => (int) $value]), $uid, $ip);
+                    break;
+                case 'login.lockout_minutes':
+                    $this->lockout->updatePolicy(array_merge($this->lockout->getPolicy(), ['duration_value' => (int) $value, 'duration_unit' => 'minutes']), $uid, $ip);
+                    break;
+            }
+        } catch (\InvalidArgumentException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Security policy alias save failed', ['key' => $key, 'error' => $e->getMessage()]);
+            return $this->apiError('Could not save that policy.', null, 422);
+        }
+
+        return $this->apiSuccess(null, 'Policy updated.');
+    }
 
     /** Shared apply/error handling لكل نداء *PolicyService::updatePolicy(). */
     private function applyStructuredPolicy(Request $request, object $service, string $successMessage)
