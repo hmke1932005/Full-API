@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Repositories\ProjectFileRepository;
+use App\Repositories\ProjectDiscussionRepository;
 use App\Repositories\ProjectLinkRepository;
 use App\Repositories\ProjectTeamMemberRepository;
 use App\Services\AcademicStaffProjectService;
+use App\Services\ProjectNotifier;
 use Illuminate\Http\Request;
 
 /**
@@ -20,7 +22,9 @@ class AcademicStaffProjectsApiController extends Controller
         private AcademicStaffProjectService $svc,
         private ProjectFileRepository $files,
         private ProjectLinkRepository $links,
-        private ProjectTeamMemberRepository $team
+        private ProjectTeamMemberRepository $team,
+        private ProjectDiscussionRepository $discussion,
+        private ProjectNotifier $notifier
     ) {
     }
 
@@ -78,6 +82,58 @@ class AcademicStaffProjectsApiController extends Controller
             'can_decide' => $project->status === 'submitted',
             'requires_ai_ack' => $this->svc->requiresAck((string) $project->uuid),
         ], 'Project retrieved successfully.');
+    }
+
+    /** GET /api/v1/academic-staff/projects/{id}/discussion — ملاحظات المراجعة والنقاش مع الطالب/الفريق. */
+    public function discussion(Request $request, string $id)
+    {
+        [$err, $staff, $name] = $this->ctx($request);
+        if ($err) {
+            return $err;
+        }
+        [$project] = $this->svc->scopedProject($staff, $name, $id);
+        if (!$project) {
+            return $this->apiError('Project not found.', null, 404);
+        }
+        $rows = array_map(fn (array $row) => [
+            'id'          => $row['message']->id,
+            'user_id'     => $row['message']->user_id,
+            'author_name' => $row['author_name'],
+            'message'     => $row['message']->message,
+            'created_at'  => $row['message']->created_at,
+        ], $this->discussion->forProject($project->id));
+        return $this->apiSuccess($rows, 'Discussion retrieved successfully.');
+    }
+
+    /**
+     * POST /api/v1/academic-staff/projects/{id}/discussion {message}
+     * ملاحظة/تعديل مطلوب من الدكتور أو المعيد في أي حالة للمشروع (حتى قبل التقديم)؛
+     * بتظهر في تاب Discussion عند الطالب والفريق وبيوصلهم إشعار.
+     */
+    public function postNote(Request $request, string $id)
+    {
+        [$err, $staff, $name] = $this->ctx($request);
+        if ($err) {
+            return $err;
+        }
+        [$project] = $this->svc->scopedProject($staff, $name, $id);
+        if (!$project) {
+            return $this->apiError('Project not found.', null, 404);
+        }
+        $message = trim((string) $request->input('message', ''));
+        if ($message === '') {
+            return $this->apiError('Validation failed.', ['message' => 'Required.'], 422);
+        }
+        $this->discussion->create([
+            'project_id' => $project->id,
+            'user_id'    => $this->userId($request),
+            'message'    => mb_substr($message, 0, 4000),
+        ]);
+        $this->notifier->notifyTeam(
+            $project, 'review_note', 'ملاحظة جديدة على مشروعك',
+            mb_substr($message, 0, 200), '/student/projects/' . $project->uuid, $this->userId($request)
+        );
+        return $this->apiSuccess(null, 'Note sent.', 201);
     }
 
     public function approve(Request $request, string $id)

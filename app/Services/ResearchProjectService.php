@@ -30,7 +30,8 @@ use Illuminate\Support\Facades\Log;
 class ResearchProjectService
 {
     /** الحالات اللي المالك لسه يقدر يعدّلها / يرفق ملفات ليها بحرية. */
-    private const EDITABLE_STATUSES = ['draft', 'submitted', 'under_review', 'rejected'];
+    // التعديل (بيانات/ملفات) مقفول بعد التقديم؛ بيتفتح بس وهو draft (مسودة أو طُلب تعديل) أو rejected (قبل إعادة التقديم).
+    private const EDITABLE_STATUSES = ['draft', 'rejected'];
 
     public function __construct(
         private ProjectRepository $projects,
@@ -40,7 +41,8 @@ class ResearchProjectService
         private AuditLogService $auditLog,
         private CategoryRepository $categories,
         private ProjectDiscussionRepository $discussion,
-        private ProjectNotifier $notifier
+        private ProjectNotifier $notifier,
+        private ProjectDeadlineService $deadlines
     ) {
     }
 
@@ -163,15 +165,73 @@ class ResearchProjectService
 
     // -- حالة المشروع --------------------------------------------------------
 
+    /**
+     * قايمة التحقق قبل التقديم. blocking = لازم تتحل، warnings = تنبيه بس.
+     * @return array{blocking: string[], warnings: string[], deadline: ?array}
+     */
+    public function submissionChecklist(Project $project): array
+    {
+        $db = \Illuminate\Support\Facades\DB::class;
+        $blocking = [];
+        $warnings = [];
+
+        if (trim((string) $project->title_ar) === '' || trim((string) $project->title_en) === '' || trim((string) $project->summary) === '') {
+            $blocking[] = 'أكمل عنوان المشروع (عربي وإنجليزي) وملخصه.';
+        }
+
+        $hasSupervisor = trim((string) $project->supervisor_name) !== ''
+            || $db::table('project_team_members')->where('project_id', $project->id)->where('status', 'accepted')
+                ->whereIn('role', ['supervisor', 'professor', 'principal_investigator'])->exists();
+        if (!$hasSupervisor) {
+            $blocking[] = 'حدّد الدكتور المشرف على المشروع.';
+        }
+
+        $files = $db::table('project_files')->where('project_id', $project->id)->where('is_latest', 1)->get(['file_type', 'original_name']);
+        $ext = fn ($f) => strtolower(pathinfo((string) $f->original_name, PATHINFO_EXTENSION));
+        if (!$files->contains(fn ($f) => in_array($ext($f), ['pdf', 'doc', 'docx'], true))) {
+            $blocking[] = 'ارفع تقرير المشروع (PDF أو Word).';
+        }
+        $hasCode = $files->contains(fn ($f) => $f->file_type === 'source_code')
+            || $db::table('project_links')->where('project_id', $project->id)->whereIn('type', ['github', 'gitlab', 'repository'])->exists();
+        if (!$hasCode) {
+            $warnings[] = 'مفيش كود المشروع (ملف zip أو رابط GitHub).';
+        }
+        if (!$files->contains(fn ($f) => in_array($ext($f), ['ppt', 'pptx'], true))) {
+            $warnings[] = 'مفيش عرض تقديمي للمشروع.';
+        }
+
+        $deadline = $this->deadlines->forProject($project);
+        if ($deadline && !empty($deadline['submission_deadline'])) {
+            $ts = strtotime((string) $deadline['submission_deadline']);
+            $label = date('Y-m-d H:i', $ts);
+            if ($ts < time()) {
+                $blocking[] = "انتهى موعد تسليم المشروع ({$label}). تواصل مع الكلية لو محتاج مهلة.";
+            } elseif ($ts - time() < 3 * 86400) {
+                $warnings[] = "فاضل أقل من 3 أيام على موعد التسليم ({$label}).";
+            }
+        }
+
+        return ['blocking' => $blocking, 'warnings' => $warnings, 'deadline' => $deadline];
+    }
+
+    /**
+     * تقديم للمراجعة. بيقبل draft (أول مرة أو بعد طلب تعديل) و rejected (إعادة تقديم).
+     * @throws \RuntimeException لو قايمة التحقق فيها بنود إجبارية ناقصة (الرسالة بنودها).
+     */
     public function submit(string $uuid, $ownerId): bool
     {
         $project = $this->projects->findOwnedByUuid($uuid, $ownerId);
-        if (!$project || $project->status !== 'draft') {
+        if (!$project || !in_array($project->status, ['draft', 'rejected'], true)) {
             return false;
         }
+        $check = $this->submissionChecklist($project);
+        if ($check['blocking']) {
+            throw new \RuntimeException(implode("\n", $check['blocking']));
+        }
+        $previous = $project->status;
         $ok = $this->projects->updateOwned($uuid, $ownerId, ['status' => 'submitted']);
         if ($ok) {
-            $this->auditLog->record($ownerId, 'project.submit', 'Project', $project->id, ['status' => 'draft'], ['status' => 'submitted']);
+            $this->auditLog->record($ownerId, 'project.submit', 'Project', $project->id, ['status' => $previous], ['status' => 'submitted']);
             $this->notifier->notifySubmitted($this->projects->findOwnedByUuid($uuid, $ownerId));
         }
         return $ok;

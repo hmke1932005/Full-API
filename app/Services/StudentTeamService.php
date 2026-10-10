@@ -198,24 +198,45 @@ class StudentTeamService
             return [];
         }
         $uniId = $this->universityOf($project, $project->owner_id);
-        $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $query) . '%';
+        // البحث بكلمات: كل كلمة لازم تظهر في الاسم أو الإيميل أو الكود. الألقاب (د./دكتور) بتتشال،
+        // وفروق الكتابة (أ/ا، ى/ي، ة/ه) متتحسبش فرق، عشان "دكتور احمد" يلاقي "أ.د. أحمد".
+        $fold = fn (string $v) => strtr(mb_strtolower($v), ['أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا', 'ى' => 'ي', 'ة' => 'ه']);
+        $esc = fn (string $v) => str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $v);
+        $titles = ['دكتور', 'الدكتور', 'دكتوره', 'د', 'استاذ', 'الاستاذ', 'اد', 'ا', 'م', 'مهندس', 'dr', 'prof', 'eng'];
+        $tokens = array_values(array_filter(
+            preg_split('/[\s\.\/,،]+/u', $fold($query), -1, PREG_SPLIT_NO_EMPTY) ?: [],
+            fn ($t) => !in_array($t, $titles, true)
+        ));
+        if (!$tokens) {
+            return [];
+        }
+        $uniId = $this->universityOf($project, $project->owner_id);
         $already = \Illuminate\Support\Facades\DB::table('project_team_members')
-            ->where('project_id', $project->id)->whereNotNull('user_id')->where('status', '!=', 'rejected')
+            ->where('project_id', $project->id)->whereNotNull('user_id')->whereNotIn('status', ['rejected', 'removed'])
             ->pluck('user_id')->all();
         $exclude = array_merge($already, [(int) $project->owner_id, (int) $ownerId]);
+        $foldCol = fn (string $col) => "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE($col,'أ','ا'),'إ','ا'),'آ','ا'),'ى','ي'),'ة','ه'),'ـ','')";
 
         $rows = \Illuminate\Support\Facades\DB::table('users as u')
             ->leftJoin('students as s', 's.user_id', '=', 'u.id')
             ->leftJoin('academic_staff as a', 'a.user_id', '=', 'u.id')
-            ->whereNull('u.deleted_at')->where('u.status', 'active')
+            ->whereNull('u.deleted_at')->whereIn('u.status', ['active', 'pending'])
             ->whereNotIn('u.id', $exclude)
             ->where(function ($w) use ($uniId) {
-                $w->where('s.university_id', $uniId)->orWhere('a.university_id', $uniId);
-            })
-            ->where(function ($w) use ($like) {
-                $w->where('u.full_name', 'like', $like)->orWhere('u.email', 'like', $like)
-                  ->orWhere('s.student_number', 'like', $like)->orWhere('a.staff_number', 'like', $like);
-            })
+                $w->where('s.university_id', $uniId)->orWhere(function ($x) use ($uniId) {
+                    $x->where('a.university_id', $uniId)->where('a.status', 'active');
+                });
+            });
+        foreach ($tokens as $tok) {
+            $like = '%' . $esc($tok) . '%';
+            $rows->where(function ($w) use ($like, $foldCol) {
+                $w->whereRaw($foldCol('LOWER(u.full_name)') . ' LIKE ?', [$like])
+                  ->orWhere('u.email', 'like', $like)
+                  ->orWhere('s.student_number', 'like', $like)
+                  ->orWhere('a.staff_number', 'like', $like);
+            });
+        }
+        $rows = $rows
             ->selectRaw('u.id, u.full_name, u.email, s.student_number, a.staff_number, s.faculty AS student_faculty, (a.id IS NOT NULL) AS is_staff, (s.id IS NOT NULL) AS is_student')
             ->orderBy('u.full_name')->limit(max(1, min(25, $limit)))->get();
 

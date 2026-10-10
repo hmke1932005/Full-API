@@ -175,7 +175,7 @@ class AcademicStaffProjectService
         if ($official) {
             return $this->grading->saveGrade((int) $project->id, $userId, $criteria, $comments, $finalize, $locale);
         }
-        if (!in_array($project->status, ['submitted', 'published', 'rejected'], true)) {
+        if (!in_array($project->status, ['submitted', 'under_review', 'published', 'rejected'], true)) {
             return ['success' => false, 'message' => 'This project cannot be graded in its current status.'];
         }
 

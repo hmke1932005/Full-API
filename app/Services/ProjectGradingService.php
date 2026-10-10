@@ -31,7 +31,7 @@ class ProjectGradingService
     ];
 
     /** المشروع يتقيّم بس لو عدّى فعليًا بمراجعة — عمره ما يبقى مسودة لسه ما اتقدمتش. */
-    private const GRADABLE_STATUSES = ['submitted', 'published', 'rejected'];
+    private const GRADABLE_STATUSES = ['submitted', 'under_review', 'published', 'rejected'];
 
     public function __construct(
         private ProjectGradeRepository $grades,

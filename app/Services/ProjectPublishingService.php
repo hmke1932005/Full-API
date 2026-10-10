@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Log;
 class ProjectPublishingService
 {
     /** الحالات اللي الطالب لسه يقدر يعدّلها / يرفق ملفات ليها بحرية. */
-    private const EDITABLE_STATUSES = ['draft', 'submitted', 'under_review', 'rejected'];
+    private const EDITABLE_STATUSES = ['draft', 'rejected']; // مقفول بعد التقديم
 
     public function __construct(
         private ProjectRepository $projects,
@@ -95,7 +95,8 @@ class ProjectPublishingService
      */
     public function create($ownerId, array $data): Project
     {
-        $status = !empty($data['save_as_draft']) ? 'draft' : 'submitted';
+        // المشروع دايمًا بيتنشأ draft: الملفات والفريق بيتضافوا بعد الإنشاء، والتقديم بيتم بـ submit بعد قايمة التحقق.
+        $status = 'draft';
 
         $student = $this->students->findByUserId($ownerId);
         $categoryFields = $this->resolveCategory($data);
@@ -155,17 +156,8 @@ class ProjectPublishingService
      */
     public function submit(string $uuid, $ownerId): bool
     {
-        $project = $this->projects->findOwnedByUuid($uuid, $ownerId);
-        if (!$project || $project->status !== 'draft') {
-            return false;
-        }
-
-        $updated = $this->projects->updateOwned($uuid, $ownerId, ['status' => 'submitted']);
-        if ($updated) {
-            $this->notifier->notifySubmitted($this->projects->findOwnedByUuid($uuid, $ownerId));
-            Log::info('Project submitted for review', ['project_id' => $project->id, 'owner_id' => $ownerId]);
-        }
-        return $updated;
+        // التقديم الفعلي (مع قايمة التحقق) في ResearchProjectService::submit().
+        return false;
     }
 
     /** أرشفة مشروع منشور (إخفاؤه من التصفح العام من غير ما يتمسح) — زرار الفرونت. */

@@ -239,6 +239,12 @@ Route::prefix('v1')->group(function () {
     // مجموعة prefix('faculty') تحت — 'faculty/approvals' و'faculty/{id}'
     // بيتطابقوا مع نفس الـ path لو 'approvals' اتحل كـ {id}، والراوتر بياخد
     // أول تطابق بالترتيب، فالمجموعة الأخص لازم تسبق الأعم.
+    Route::prefix('project-deadlines')->middleware('uip.auth')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\ProjectDeadlinesApiController::class, 'index']);
+        Route::post('/', [\App\Http\Controllers\Api\ProjectDeadlinesApiController::class, 'store']);
+        Route::delete('/{id}', [\App\Http\Controllers\Api\ProjectDeadlinesApiController::class, 'destroy']);
+    });
+
     Route::prefix('faculty/approvals')->middleware('uip.auth')->group(function () {
         Route::get('/', [FacultyApprovalsApiController::class, 'index']);
         Route::get('/{id}', [FacultyApprovalsApiController::class, 'show']);
@@ -294,6 +300,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/reject', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'reject']);
         Route::post('/{id}/request-changes', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'requestChanges']);
         Route::post('/{id}/grade', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'saveGrade']);
+        Route::get('/{id}/discussion', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'discussion']);
+        Route::post('/{id}/discussion', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'postNote']);
     });
 
     // إعدادات حساب عضو هيئة التدريس اللوجن — /api/v1/academic-staff/settings/*.
@@ -743,6 +751,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/team/invite', [ProjectsApiController::class, 'inviteTeamMember']);
         Route::post('/{id}/team/manual', [ProjectsApiController::class, 'addManualTeamMember']);
         Route::get('/{id}/team/search', [ProjectsApiController::class, 'searchTeamCandidates']);
+        Route::get('/{id}/submission-check', [ProjectsApiController::class, 'submissionCheck']);
         Route::post('/{id}/team/add-user', [ProjectsApiController::class, 'addTeamUser']);
         Route::delete('/{id}/team/{memberId}', [ProjectsApiController::class, 'removeTeamMember']);
 

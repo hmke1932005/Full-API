@@ -261,13 +261,28 @@ class ProjectsApiController extends Controller
         return $this->apiSuccess(null, 'Project deleted successfully.');
     }
 
-    /** POST /api/v1/projects/{id}/submit — draft -> submitted، لطابور اعتماد الجامعة/الكلية. */
+    /** GET /api/v1/projects/{id}/submission-check — بنود ناقصة قبل التقديم (blocking) وتنبيهات (warnings). */
+    public function submissionCheck(Request $request, $id)
+    {
+        $project = $this->projects->findOwned((string) $id, (int) $request->attributes->get('uip_user_id'));
+        if (!$project) {
+            return $this->apiError('Project not found.', null, 404);
+        }
+        $check = $this->projects->submissionChecklist($project);
+        return $this->apiSuccess($check + ['can_submit' => in_array($project->status, ['draft', 'rejected'], true) && !$check['blocking']], 'Submission check retrieved.');
+    }
+
+    /** POST /api/v1/projects/{id}/submit — draft أو rejected -> submitted، بعد قايمة التحقق. */
     public function submit(Request $request, $id)
     {
-        $ok = $this->projects->submit((string) $id, (int) $request->attributes->get('uip_user_id'));
+        try {
+            $ok = $this->projects->submit((string) $id, (int) $request->attributes->get('uip_user_id'));
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), ['missing' => explode("\n", $e->getMessage())], 422);
+        }
         return $ok
             ? $this->apiSuccess(null, 'Project submitted for approval.')
-            : $this->apiError('Project not found, or not in draft status.', null, 409);
+            : $this->apiError('Project not found, or not in a submittable status.', null, 409);
     }
 
     /** POST /api/v1/projects/{id}/archive */
@@ -549,13 +564,17 @@ class ProjectsApiController extends Controller
             return $project;
         }
 
+        $list = $this->projects->listDiscussionFor($project);
+        $staffIds = array_flip(\Illuminate\Support\Facades\DB::table('academic_staff')
+            ->whereIn('user_id', array_map(fn ($r) => $r['message']->user_id, $list) ?: [0])->pluck('user_id')->all());
         $rows = array_map(fn (array $row) => [
             'id'          => $row['message']->id,
             'user_id'     => $row['message']->user_id,
             'author_name' => $row['author_name'],
+            'author_kind' => isset($staffIds[$row['message']->user_id]) ? 'staff' : 'student',
             'message'     => $row['message']->message,
             'created_at'  => $row['message']->created_at,
-        ], $this->projects->listDiscussionFor($project));
+        ], $list);
 
         return $this->apiSuccess($rows, 'Project discussion retrieved successfully.');
     }
