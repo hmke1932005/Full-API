@@ -86,4 +86,6 @@ find /data/uploads -type f \( -iname '*.php*' -o -iname '*.phtml' -o -iname '*.p
 - لو في نتيجة: راجعها واحذفها (أو غيّر امتدادها). وراجع الـ logs بحثًا عن طلبات غريبة على المسارات دي.
 
 ### لسه مفتوح (توصية)
-ملفات `svg` المرفوعة بتتخدم من نفس الأوريجن، وده ممكن يسمح بـ XSS لو حد فتح SVG خبيث مباشرةً. التوصية: خدمة `/uploads/*` بـ header `Content-Security-Policy: sandbox` و`X-Content-Type-Options: nosniff` على مستوى الـ web server.
+ملفات `svg`: اتقفلت على مستوى التطبيق. كل SVG بيتفحص وقت الرفع بـ DOM parser (`App\Support\SvgGuard`) وأي محتوى نشط (script، on*=، javascript:، foreignObject، animate/set، DOCTYPE/ENTITY، روابط أو url() خارجية) بيترفض. ملفات `xml` بتتخزّن بسوفكس `.txt` زي php/html.
+
+للـ SVG اللي اترفع قبل الإصلاح: `php artisan ops:svg-audit` بيفحصها ويطبع المشبوه، و`--quarantine` بيحوّل المشبوه لـ `.svg.unsafe`. (لسه مفيد كطبقة تانية: header `Content-Security-Policy: sandbox` و`X-Content-Type-Options: nosniff` على `/uploads/*` في الـ web server.)

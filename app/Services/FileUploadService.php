@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Support\SecurityLog;
+use App\Support\SvgGuard;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 
@@ -103,6 +104,7 @@ class FileUploadService
     private const NEUTRALIZED_EXTENSIONS = [
         'php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'pht', 'phps', 'phar', 'pgif',
         'html', 'htm', 'xhtml', 'shtml', 'cgi', 'pl',
+        'xml', // application/xml بيتعرض في المتصفح وممكن يشغّل xhtml/xslt من نفس الأوريجن
     ];
 
     /** الامتداد اللي بيتحط فعليًا في اسم الملف على الديسك. */
@@ -140,6 +142,8 @@ class FileUploadService
             if ($head === false || !preg_match('/<\?xml|<svg/i', $head)) {
                 throw new \RuntimeException('That file does not look like a valid SVG.');
             }
+            // SVG بيتخدم من نفس الأوريجن: أي محتوى نشط (script/on*/javascript:/روابط خارجية...) بيترفض (XSS).
+            SvgGuard::assertSafe((string) @file_get_contents($tmpPath));
             return;
         }
 
