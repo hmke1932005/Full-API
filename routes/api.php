@@ -743,6 +743,9 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/files', [ProjectsApiController::class, 'storeFile']);
         Route::get('/{id}/media', [ProjectsApiController::class, 'media']);
         Route::put('/{id}/files/{fileId}', [ProjectsApiController::class, 'replaceFile']);
+        // نفس replaceFile بـ POST: PHP مبيقراش multipart على PUT (الملف بيوصل فاضي)،
+        // فمحرر الـ ZIP في الفرونت (زرار Save) بيستخدم الـ POST ده.
+        Route::post('/{id}/files/{fileId}/replace', [ProjectsApiController::class, 'replaceFile']);
         Route::get('/{id}/files/{fileId}/versions', [ProjectsApiController::class, 'fileVersions']);
         Route::delete('/{id}/files/{fileId}', [ProjectsApiController::class, 'deleteFile']);
 

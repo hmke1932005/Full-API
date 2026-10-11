@@ -108,6 +108,8 @@ class ProjectFile extends Model
     {
         return [
             'id'            => $this->id,
+            // نفس id لكل نسخ الملف — الـ viewer بيتتبّع بيه الملف بعد ما حفظ جديد يغيّر الـ id.
+            'root_id'       => (int) ($this->root_file_id ?: $this->id),
             'original_name' => $this->original_name,
             'extension'     => strtoupper((string) pathinfo((string) $this->original_name, PATHINFO_EXTENSION)),
             'mime_type'     => $this->mime_type,

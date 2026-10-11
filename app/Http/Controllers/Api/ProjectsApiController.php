@@ -368,10 +368,12 @@ class ProjectsApiController extends Controller
                 (string) $id,
                 (int) $request->attributes->get('uip_user_id'),
                 $fileId,
-                $request->file('file')
+                $request->file('file'),
+                $request->boolean('force')
             );
         } catch (\RuntimeException $e) {
-            return $this->apiError($e->getMessage(), null, 422);
+            // 409 = نسخة أحدث اتحفظت من حد تاني من الفريق (محرر الـ ZIP بيعرض "حفظ فوقها؟").
+            return $this->apiError($e->getMessage(), null, $e->getCode() === 409 ? 409 : 422);
         }
 
         return $this->apiSuccess($file->toRowArray(), 'File replaced successfully.');

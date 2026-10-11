@@ -361,7 +361,7 @@ class ResearchProjectService
      * فاضلة (مش بتتمسح) عشان تفضل قابلة للتحميل من بانل سجل الإصدارات؛
      * الرفعة الجديدة بس اللي بتتعلّم is_latest.
      */
-    public function replaceFile(string $uuid, $ownerId, $fileId, $uploadedFile): ProjectFile
+    public function replaceFile(string $uuid, $ownerId, $fileId, $uploadedFile, bool $force = false): ProjectFile
     {
         $project = $this->findContributable($uuid, $ownerId);
         if (!$project) {
@@ -376,24 +376,54 @@ class ResearchProjectService
             throw new \RuntimeException('File not found.');
         }
 
+        // محرر الـ ZIP: لو حد تاني من الفريق حفظ نسخة أحدث بعد ما الشخص ده فتح الملف، الـ base بتاعه
+        // بقى قديم. من غير فحص كان هيطلع صفّين is_latest=1 لنفس الملف، وحفظ الأول يتمسح بصمت.
+        // 409 = "فيه نسخة أحدث"؛ force=1 = احفظ فوق الأحدث (النسخة التانية فاضلة في سجل الإصدارات).
+        if (!$previous->is_latest) {
+            $latest = null;
+            foreach ($this->files->versionsOf($previous->id, $project->id) as $v) {
+                if ($v->is_latest) {
+                    $latest = $v;
+                    break;
+                }
+            }
+            if ($latest && !$force) {
+                throw new \RuntimeException('A newer version of this file was saved by someone else.', 409);
+            }
+            if ($latest) {
+                $previous = $latest;
+            }
+        }
+
         $stored = $this->uploads->store($uploadedFile, 'research-projects', $project->uuid);
         $rootId = $previous->root_file_id ?: $previous->id;
 
-        $file = $this->files->create([
-            'project_id'    => $project->id,
-            'uploaded_by'   => $ownerId,
-            'file_type'     => $this->classifyFileType($stored['extension']),
-            'file_path'     => $stored['stored_path'],
-            'original_name' => $stored['original_name'],
-            'mime_type'     => $stored['mime_type'],
-            'size_bytes'    => $stored['size_bytes'],
-            'version'       => (int) $previous->version + 1,
-            'is_latest'     => 1,
-            'root_file_id'  => $rootId,
-        ]);
+        $file = DB::transaction(function () use ($project, $ownerId, $stored, $previous, $rootId) {
+            // قفل الصف القديم: حفظتين متزامنتين من نفس الـ base مينفعش الاتنين ينجحوا.
+            $locked = ProjectFile::whereKey($previous->id)->lockForUpdate()->first();
+            if (!$locked || !$locked->is_latest) {
+                $this->uploads->delete($stored['stored_path']);
+                throw new \RuntimeException('A newer version of this file was saved by someone else.', 409);
+            }
 
-        $previous->fill(['is_latest' => 0]);
-        $previous->save();
+            $created = $this->files->create([
+                'project_id'    => $project->id,
+                'uploaded_by'   => $ownerId,
+                'file_type'     => $this->classifyFileType($stored['extension']),
+                'file_path'     => $stored['stored_path'],
+                'original_name' => $stored['original_name'],
+                'mime_type'     => $stored['mime_type'],
+                'size_bytes'    => $stored['size_bytes'],
+                'version'       => (int) $locked->version + 1,
+                'is_latest'     => 1,
+                'root_file_id'  => $rootId,
+            ]);
+
+            $locked->fill(['is_latest' => 0]);
+            $locked->save();
+
+            return $created;
+        });
 
         Log::info('Project file replaced', ['project_id' => $project->id, 'file_id' => $file->id, 'previous_file_id' => $previous->id]);
         $this->auditLog->record($ownerId, 'project.file_replace', 'Project', $project->id, ['file' => $previous->original_name, 'version' => $previous->version], ['file' => $stored['original_name'], 'version' => $file->version]);
