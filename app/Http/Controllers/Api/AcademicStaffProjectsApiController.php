@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\ApprovalException;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Repositories\ProjectFileRepository;
@@ -70,6 +71,8 @@ class AcademicStaffProjectsApiController extends Controller
         }
 
         $owner = User::find($project->owner_id);
+        $flow = $this->svc->flowFor($project);
+        $official = $this->svc->isOfficial($link);
         return $this->apiSuccess([
             'project'  => $project->toResearchCardArray() + ['owner_name' => $owner->full_name ?? null, 'owner_email' => $owner->email ?? null],
             'files'    => array_map(fn ($f) => $f->toRowArray(), $this->files->forProjectLatest($project->id)),
@@ -78,8 +81,12 @@ class AcademicStaffProjectsApiController extends Controller
             'history'  => $this->svc->approvalHistory($project),
             'grades'   => $this->svc->gradesFor($project, $this->userId($request)),
             'link_role' => $link,
-            'is_official' => $this->svc->isOfficial($link),
-            'can_decide' => $project->status === 'submitted',
+            'is_official' => $official,
+            'flow' => $flow,
+            // القرار للدكتور المشرف (ربط رسمي) وبس لما يجي دور مرحلته. المعيد استشاري: مبيقررش.
+            'can_decide' => $official && $flow['awaiting'] === \App\Support\ApprovalFlow::SUPERVISOR,
+            'decide_blocked' => !$official ? 'advisory_role'
+                : ($project->status === 'submitted' && $flow['awaiting'] !== \App\Support\ApprovalFlow::SUPERVISOR ? 'not_your_turn' : null),
             'requires_ai_ack' => $this->svc->requiresAck((string) $project->uuid),
         ], 'Project retrieved successfully.');
     }
@@ -138,7 +145,7 @@ class AcademicStaffProjectsApiController extends Controller
 
     public function approve(Request $request, string $id)
     {
-        return $this->decide($request, $id, 'approve', 'Project approved and published.');
+        return $this->decide($request, $id, 'approve', 'Supervisor approval recorded.');
     }
 
     public function reject(Request $request, string $id)
@@ -157,9 +164,12 @@ class AcademicStaffProjectsApiController extends Controller
         if ($err) {
             return $err;
         }
-        [$project] = $this->svc->scopedProject($staff, $name, $uuid);
+        [$project, $link] = $this->svc->scopedProject($staff, $name, $uuid);
         if (!$project) {
             return $this->apiError('Project not found.', null, 404);
+        }
+        if (!$this->svc->isOfficial($link)) {
+            return $this->apiError(ApprovalException::advisoryRole()->getMessage(), null, 403);
         }
 
         $comments = trim((string) $request->input('comments', ''));
@@ -171,7 +181,11 @@ class AcademicStaffProjectsApiController extends Controller
             return $this->apiError("This project has AI-generated indicators — confirm you've reviewed them before deciding.", null, 422);
         }
 
-        $ok = $this->svc->decide($uuid, $this->userId($request), $action, $comments !== '' ? $comments : null, $ack);
+        try {
+            $ok = $this->svc->decide($uuid, $this->userId($request), $action, $comments !== '' ? $comments : null, $ack, $link);
+        } catch (ApprovalException $e) {
+            return $this->apiError($e->getMessage(), null, $e->httpStatus());
+        }
         return $ok
             ? $this->apiSuccess(null, $okMessage)
             : $this->apiError('Only a submitted project can be decided on.', null, 422);

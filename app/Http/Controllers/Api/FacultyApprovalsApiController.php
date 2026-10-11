@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\ApprovalException;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\User;
@@ -89,6 +90,8 @@ class FacultyApprovalsApiController extends Controller
 
         $readiness = $this->aiAnalysis->readinessFor((int) $project->id);
         $classification = $this->aiAnalysis->classificationFor((int) $project->id);
+        $review = $this->approvals->reviewExtras($project);
+        $isMyTurn = ($review['flow']['awaiting'] ?? null) === \App\Support\ApprovalFlow::FACULTY;
 
         return $this->apiSuccess([
             'project'          => $card,
@@ -102,14 +105,16 @@ class FacultyApprovalsApiController extends Controller
             ] : null,
             'requires_ai_acknowledgment' => $this->approvals->requiresAiAcknowledgment($id),
             'can_approve'                => $this->can($request),
-            'review'                     => $this->approvals->reviewExtras($project),
+            // أزرار القرار بتظهر بس لما الصلاحية موجودة وكمان يكون دور المرحلة دي في التسلسل الإجباري.
+            'can_decide'                 => $this->can($request) && $isMyTurn,
+            'review'                     => $review,
         ], 'Project retrieved successfully.');
     }
 
     /** POST /api/v1/faculty/approvals/{id}/approve */
     public function approve(Request $request, string $id)
     {
-        return $this->decide($request, $id, 'approveForFaculty', 'Project approved and published.', 'Project could not be approved.');
+        return $this->decide($request, $id, 'approveForFaculty', 'Approval recorded.', 'Project could not be approved.');
     }
 
     /** POST /api/v1/faculty/approvals/{id}/reject */
@@ -151,7 +156,11 @@ class FacultyApprovalsApiController extends Controller
             );
         }
 
-        $ok = $this->approvals->$action($uuid, $facultyId, $userId, $comments, $aiAcknowledged);
+        try {
+            $ok = $this->approvals->$action($uuid, $facultyId, $userId, $comments, $aiAcknowledged);
+        } catch (ApprovalException $e) {
+            return $this->apiError($e->getMessage(), null, $e->httpStatus());
+        }
 
         return $ok
             ? $this->apiSuccess(null, $successMessage)

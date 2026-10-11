@@ -78,7 +78,7 @@ class AnalyticsApiController extends Controller
 
         if ($universityId = $this->ownUniversityId($request)) {
             $counts = $this->projects->countByStatusForUniversity($universityId);
-            $published = $counts['published'] ?? 0;
+            $published = ($counts['published'] ?? 0) + ($counts['approved'] ?? 0); // معتمد (منشور أو لا)
             $rejected = $counts['rejected'] ?? 0;
             $decided = $published + $rejected;
 

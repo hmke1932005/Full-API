@@ -108,7 +108,7 @@ class DashboardsApiController extends Controller
         $facultyId = $faculty?->id;
 
         $projectRows = $facultyId ? $this->projects->forFacultyWithOwner($facultyId) : [];
-        $published = count(array_filter($projectRows, fn ($r) => $r['status'] === 'published'));
+        $published = count(array_filter($projectRows, fn ($r) => in_array($r['status'], ['approved', 'published'], true))); // معتمد (منشور أو لا)
         $rejected = count(array_filter($projectRows, fn ($r) => $r['status'] === 'rejected'));
         $submitted = count(array_filter($projectRows, fn ($r) => $r['status'] === 'submitted'));
         $decided = $published + $rejected;
@@ -153,7 +153,7 @@ class DashboardsApiController extends Controller
         $universityId = $university?->id;
 
         $counts = $universityId ? $this->projects->countByStatusForUniversity($universityId) : [];
-        $published = $counts['published'] ?? 0;
+        $published = ($counts['published'] ?? 0) + ($counts['approved'] ?? 0); // معتمد (منشور أو لا)
         $rejected = $counts['rejected'] ?? 0;
         $decided = $published + $rejected;
 

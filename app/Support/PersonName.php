@@ -41,4 +41,28 @@ final class PersonName
         $longer = $shorter === $a ? $b : $a;
         return count(explode(' ', $shorter)) >= 2 && str_contains($longer, $shorter);
     }
+
+    /**
+     * يلاقي حساب واحد بس من $staff (صفوف فيها full_name) يطابق الاسم المكتوب: تطابق تام بعد التوحيد
+     * أولًا، وإلا احتواء. لو أكتر من واحد (أو ولا واحد) بيرجع null — مبنخمنش.
+     * @param iterable<object> $staff
+     * @return object|null
+     */
+    public static function resolveUnique(?string $typed, iterable $staff): ?object
+    {
+        $staff = is_array($staff) ? $staff : iterator_to_array($staff, false);
+        $norm = self::normalize($typed);
+        if ($norm === '') {
+            return null;
+        }
+        $exact = array_values(array_filter($staff, fn ($s) => self::normalize($s->full_name) === $norm));
+        if (count($exact) === 1) {
+            return $exact[0];
+        }
+        if (count($exact) > 1) {
+            return null;
+        }
+        $partial = array_values(array_filter($staff, fn ($s) => self::matches($typed, $s->full_name)));
+        return count($partial) === 1 ? $partial[0] : null;
+    }
 }

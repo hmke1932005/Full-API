@@ -914,7 +914,8 @@ class ProjectRepository
     public function decisionCounts(): array
     {
         return [
-            'published' => $this->countByStatus('published'),
+            // معتمد = approved + published (الاعتماد منفصل عن النشر): بيدخلوا في معدل الاعتماد الاتنين.
+            'published' => $this->countByStatus('published') + $this->countByStatus('approved'),
             'rejected'  => $this->countByStatus('rejected'),
         ];
     }
@@ -1386,6 +1387,18 @@ class ProjectRepository
         }
         $project->fill(array_merge(['status' => $status], $extra));
         return $project->save();
+    }
+
+    /** بيضمن إن المشروع عنده slug فريد (بيتولد مرة واحدة ويتحفظ) — النشر محتاجه. */
+    public function ensureSlug(Project $project): string
+    {
+        if (!$project->slug) {
+            $project->slug = $this->generateUniqueSlug($project);
+            if ($project->exists) {
+                $project->save();
+            }
+        }
+        return (string) $project->slug;
     }
 
     private function generateUniqueSlug(Project $project): string

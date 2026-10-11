@@ -53,13 +53,7 @@ class ProjectNotifier
             ->where('a.university_id', $uni)->where('a.status', 'active')->whereNull('u.deleted_at')
             ->get(['a.user_id', 'u.full_name', 'u.email']);
 
-        $typed = PersonName::normalize($project->supervisor_name);
-        $exact = $staff->filter(fn ($s) => PersonName::normalize($s->full_name) === $typed)->values();
-        $picked = $exact->count() === 1 ? $exact[0] : null;
-        if ($picked === null && $exact->count() === 0) {
-            $partial = $staff->filter(fn ($s) => PersonName::matches($project->supervisor_name, $s->full_name))->values();
-            $picked = $partial->count() === 1 ? $partial[0] : null;
-        }
+        $picked = PersonName::resolveUnique($project->supervisor_name, $staff->all());
         if ($picked === null) {
             return null;
         }
@@ -97,7 +91,7 @@ class ProjectNotifier
     }
 
     /** إشعار كل الأطراف لما المشروع يتقدّم: المشرف/المعيد، الكلية، الجامعة، وباقي الفريق. */
-    public function notifySubmitted(?Project $project): void
+    public function notifySubmitted(?Project $project, ?string $firstStage = null): void
     {
         if (!$project) {
             return;
@@ -122,16 +116,20 @@ class ProjectNotifier
             $send($uid, "\"{$title}\" تم تقديمه وبانتظار مراجعتك.", '/academic-staff/projects/' . $project->uuid);
         }
 
-        // كلية الطالب
+        // كلية الطالب والجامعة: "دورك الآن" لو هي أول مرحلة مطلوبة، وإلا إعلام فقط — الاعتماد بالترتيب
+        // (دكتور ← كلية ← جامعة) وبيوصلهم إشعار "دورك الآن" لما المرحلة اللي قبلهم تعتمد (notifyStageTurn).
         $facultyId = DB::table('students')->where('user_id', $project->owner_id)->value('faculty_id');
         if ($facultyId) {
-            $send(DB::table('faculties')->where('id', $facultyId)->value('user_id'), "\"{$title}\" تم تقديمه لاعتمادكم.", '/faculty/approvals');
+            $send(DB::table('faculties')->where('id', $facultyId)->value('user_id'),
+                $firstStage === 'faculty_review' ? "\"{$title}\" تم تقديمه وبانتظار اعتمادكم." : ($firstStage === null ? "\"{$title}\" تم تقديمه، والاعتماد بالترتيب (دكتور ← كلية ← جامعة)." : "\"{$title}\" تم تقديمه، وبانتظار اعتماد المرحلة السابقة أولًا."),
+                '/faculty/approvals/' . $project->uuid);
         }
 
-        // الجامعة
         $uni = $this->universityId($project);
         if ($uni) {
-            $send(DB::table('universities')->where('id', $uni)->value('user_id'), "\"{$title}\" تم تقديمه لاعتمادكم.", '/university/approvals');
+            $send(DB::table('universities')->where('id', $uni)->value('user_id'),
+                $firstStage === 'university_review' ? "\"{$title}\" تم تقديمه وبانتظار اعتمادكم." : ($firstStage === null ? "\"{$title}\" تم تقديمه، والاعتماد بالترتيب (دكتور ← كلية ← جامعة)." : "\"{$title}\" تم تقديمه، وبانتظار اعتماد المراحل السابقة أولًا."),
+                '/university/approvals/' . $project->uuid);
         }
 
         // باقي أعضاء الفريق من الطلبة
@@ -139,6 +137,29 @@ class ProjectNotifier
             ->whereNotIn('role', self::STAFF_ROLES)->whereNotNull('user_id')->pluck('user_id')->all();
         foreach ($memberIds as $uid) {
             $send($uid, "تم تقديم المشروع \"{$title}\" للمراجعة.", '/student/projects/' . $project->uuid);
+        }
+    }
+
+    /**
+     * "دورك الآن": بيتبعت لصاحب المرحلة الجاية بعد ما اللي قبلها اعتمد (مسار الاعتماد الإجباري).
+     * $stage = faculty_review | university_review (الدكتور بيتبلّغ وقت التقديم).
+     */
+    public function notifyStageTurn(Project $project, string $stage): void
+    {
+        $title = $this->title($project);
+        if ($stage === 'faculty_review') {
+            $facultyId = DB::table('students')->where('user_id', $project->owner_id)->value('faculty_id');
+            $userId = $facultyId ? DB::table('faculties')->where('id', $facultyId)->value('user_id') : null;
+            $link = '/faculty/approvals/' . $project->uuid;
+        } elseif ($stage === 'university_review') {
+            $uni = $this->universityId($project);
+            $userId = $uni ? DB::table('universities')->where('id', $uni)->value('user_id') : null;
+            $link = '/university/approvals/' . $project->uuid;
+        } else {
+            return;
+        }
+        if ($userId) {
+            $this->notifications->notify((int) $userId, 'project_submitted', 'دورك الآن في اعتماد مشروع', "\"{$title}\" وصل لمرحلتكم وبانتظار قراركم.", $link);
         }
     }
 

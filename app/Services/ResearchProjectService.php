@@ -9,6 +9,7 @@ use App\Repositories\ProjectDiscussionRepository;
 use App\Repositories\ProjectFileRepository;
 use App\Repositories\ProjectRepository;
 use App\Repositories\ProjectTeamMemberRepository;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -42,7 +43,8 @@ class ResearchProjectService
         private CategoryRepository $categories,
         private ProjectDiscussionRepository $discussion,
         private ProjectNotifier $notifier,
-        private ProjectDeadlineService $deadlines
+        private ProjectDeadlineService $deadlines,
+        private ProjectApprovalService $approvals
     ) {
     }
 
@@ -229,10 +231,19 @@ class ResearchProjectService
             throw new \RuntimeException(implode("\n", $check['blocking']));
         }
         $previous = $project->status;
-        $ok = $this->projects->updateOwned($uuid, $ownerId, ['status' => 'submitted']);
+        // كل تقديم/إعادة تقديم = دورة مراجعة جديدة (review_round): موافقات الدورة القديمة مبتتحسبش،
+        // والمسار كله بيتعاد بالترتيب من الدكتور المشرف.
+        $ok = DB::transaction(function () use ($uuid, $ownerId, $project) {
+            $updated = $this->projects->updateOwned($uuid, $ownerId, ['status' => 'submitted']);
+            if ($updated) {
+                DB::table('projects')->where('id', $project->id)->increment('review_round');
+            }
+            return $updated;
+        });
         if ($ok) {
             $this->auditLog->record($ownerId, 'project.submit', 'Project', $project->id, ['status' => $previous], ['status' => 'submitted']);
-            $this->notifier->notifySubmitted($this->projects->findOwnedByUuid($uuid, $ownerId));
+            $submitted = $this->projects->findOwnedByUuid($uuid, $ownerId);
+            $this->notifier->notifySubmitted($submitted, $submitted ? $this->approvals->flowFor($submitted)['awaiting'] : null);
         }
         return $ok;
     }

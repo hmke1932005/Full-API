@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\ApprovalException;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\User;
@@ -87,6 +88,8 @@ class UniversityApprovalsApiController extends Controller
 
         $readiness = $this->aiAnalysis->readinessFor((int) $project->id);
         $classification = $this->aiAnalysis->classificationFor((int) $project->id);
+        $review = $this->approvals->reviewExtras($project);
+        $isMyTurn = ($review['flow']['awaiting'] ?? null) === \App\Support\ApprovalFlow::UNIVERSITY;
 
         return $this->apiSuccess([
             'project'          => $card,
@@ -100,14 +103,19 @@ class UniversityApprovalsApiController extends Controller
             ] : null,
             'requires_ai_acknowledgment' => $this->approvals->requiresAiAcknowledgment($id),
             'can_approve'                => $this->can($request),
-            'review'                     => $this->approvals->reviewExtras($project),
+            // أزرار القرار بتظهر بس لما الصلاحية موجودة وكمان يكون دور المرحلة دي في التسلسل الإجباري.
+            'can_decide'                 => $this->can($request) && $isMyTurn,
+            // النشر للعامة منفصل عن الاعتماد: المشروع المعتمد (approved) بس يتنشر، والمنشور يتسحب لمعتمد.
+            'can_publish'                => $this->can($request) && $project->status === 'approved',
+            'can_unpublish'              => $this->can($request) && $project->status === 'published',
+            'review'                     => $review,
         ], 'Project retrieved successfully.');
     }
 
     /** POST /api/v1/university/approvals/{id}/approve */
     public function approve(Request $request, string $id)
     {
-        return $this->decide($request, $id, 'approve', 'Project approved and published.', 'Project could not be approved.');
+        return $this->decide($request, $id, 'approve', 'Approval recorded.', 'Project could not be approved.');
     }
 
     /** POST /api/v1/university/approvals/{id}/reject */
@@ -120,6 +128,37 @@ class UniversityApprovalsApiController extends Controller
     public function requestChanges(Request $request, string $id)
     {
         return $this->decide($request, $id, 'requestChanges', 'Changes requested from the student.', 'Request could not be sent.');
+    }
+
+    /** POST /api/v1/university/approvals/{id}/publish — approved ← published (بعد الاعتماد النهائي). */
+    public function publish(Request $request, string $id)
+    {
+        return $this->setPublication($request, $id, true);
+    }
+
+    /** POST /api/v1/university/approvals/{id}/unpublish — published ← approved. */
+    public function unpublish(Request $request, string $id)
+    {
+        return $this->setPublication($request, $id, false);
+    }
+
+    private function setPublication(Request $request, string $uuid, bool $publish)
+    {
+        if (!$this->can($request)) {
+            return $this->apiError('You do not have permission to publish or unpublish projects.', null, 403);
+        }
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $universityId = $this->approvals->universityIdForUser($userId);
+        if (!$universityId) {
+            return $this->apiError('Project not found.', null, 404);
+        }
+        $ok = $publish
+            ? $this->approvals->publishForUniversity($uuid, $universityId, $userId)
+            : $this->approvals->unpublishForUniversity($uuid, $universityId, $userId);
+
+        return $ok
+            ? $this->apiSuccess(null, $publish ? 'Project published.' : 'Project unpublished.')
+            : $this->apiError($publish ? 'Only an approved project can be published.' : 'Only a published project can be unpublished.', null, 422);
     }
 
     private function decide(Request $request, string $uuid, string $action, string $successMessage, string $errorMessage)
@@ -145,7 +184,11 @@ class UniversityApprovalsApiController extends Controller
             );
         }
 
-        $ok = $this->approvals->$action($uuid, $universityId, $userId, $comments, $aiAcknowledged);
+        try {
+            $ok = $this->approvals->$action($uuid, $universityId, $userId, $comments, $aiAcknowledged);
+        } catch (ApprovalException $e) {
+            return $this->apiError($e->getMessage(), null, $e->httpStatus());
+        }
 
         return $ok
             ? $this->apiSuccess(null, $successMessage)

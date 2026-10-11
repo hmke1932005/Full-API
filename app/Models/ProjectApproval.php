@@ -6,7 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * يطابق جدول `project_approvals` القديم بالظبط — صف واحد لكل قرار مراجعة
- * (بند university_review دلوقتي، admin_review هيكمل لاحقًا). منفصل عن
+ * وله مرحلة مستقلة (stage: supervisor_review / faculty_review / university_review /
+ * admin_review — شوف App\Support\ApprovalFlow) ودورة تقديم (review_round). منفصل عن
  * عمود `status` بتاع المشروع نفسه.
  */
 class ProjectApproval extends Model
@@ -15,7 +16,7 @@ class ProjectApproval extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'project_id', 'reviewer_id', 'stage', 'decision', 'comments', 'decided_at',
+        'project_id', 'reviewer_id', 'stage', 'review_round', 'decision', 'comments', 'decided_at',
         'ai_output_acknowledged', 'ai_output_snapshot',
     ];
 

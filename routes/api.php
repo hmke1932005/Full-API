@@ -732,6 +732,7 @@ Route::prefix('v1')->group(function () {
         Route::patch('/{id}', [ProjectsApiController::class, 'update'])->middleware('uip.can:project.edit_own');
         Route::delete('/{id}', [ProjectsApiController::class, 'destroy']);
         Route::post('/{id}/submit', [ProjectsApiController::class, 'submit']);
+        Route::post('/{id}/publish', [ProjectsApiController::class, 'publish']);
         Route::post('/{id}/archive', [ProjectsApiController::class, 'archive']);
         Route::post('/{id}/unarchive', [ProjectsApiController::class, 'unarchive']);
 
@@ -1380,6 +1381,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/approvals/{id}/approve', [UniversityApprovalsApiController::class, 'approve']);
         Route::post('/approvals/{id}/reject', [UniversityApprovalsApiController::class, 'reject']);
         Route::post('/approvals/{id}/request-changes', [UniversityApprovalsApiController::class, 'requestChanges']);
+        Route::post('/approvals/{id}/publish', [UniversityApprovalsApiController::class, 'publish']);
+        Route::post('/approvals/{id}/unpublish', [UniversityApprovalsApiController::class, 'unpublish']);
 
         Route::get('/join-requests', [UniversityJoinRequestsApiController::class, 'index']);
         Route::post('/join-requests/{id}/approve', [UniversityJoinRequestsApiController::class, 'approve']);

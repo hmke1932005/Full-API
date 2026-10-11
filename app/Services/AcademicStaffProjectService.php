@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
  */
 class AcademicStaffProjectService
 {
-    private const OFFICIAL_ROLES = ['supervisor', 'professor', 'principal_investigator'];
+    private const OFFICIAL_ROLES = \App\Support\ApprovalFlow::OFFICIAL_ROLES;
     private const LINK_ROLES = ['professor', 'principal_investigator', 'supervisor', 'teaching_assistant'];
     private const LETTERS = [[90, 'A'], [80, 'B'], [70, 'C'], [60, 'D'], [0, 'F']];
 
@@ -91,10 +91,12 @@ class AcademicStaffProjectService
             ->join('users as u', 'u.id', '=', 'p.owner_id')
             ->leftJoin('students as s', 's.user_id', '=', 'p.owner_id')
             ->whereIn('p.id', $ids)
-            ->selectRaw("p.id, p.uuid, p.title_en, p.title_ar, p.status, p.created_at, p.updated_at, u.full_name AS owner_name, s.faculty AS owner_faculty,
+            ->selectRaw("p.id, p.uuid, p.owner_id, p.university_id, p.review_round, p.supervisor_name, p.title_en, p.title_ar, p.status, p.created_at, p.updated_at, u.full_name AS owner_name, s.faculty AS owner_faculty,
                 (SELECT pa.decision FROM project_approvals pa WHERE pa.project_id = p.id ORDER BY pa.created_at DESC, pa.id DESC LIMIT 1) AS last_decision,
                 (SELECT g.status FROM project_grades g WHERE g.project_id = p.id LIMIT 1) AS official_grade_status")
             ->orderByDesc('p.updated_at')->get();
+
+        $flows = $this->approvals->flowSummaries($rows->map(fn ($r) => (array) $r)->all());
 
         $out = [];
         foreach ($rows as $r) {
@@ -108,6 +110,7 @@ class AcademicStaffProjectService
                 'status' => $r->status, 'last_decision' => $r->last_decision,
                 'owner_name' => $r->owner_name, 'owner_faculty' => $r->owner_faculty,
                 'link_role' => $link, 'is_official' => $this->isOfficial($link),
+                'awaiting' => $flows[(int) $r->id]['awaiting'] ?? null,
                 'official_grade_status' => $r->official_grade_status,
                 'updated_at' => $r->updated_at,
             ];
@@ -126,9 +129,16 @@ class AcademicStaffProjectService
         return isset($links[(int) $project->id]) ? [$project, $links[(int) $project->id]] : [null, null];
     }
 
-    public function decide(string $uuid, int $userId, string $action, ?string $comments, bool $ack): bool
+    /** @throws \App\Exceptions\ApprovalException لو المعيد (ربط استشاري) أو مش دور المشرف في التسلسل. */
+    public function decide(string $uuid, int $userId, string $action, ?string $comments, bool $ack, ?string $linkRole): bool
     {
-        return $this->approvals->decideAsStaff($uuid, $userId, $action, $comments, $ack);
+        return $this->approvals->decideAsStaff($uuid, $userId, $action, $comments, $ack, $linkRole);
+    }
+
+    /** مسار الاعتماد للمشروع (المراحل + المرحلة المنتظرة). */
+    public function flowFor(Project $project): array
+    {
+        return $this->approvals->flowFor($project);
     }
 
     public function requiresAck(string $uuid): bool
@@ -175,7 +185,7 @@ class AcademicStaffProjectService
         if ($official) {
             return $this->grading->saveGrade((int) $project->id, $userId, $criteria, $comments, $finalize, $locale);
         }
-        if (!in_array($project->status, ['submitted', 'under_review', 'published', 'rejected'], true)) {
+        if (!in_array($project->status, ProjectGradingService::GRADABLE_STATUSES, true)) {
             return ['success' => false, 'message' => 'This project cannot be graded in its current status.'];
         }
 

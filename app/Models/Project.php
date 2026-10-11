@@ -27,13 +27,15 @@ class Project extends Model
     protected $fillable = [
         'uuid', 'slug', 'owner_id', 'university_id', 'title_ar', 'title_en', 'summary',
         'description', 'category', 'category_id', 'tags', 'keywords', 'supervisor_name', 'cover_image_path',
-        'repository_url', 'demo_url', 'visibility', 'status', 'views_count', 'likes_count', 'published_at',
+        'repository_url', 'demo_url', 'visibility', 'status', 'views_count', 'likes_count', 'published_at', 'approved_at', 'review_round',
         'sdgs', 'technologies', 'budget', 'timeline_start', 'timeline_end',
     ];
 
     protected $casts = [
         'tags'         => 'array',
         'published_at' => 'datetime',
+        'approved_at'  => 'datetime',
+        'review_round' => 'integer',
         'budget'       => 'float',
     ];
 
@@ -55,7 +57,8 @@ class Project extends Model
         return match ($this->status) {
             'draft'     => 'draft',
             'published' => 'published',
-            default     => 'pending', // submitted, under_review, approved, rejected
+            'approved'  => 'approved', // معتمد ومش منشور
+            default     => 'pending', // submitted, under_review, rejected
         };
     }
 

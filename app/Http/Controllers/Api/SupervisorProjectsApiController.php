@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\ApprovalException;
 use App\Http\Controllers\Controller;
 use App\Repositories\SupervisorAssignmentRepository;
 use App\Repositories\SupervisorRepository;
@@ -54,7 +55,7 @@ class SupervisorProjectsApiController extends Controller
     private const PER_PAGE_MAX = 50;
 
     /**
-     * GET /api/v1/supervisor/projects?status=submitted|published|rejected|draft
+     * GET /api/v1/supervisor/projects?status=submitted|approved|published|rejected|draft
      *     &q=<search>&page=1&per_page=10
      *
      * الترقيم بيتم هنا (السيرفر) بدل ما الفرونت يحمّل كل المشاريع. الـ meta
@@ -72,7 +73,7 @@ class SupervisorProjectsApiController extends Controller
         $supervisor = $this->supervisors->findActiveByUserId($userId);
 
         $status = $request->input('status');
-        $status = in_array($status, ['submitted', 'published', 'rejected', 'draft'], true) ? $status : null;
+        $status = in_array($status, ['submitted', 'approved', 'published', 'rejected', 'draft'], true) ? $status : null;
 
         $all = $supervisor
             ? $this->assignments->scopedProjects($supervisor->id, $supervisor->university_id)
@@ -88,7 +89,7 @@ class SupervisorProjectsApiController extends Controller
             }));
         }
 
-        $counts = ['all' => count($all), 'submitted' => 0, 'published' => 0, 'rejected' => 0, 'draft' => 0];
+        $counts = ['all' => count($all), 'submitted' => 0, 'approved' => 0, 'published' => 0, 'rejected' => 0, 'draft' => 0];
         foreach ($all as $r) {
             $st = $r->status ?? 'draft';
             if (isset($counts[$st])) {
@@ -106,6 +107,13 @@ class SupervisorProjectsApiController extends Controller
         $page       = max(1, min($totalPages, (int) $request->input('page', 1)));
         $rows       = array_slice($filtered, ($page - 1) * $perPage, $perPage);
 
+        // المرحلة اللي كل مشروع في الصفحة بينتظرها: قرار المشرف-بنطاق (مرحلة الجامعة) بيتفتح بس لما يجي دورها.
+        $flows = $this->approvals->flowSummaries(array_map(fn ($r) => (array) $r, $rows));
+        foreach ($rows as $r) {
+            $r->awaiting = $flows[(int) $r->id]['awaiting'] ?? null;
+            $r->stages = $flows[(int) $r->id]['stages'] ?? [];
+        }
+
         return $this->apiSuccess($rows, 'Supervisor project queue retrieved successfully.', 200, [
             'status'         => $status ?? 'all',
             'can_manage'     => in_array('manage_projects', $this->supervisors->permissionsForUser($userId), true),
@@ -122,7 +130,7 @@ class SupervisorProjectsApiController extends Controller
     /** POST /api/v1/supervisor/projects/{id}/approve — {id} هو uuid المشروع. */
     public function approve(Request $request, string $id)
     {
-        return $this->decide($request, $id, 'approve', 'Project approved and published.', 'Project could not be approved.');
+        return $this->decide($request, $id, 'approve', 'Approval recorded.', 'Project could not be approved.');
     }
 
     /** POST /api/v1/supervisor/projects/{id}/reject */
@@ -156,7 +164,11 @@ class SupervisorProjectsApiController extends Controller
         }
 
         $comments = $request->input('comments');
-        $ok = $this->approvals->$action($uuid, $supervisor->university_id, $userId, $comments ?: null);
+        try {
+            $ok = $this->approvals->$action($uuid, $supervisor->university_id, $userId, $comments ?: null);
+        } catch (ApprovalException $e) {
+            return $this->apiError($e->getMessage(), null, $e->httpStatus());
+        }
 
         return $ok
             ? $this->apiSuccess(null, $successMessage)

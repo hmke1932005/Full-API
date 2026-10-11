@@ -185,9 +185,12 @@ class ProjectsApiController extends Controller
             'status'          => $project->status,
             'submitted_at'    => $project->created_at,
             'latest_decision' => $history ? [
-                'decision' => $history[0]['decision'], 'comments' => $history[0]['comments'], 'decided_at' => $history[0]['decided_at'],
+                'decision' => $history[0]['decision'], 'stage' => $history[0]['stage'] ?? null, 'comments' => $history[0]['comments'], 'decided_at' => $history[0]['decided_at'],
             ] : null,
             'history'         => $history,
+            'flow'            => $feedback['flow'],
+            'approved_at'     => $project->approved_at,
+            'published_at'    => $project->published_at,
             'grade'           => $feedback['grade'],
             'supervisor_name' => $feedback['supervisor_name'],
         ], 'Approval status retrieved successfully.');
@@ -283,6 +286,21 @@ class ProjectsApiController extends Controller
         return $ok
             ? $this->apiSuccess(null, 'Project submitted for approval.')
             : $this->apiError('Project not found, or not in a submittable status.', null, 409);
+    }
+
+    /**
+     * POST /api/v1/projects/{id}/publish — صاحب المشروع ينشر مشروعه المعتمد (approved) للعامة.
+     * الاعتماد والنشر خطوتين منفصلتين: الاعتماد (دكتور ← كلية ← جامعة) مبينشرش لوحده.
+     */
+    public function publish(Request $request, $id)
+    {
+        if ((string) $request->attributes->get('uip_role') !== 'student') {
+            return $this->apiError('Only the project owner can publish it.', null, 403);
+        }
+        $ok = $this->approvals->publishAsOwner((string) $id, (int) $request->attributes->get('uip_user_id'));
+        return $ok
+            ? $this->apiSuccess(null, 'Project published.')
+            : $this->apiError('Only an approved project that you own can be published.', null, 409);
     }
 
     /** POST /api/v1/projects/{id}/archive */
