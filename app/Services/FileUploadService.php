@@ -79,7 +79,8 @@ class FileUploadService
             throw new \RuntimeException('Could not prepare the upload destination.');
         }
 
-        $storedName = bin2hex(random_bytes(16)) . '.' . $extension;
+        // الامتداد المنفّذ/المعروض كصفحة بيتخزّن بسوفكس .txt (شوف storedExtension) — الاسم الأصلي بيتحفظ في original_name.
+        $storedName = bin2hex(random_bytes(16)) . '.' . self::storedExtension($extension);
 
         if (!$file->move($targetDir, $storedName)) {
             throw new \RuntimeException('Failed to save the uploaded file.');
@@ -92,6 +93,23 @@ class FileUploadService
             'size_bytes'    => (int) $sizeBytes,
             'extension'     => $extension,
         ];
+    }
+
+    /**
+     * امتدادات السيرفر ممكن ينفّذها (php وأخواتها: FrankenPHP/Caddy بيشغّل أي .php تحت public/ عبر php_server)
+     * أو يعرضها كصفحة من نفس الأوريجن (html/htm/xhtml/shtml => XSS). فئات messages/ai_assistant/general
+     * بتسمح برفعها كملفات مشاركة، فبنخزّنها بسوفكس .txt: بتتخدم text/plain ومبتتنفّذش أبدًا.
+     */
+    private const NEUTRALIZED_EXTENSIONS = [
+        'php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'pht', 'phps', 'phar', 'pgif',
+        'html', 'htm', 'xhtml', 'shtml', 'cgi', 'pl',
+    ];
+
+    /** الامتداد اللي بيتحط فعليًا في اسم الملف على الديسك. */
+    public static function storedExtension(string $extension): string
+    {
+        $extension = strtolower($extension);
+        return in_array($extension, self::NEUTRALIZED_EXTENSIONS, true) ? $extension . '.txt' : $extension;
     }
 
     /** Best-effort delete of a previously stored file (paths are relative to public/). */

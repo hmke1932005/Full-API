@@ -795,6 +795,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/override', [AdminApprovalsApiController::class, 'override']);
     });
 
+    // تشغيل: حالة الـ Volume (التخزين الدائم) + حدود رفع PHP كما يراها الويب فعلًا.
+    Route::get('admin/system/storage-health', [\App\Http\Controllers\Api\AdminStorageHealthApiController::class, 'show'])
+        ->middleware(['uip.auth', 'uip.admin']);
+
     // بند 11 مرحلة 4 — تنسيق أدمن للمشاريع المميّزة على صفحة الهبوط
     // العامة. أول ظهور لـ prefix('admin/featured-projects')، فمفيش تضارب.
     Route::prefix('admin/featured-projects')->middleware(['uip.auth', 'uip.admin'])->group(function () {
