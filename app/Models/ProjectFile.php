@@ -112,6 +112,7 @@ class ProjectFile extends Model
             'extension'     => strtoupper((string) pathinfo((string) $this->original_name, PATHINFO_EXTENSION)),
             'mime_type'     => $this->mime_type,
             'size_human'    => self::humanSize((int) $this->size_bytes),
+            'size_bytes'    => (int) $this->size_bytes,
             'url'           => $this->file_path ? '/' . ltrim((string) $this->file_path, '/') : null,
             'version'       => (int) ($this->version ?: 1),
             'uploaded_by'   => $this->uploaded_by !== null ? (int) $this->uploaded_by : null,
