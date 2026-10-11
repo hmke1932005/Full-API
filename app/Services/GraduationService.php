@@ -51,7 +51,7 @@ class GraduationService
             return ['eligible' => false, 'already_graduated' => false, 'revoked' => false, 'checks' => [], 'finalized_grade' => null, 'student' => null, 'existing_record' => null];
         }
 
-        $finalGrades = $this->grades->finalGradesForOwners([$studentRow['user_id']]);
+        $finalGrades = $this->grades->finalGradesForUser((int) $studentRow['user_id']);
         $finalizedGrade = $finalGrades[0] ?? null;
         $existing = $this->records->findByStudent($studentId);
 
@@ -468,7 +468,7 @@ class GraduationService
             return ['student' => null, 'grades' => [], 'graduation' => null];
         }
 
-        $grades = $this->grades->finalGradesForOwners([$student['user_id']]);
+        $grades = $this->grades->finalGradesForUser((int) $student['user_id']);
         $graduation = $this->records->findByStudent($studentId);
 
         return ['student' => $student, 'grades' => $grades, 'graduation' => $graduation];

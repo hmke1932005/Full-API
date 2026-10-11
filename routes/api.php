@@ -251,6 +251,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/approve', [FacultyApprovalsApiController::class, 'approve']);
         Route::post('/{id}/reject', [FacultyApprovalsApiController::class, 'reject']);
         Route::post('/{id}/request-changes', [FacultyApprovalsApiController::class, 'requestChanges']);
+        Route::post('/{id}/grade', [FacultyApprovalsApiController::class, 'saveGrade']);
+        Route::post('/{id}/grade/reopen', [FacultyApprovalsApiController::class, 'reopenGrade']);
     });
 
     // بند 10 — Academic Staff + Faculty portal، جزء 2: إعدادات حساب لوجين
@@ -300,6 +302,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/reject', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'reject']);
         Route::post('/{id}/request-changes', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'requestChanges']);
         Route::post('/{id}/grade', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'saveGrade']);
+        Route::post('/{id}/grade/reopen', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'reopenGrade']);
         Route::get('/{id}/discussion', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'discussion']);
         Route::post('/{id}/discussion', [\App\Http\Controllers\Api\AcademicStaffProjectsApiController::class, 'postNote']);
     });
@@ -1381,6 +1384,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/approvals/{id}/approve', [UniversityApprovalsApiController::class, 'approve']);
         Route::post('/approvals/{id}/reject', [UniversityApprovalsApiController::class, 'reject']);
         Route::post('/approvals/{id}/request-changes', [UniversityApprovalsApiController::class, 'requestChanges']);
+        Route::post('/approvals/{id}/grade', [UniversityApprovalsApiController::class, 'saveGrade']);
+        Route::post('/approvals/{id}/grade/reopen', [UniversityApprovalsApiController::class, 'reopenGrade']);
         Route::post('/approvals/{id}/publish', [UniversityApprovalsApiController::class, 'publish']);
         Route::post('/approvals/{id}/unpublish', [UniversityApprovalsApiController::class, 'unpublish']);
 
@@ -1541,6 +1546,7 @@ Route::prefix('v1')->group(function () {
         // اتنقلت دلوقتي، فسطح /grade بيتضاف هنا جنب approve/reject/request-changes.
         Route::get('/{id}/grade', [SupervisorProjectGradeApiController::class, 'show']);
         Route::post('/{id}/grade', [SupervisorProjectGradeApiController::class, 'save']);
+        Route::post('/{id}/grade/reopen', [SupervisorProjectGradeApiController::class, 'reopen']);
     });
 
     // -- Portfolios (بند 12 — الصفحة العامة/القابلة للمشاركة، مش مقصورة

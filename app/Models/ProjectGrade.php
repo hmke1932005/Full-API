@@ -15,12 +15,13 @@ class ProjectGrade extends Model
 
     protected $fillable = [
         'project_id', 'graded_by', 'total_score', 'max_score', 'letter_grade',
-        'status', 'overall_comments', 'graded_at',
+        'status', 'overall_comments', 'graded_at', 'revision', 'reopened_by', 'reopened_at', 'reopen_reason',
     ];
 
     protected $casts = [
         'total_score' => 'float',
         'max_score'   => 'float',
         'graded_at'   => 'datetime',
+        'reopened_at' => 'datetime',
     ];
 }

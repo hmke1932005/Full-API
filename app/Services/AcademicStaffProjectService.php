@@ -148,6 +148,12 @@ class AcademicStaffProjectService
 
     // -- grades ---------------------------------------------------------------
 
+    /** إعادة فتح الدرجة الرسمية (الدكتور المشرف بس، ربط رسمي). */
+    public function reopenGrade(Project $project, int $userId, string $reason, string $locale = 'en'): array
+    {
+        return $this->grading->reopen((int) $project->id, $userId, 'supervisor', $reason, $locale);
+    }
+
     public function gradesFor(Project $project, int $userId): array
     {
         $official = $this->grading->forProject((int) $project->id);
@@ -174,16 +180,19 @@ class AcademicStaffProjectService
         return [
             'official' => $official['grade']?->toArray(),
             'official_criteria' => $official['criteria'],
+            'members' => $this->grading->memberGrades((int) $project->id),
+            'member_candidates' => $this->grading->memberCandidates($project),
+            'revisions' => $this->grading->revisions((int) $project->id),
             'mine_advisory' => $mine,
             'other_advisory' => $others,
         ];
     }
 
     /** Official -> ProjectGradingService; advisory -> project_advisory_grades. */
-    public function saveGrade(Project $project, int $userId, bool $official, array $criteria, ?string $comments, bool $finalize, string $locale = 'en'): array
+    public function saveGrade(Project $project, int $userId, bool $official, array $criteria, ?string $comments, bool $finalize, string $locale = 'en', ?array $members = null): array
     {
         if ($official) {
-            return $this->grading->saveGrade((int) $project->id, $userId, $criteria, $comments, $finalize, $locale);
+            return $this->grading->saveGrade((int) $project->id, $userId, $criteria, $comments, $finalize, $locale, $members, 'supervisor');
         }
         if (!in_array($project->status, ProjectGradingService::GRADABLE_STATUSES, true)) {
             return ['success' => false, 'message' => 'This project cannot be graded in its current status.'];

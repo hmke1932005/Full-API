@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Exceptions\ApprovalException;
+use App\Http\Controllers\Api\Concerns\ReviewerGrading;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\User;
@@ -32,6 +33,8 @@ use Illuminate\Http\Request;
  */
 class FacultyApprovalsApiController extends Controller
 {
+    use ReviewerGrading;
+
     public function __construct(
         private ProjectApprovalService $approvals,
         private ProjectRepository $projects,
@@ -108,6 +111,7 @@ class FacultyApprovalsApiController extends Controller
             // أزرار القرار بتظهر بس لما الصلاحية موجودة وكمان يكون دور المرحلة دي في التسلسل الإجباري.
             'can_decide'                 => $this->can($request) && $isMyTurn,
             'review'                     => $review,
+            'grade_detail'               => $this->gradeDetail($request, $project, app(\App\Services\ProjectGradingService::class)),
         ], 'Project retrieved successfully.');
     }
 
@@ -165,6 +169,25 @@ class FacultyApprovalsApiController extends Controller
         return $ok
             ? $this->apiSuccess(null, $successMessage)
             : $this->apiError($errorMessage, null, 422);
+    }
+
+    protected function resolveGradeProject(Request $request, string $uuid): ?\App\Models\Project
+    {
+        if ($request->attributes->get('uip_role') !== 'faculty') {
+            return null;
+        }
+        $faculty = $this->faculties->findByUserId((int) $request->attributes->get('uip_user_id'));
+        return $faculty ? $this->projects->findForFacultyByUuid($uuid, $faculty->id) : null;
+    }
+
+    protected function canGrade(Request $request): bool
+    {
+        return $this->can($request);
+    }
+
+    protected function gradeActorRole(): string
+    {
+        return 'faculty';
     }
 
     private function can(Request $request): bool

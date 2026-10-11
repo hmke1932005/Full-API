@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Exceptions\ApprovalException;
+use App\Http\Controllers\Api\Concerns\ReviewerGrading;
 use App\Http\Controllers\Controller;
 use App\Models\Student;
 use App\Models\User;
@@ -36,6 +37,8 @@ use Illuminate\Http\Request;
  */
 class UniversityApprovalsApiController extends Controller
 {
+    use ReviewerGrading;
+
     public function __construct(
         private ProjectApprovalService $approvals,
         private ProjectRepository $projects,
@@ -109,6 +112,7 @@ class UniversityApprovalsApiController extends Controller
             'can_publish'                => $this->can($request) && $project->status === 'approved',
             'can_unpublish'              => $this->can($request) && $project->status === 'published',
             'review'                     => $review,
+            'grade_detail'               => $this->gradeDetail($request, $project, app(\App\Services\ProjectGradingService::class)),
         ], 'Project retrieved successfully.');
     }
 
@@ -193,6 +197,22 @@ class UniversityApprovalsApiController extends Controller
         return $ok
             ? $this->apiSuccess(null, $successMessage)
             : $this->apiError($errorMessage, null, 422);
+    }
+
+    protected function resolveGradeProject(Request $request, string $uuid): ?\App\Models\Project
+    {
+        $university = $this->universities->findByUserId((int) $request->attributes->get('uip_user_id'));
+        return $university ? $this->projects->findForUniversityByUuid($uuid, $university->id) : null;
+    }
+
+    protected function canGrade(Request $request): bool
+    {
+        return $this->can($request);
+    }
+
+    protected function gradeActorRole(): string
+    {
+        return 'university';
     }
 
     private function can(Request $request): bool

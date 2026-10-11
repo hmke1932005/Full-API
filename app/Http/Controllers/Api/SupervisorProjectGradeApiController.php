@@ -47,6 +47,9 @@ class SupervisorProjectGradeApiController extends Controller
             'project'    => $this->projectSummary($project),
             'grade'      => $data['grade']?->toArray(),
             'criteria'   => $data['criteria'],
+            'members'    => $this->grading->memberGrades((int) $project->id),
+            'member_candidates' => $this->grading->memberCandidates(\App\Models\Project::find((int) $project->id)),
+            'revisions'  => $this->grading->revisions((int) $project->id),
             'can_manage' => in_array('manage_projects', $this->supervisors->permissionsForUser($this->userId($request)), true),
         ], 'Project grade retrieved successfully.');
     }
@@ -75,11 +78,13 @@ class SupervisorProjectGradeApiController extends Controller
             $criteria,
             $request->input('overall_comments'),
             (bool) $request->input('finalize', false),
-            'en'
+            'en',
+            is_array($request->input('members')) ? $request->input('members') : null,
+            'supervisor'
         );
 
         if (!$result['success']) {
-            return $this->apiError($result['message'], null, 422);
+            return $this->apiError($result['message'], null, ($result['code'] ?? '') === 'grade_locked' ? 409 : 422);
         }
 
         $data = $this->grading->forProject((int) $project->id);
@@ -88,6 +93,23 @@ class SupervisorProjectGradeApiController extends Controller
             'grade'    => $data['grade']?->toArray(),
             'criteria' => $data['criteria'],
         ], $result['message']);
+    }
+
+    /** POST /api/v1/supervisor/projects/{id}/grade/reopen {reason} */
+    public function reopen(Request $request, string $id)
+    {
+        [$err, $supervisor, $project] = $this->requireScopedProject($request, $id);
+        if ($err) {
+            return $err;
+        }
+        if (!in_array('manage_projects', $this->supervisors->permissionsForUser($this->userId($request)), true)) {
+            return $this->apiError('You do not have permission to grade projects.', null, 403);
+        }
+        $result = $this->grading->reopen((int) $project->id, $this->userId($request), 'supervisor', (string) $request->input('reason', ''));
+        if (!$result['success']) {
+            return $this->apiError($result['message'], null, ($result['code'] ?? '') === 'graduated_requires_university' ? 403 : 422);
+        }
+        return $this->apiSuccess(null, $result['message']);
     }
 
     // -- helpers --------------------------------------------------------------

@@ -191,6 +191,27 @@ class AcademicStaffProjectsApiController extends Controller
             : $this->apiError('Only a submitted project can be decided on.', null, 422);
     }
 
+    /** POST /api/v1/academic-staff/projects/{id}/grade/reopen {reason} — الدكتور المشرف (ربط رسمي) يعيد فتح درجة نهائية. */
+    public function reopenGrade(Request $request, string $id)
+    {
+        [$err, $staff, $name] = $this->ctx($request);
+        if ($err) {
+            return $err;
+        }
+        [$project, $link] = $this->svc->scopedProject($staff, $name, $id);
+        if (!$project) {
+            return $this->apiError('Project not found.', null, 404);
+        }
+        if (!$this->svc->isOfficial($link)) {
+            return $this->apiError('Only the supervisor doctor can reopen the official grade.', null, 403);
+        }
+        $result = $this->svc->reopenGrade($project, $this->userId($request), (string) $request->input('reason', ''));
+        if (!$result['success']) {
+            return $this->apiError($result['message'], null, in_array($result['code'] ?? '', ['graduated_requires_university'], true) ? 403 : 422);
+        }
+        return $this->apiSuccess(['grades' => $this->svc->gradesFor($project, $this->userId($request))], $result['message']);
+    }
+
     /** POST /api/v1/academic-staff/projects/{id}/grade */
     public function saveGrade(Request $request, string $id)
     {
@@ -205,10 +226,11 @@ class AcademicStaffProjectsApiController extends Controller
         $criteria = $request->input('criteria', []);
         $result = $this->svc->saveGrade(
             $project, $this->userId($request), $this->svc->isOfficial($link),
-            is_array($criteria) ? $criteria : [], $request->input('overall_comments'), (bool) $request->input('finalize', false)
+            is_array($criteria) ? $criteria : [], $request->input('overall_comments'), (bool) $request->input('finalize', false), 'en',
+            is_array($request->input('members')) ? $request->input('members') : null
         );
         if (!$result['success']) {
-            return $this->apiError($result['message'], null, 422);
+            return $this->apiError($result['message'], null, ($result['code'] ?? '') === 'grade_locked' ? 409 : 422);
         }
         return $this->apiSuccess(['grades' => $this->svc->gradesFor($project, $this->userId($request))], $result['message']);
     }

@@ -422,7 +422,10 @@ class ProjectApprovalService
         $grade = $db::table('project_grades as g')
             ->leftJoin('users as u', 'u.id', '=', 'g.graded_by')
             ->where('g.project_id', $project->id)
-            ->first(['g.total_score', 'g.max_score', 'g.letter_grade', 'g.status', 'g.overall_comments', 'g.graded_at', 'u.full_name as grader_name']);
+            ->first(['g.id as grade_id', 'g.total_score', 'g.max_score', 'g.letter_grade', 'g.status', 'g.overall_comments', 'g.graded_at', 'g.revision', 'g.reopened_at', 'g.reopen_reason', 'u.full_name as grader_name']);
+        $gradeMembers = $grade ? $db::table('project_grade_members as gm')->join('users as mu', 'mu.id', '=', 'gm.user_id')
+            ->where('gm.project_grade_id', $grade->grade_id)->orderBy('gm.id')
+            ->get(['gm.user_id', 'mu.full_name', 'gm.adjustment', 'gm.final_percentage', 'gm.letter_grade', 'gm.comments'])->map(fn ($m) => (array) $m)->all() : [];
 
         return [
             'supervisor_name' => $project->supervisor_name,
@@ -430,6 +433,7 @@ class ProjectApprovalService
             'links'           => $links,
             'history'         => $history,
             'grade'           => $grade ? (array) $grade : null,
+            'grade_members'   => $gradeMembers,
             'flow'            => $this->flowFor($project),
         ];
     }
@@ -622,14 +626,25 @@ class ProjectApprovalService
     }
 
     /** سجل القرارات + الدرجة النهائية (final بس) للطالب المالك/عضو الفريق. */
-    public function feedbackForProject(\App\Models\Project $project): array
+    public function feedbackForProject(\App\Models\Project $project, ?int $viewerId = null): array
     {
         $x = $this->reviewExtras($project);
         $grade = $x['grade'];
+        $myGrade = null;
         if ($grade && ($grade['status'] ?? '') !== 'final') {
-            $grade = null; // الدرجة المسودة متتعرضش للطالب
+            $grade = null; // الدرجة المسودة (أو المعاد فتحها) متتعرضش للطالب
+        } elseif ($grade && $viewerId !== null) {
+            // درجة العضو الفردية بس (مش درجات زمايله): النسبة والحرف وسبب التعديل لو فيه.
+            foreach ($x['grade_members'] as $m) {
+                if ((int) $m['user_id'] === $viewerId) {
+                    $myGrade = ['final_percentage' => $m['final_percentage'], 'letter_grade' => $m['letter_grade'], 'adjustment' => $m['adjustment'], 'comments' => (float) $m['adjustment'] !== 0.0 ? $m['comments'] : null];
+                }
+            }
         }
-        return ['history' => $x['history'], 'grade' => $grade, 'supervisor_name' => $x['supervisor_name'], 'flow' => $x['flow']];
+        if ($grade) {
+            unset($grade['grade_id'], $grade['reopen_reason'], $grade['reopened_at']);
+        }
+        return ['history' => $x['history'], 'grade' => $grade, 'my_grade' => $myGrade, 'supervisor_name' => $x['supervisor_name'], 'flow' => $x['flow']];
     }
 
     private function lastDecision(int $projectId): ?string

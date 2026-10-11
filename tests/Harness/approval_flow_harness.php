@@ -31,7 +31,8 @@ CREATE TABLE project_approvals(id INTEGER PRIMARY KEY, project_id INT, reviewer_
 CREATE TABLE project_team_members(id INTEGER PRIMARY KEY, project_id INT, user_id INT, invited_email TEXT, role TEXT, status TEXT, invited_by INT,
   invited_at TEXT, responded_at TEXT, created_at TEXT, updated_at TEXT, member_name TEXT, academic_year INT, student_number TEXT);
 CREATE TABLE project_links(id INTEGER PRIMARY KEY, project_id INT, type TEXT, label TEXT, url TEXT, is_primary INT);
-CREATE TABLE project_grades(id INTEGER PRIMARY KEY, project_id INT, graded_by INT, total_score REAL, max_score REAL, letter_grade TEXT, status TEXT, overall_comments TEXT, graded_at TEXT);
+CREATE TABLE project_grades(id INTEGER PRIMARY KEY, project_id INT, graded_by INT, total_score REAL, max_score REAL, letter_grade TEXT, status TEXT, overall_comments TEXT, graded_at TEXT, revision INT DEFAULT 0, reopened_by INT, reopened_at TEXT, reopen_reason TEXT);
+CREATE TABLE project_grade_members(id INTEGER PRIMARY KEY, project_grade_id INT, project_id INT, user_id INT, adjustment REAL, final_percentage REAL, letter_grade TEXT, comments TEXT);
 ");
 
 // ---- fakes

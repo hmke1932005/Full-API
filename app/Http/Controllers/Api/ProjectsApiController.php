@@ -178,7 +178,7 @@ class ProjectsApiController extends Controller
         if (!$project) {
             return $this->apiError('Project not found.', null, 404);
         }
-        $feedback = $this->approvals->feedbackForProject($project);
+        $feedback = $this->approvals->feedbackForProject($project, $userId);
         $history = $feedback['history'];
 
         return $this->apiSuccess([
@@ -192,6 +192,7 @@ class ProjectsApiController extends Controller
             'approved_at'     => $project->approved_at,
             'published_at'    => $project->published_at,
             'grade'           => $feedback['grade'],
+            'my_grade'        => $feedback['my_grade'],
             'supervisor_name' => $feedback['supervisor_name'],
         ], 'Approval status retrieved successfully.');
     }
