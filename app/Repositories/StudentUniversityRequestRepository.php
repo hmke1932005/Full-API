@@ -62,6 +62,18 @@ class StudentUniversityRequestRepository
             ->map(fn ($r) => (array) $r)->all();
     }
 
+    /** طلب واحد (أي حالة) مقيّد بجامعة الكولر + تفاصيل إضافية للطالب (تليفون/نبذة). */
+    public function findForUniversity($id, $universityId): ?array
+    {
+        $row = $this->baseQuery()
+            ->addSelect('u.phone', 's.bio', 's.current_semester')
+            ->where('r.id', $id)
+            ->where('r.university_id', $universityId)
+            ->first();
+
+        return $row ? (array) $row : null;
+    }
+
     /** بتحرك بس طلب pending؛ طلب اتقرر فيه قبل كده متتلمسش (idempotent). */
     public function decide($id, $universityId, string $status, $reviewerId): ?StudentUniversityRequest
     {

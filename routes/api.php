@@ -1394,6 +1394,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/approvals/{id}/unpublish', [UniversityApprovalsApiController::class, 'unpublish']);
 
         Route::get('/join-requests', [UniversityJoinRequestsApiController::class, 'index']);
+        Route::get('/join-requests/{id}', [UniversityJoinRequestsApiController::class, 'show'])->where('id', '[0-9]+');
         Route::post('/join-requests/{id}/approve', [UniversityJoinRequestsApiController::class, 'approve']);
         Route::post('/join-requests/{id}/reject', [UniversityJoinRequestsApiController::class, 'reject']);
 

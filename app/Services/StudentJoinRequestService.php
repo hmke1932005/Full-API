@@ -54,6 +54,20 @@ class StudentJoinRequestService
         return array_map(fn ($r) => $this->toRow($r, $locale), $this->requests->forUniversity($universityId));
     }
 
+    /** تفاصيل طلب واحد لصاحب الجامعة (زر "الملف") — null لو الطلب مش بتاع جامعته. */
+    public function detail($requestId, $universityId, string $locale = 'en'): ?array
+    {
+        $r = $this->requests->findForUniversity($requestId, $universityId);
+        if (!$r) {
+            return null;
+        }
+        return $this->toRow($r, $locale) + [
+            'phone'            => $r['phone'] ?? null,
+            'bio'              => $r['bio'] ?? null,
+            'current_semester' => isset($r['current_semester']) ? (int) $r['current_semester'] : null,
+        ];
+    }
+
     public function approve($requestId, $universityId, $reviewerId): bool
     {
         $request = $this->requests->decide($requestId, $universityId, 'approved', $reviewerId);

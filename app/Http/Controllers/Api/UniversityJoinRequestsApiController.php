@@ -46,6 +46,23 @@ class UniversityJoinRequestsApiController extends Controller
         ], 'Join requests retrieved successfully.');
     }
 
+    /** GET /api/v1/university/join-requests/{id} — بيانات الطالب مقدّم الطلب (زر "الملف"). */
+    public function show(Request $request, int $id)
+    {
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $universityId = $this->joinRequests->universityIdForUser($userId);
+        if (!$universityId) {
+            return $this->apiError('Only university accounts can view join requests.', null, 403);
+        }
+
+        $row = $this->joinRequests->detail($id, $universityId, (string) $request->input('locale', 'en'));
+        if (!$row) {
+            return $this->apiError('Join request not found.', null, 404);
+        }
+
+        return $this->apiSuccess($row, 'Join request retrieved successfully.');
+    }
+
     /** POST /api/v1/university/join-requests/{id}/approve */
     public function approve(Request $request, int $id)
     {
