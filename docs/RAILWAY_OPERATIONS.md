@@ -89,3 +89,19 @@ find /data/uploads -type f \( -iname '*.php*' -o -iname '*.phtml' -o -iname '*.p
 ملفات `svg`: اتقفلت على مستوى التطبيق. كل SVG بيتفحص وقت الرفع بـ DOM parser (`App\Support\SvgGuard`) وأي محتوى نشط (script، on*=، javascript:، foreignObject، animate/set، DOCTYPE/ENTITY، روابط أو url() خارجية) بيترفض. ملفات `xml` بتتخزّن بسوفكس `.txt` زي php/html.
 
 للـ SVG اللي اترفع قبل الإصلاح: `php artisan ops:svg-audit` بيفحصها ويطبع المشبوه، و`--quarantine` بيحوّل المشبوه لـ `.svg.unsafe`. (لسه مفيد كطبقة تانية: header `Content-Security-Policy: sandbox` و`X-Content-Type-Options: nosniff` على `/uploads/*` في الـ web server.)
+
+## إيميلات مشاريع التخرج + تذكيرات المواعيد
+
+الأحداث (تقديم، قرار، تقييم، ملاحظة المشرف، قرب موعد التسليم) بتسجّل إشعار داخل المنصة **وكمان بتدخل طابور إيميلات** (`notification_email_queue`). الإرسال الفعلي بيتم بالـ scheduler، مش في نفس الطلب.
+
+لازم تشتغل 3 حاجات على Railway:
+
+1. **مزوّد بريد حقيقي**: متغيرات `MAIL_MAILER` (smtp/brevo…) وبياناته، أو من Admin > Settings > Mail. من غيره الإيميلات بتفضل pending (بتتأجّل 15 دقيقة وتتجرب تاني) وبعد 24 ساعة بتتعلّم `expired` من غير ما تتبعت.
+2. **`FRONTEND_URL`** (مثال `https://uip-v1.vercel.app`): بيتبني منه لينك الزرار جوه الإيميل. من غيره الإيميل بيوصل من غير زرار.
+3. **الـ scheduler شغّال**: Railway مفيهوش cron افتراضي. أضف service تاني من نفس الريبو بأمر التشغيل `php artisan schedule:work` (أو cron بيشغّل `php artisan schedule:run` كل دقيقة). بيشغّل:
+   - `notifications:send-emails` كل دقيقة (إيميلات فورية + ملخصات).
+   - `projects:send-deadline-reminders` كل ساعة (تذكير 7/3/1 يوم، مرة واحدة لكل مستخدم لكل نافذة).
+
+تفضيلات المستخدم المحترمة: كتم فئة "اعتماد المشاريع"، ملخص يومي/أسبوعي (الساعة 8 صباحًا)، وساعات الهدوء. آخر يوم قبل الموعد أولويته high فبيتخطى الملخص وساعات الهدوء.
+
+فحص سريع بعد الإعداد: `php artisan notifications:send-emails --dry-run` بيعرض كام إيميل مستحق من غير ما يبعت، و`php artisan projects:send-deadline-reminders` بيطبع كام تذكير اتبعت. الصفوف الفاشلة (بعد 5 محاولات) بتفضل في الجدول بـ `last_error` للمراجعة.

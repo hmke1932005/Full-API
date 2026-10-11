@@ -89,7 +89,7 @@ class NotificationService
             $priority = 'normal';
         }
 
-        Notification::create([
+        $notification = Notification::create([
             'user_id'  => $userId,
             'type'     => $type,
             'priority' => $priority,
@@ -98,6 +98,14 @@ class NotificationService
             'body'     => $body,
             'link_url' => $linkUrl,
         ]);
+
+        // إيميل لأحداث مشروع التخرج (بيدخل الطابور بس؛ الإرسال الفعلي في notifications:send-emails).
+        // محاط بـ try/catch جوه الخدمة نفسها — أي مشكلة في الإيميل مبتكسرش الإشعار الداخلي.
+        try {
+            app(NotificationEmailService::class)->queueFor($notification);
+        } catch (\Throwable $e) {
+            // تجاهل عمدًا
+        }
     }
 
     /** @return array<int,array<string,mixed>> شكله للـ Notifications view */

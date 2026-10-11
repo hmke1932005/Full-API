@@ -226,6 +226,25 @@ class MailService
         );
     }
 
+    /** ملخص إشعارات (إيميل واحد لكل المستخدم) — للي مختار ملخص يومي/أسبوعي. @param array<int,array{title:string,body:?string,link:?string}> $items */
+    public function sendNotificationDigest(string $toEmail, string $fullName, array $items, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+        $count = count($items);
+        $subject = $ar ? "ملخص إشعارات مشاريع التخرج ({$count})" : "Graduation projects digest ({$count})";
+        $lines = [$ar ? "أهلاً {$fullName}" : "Hi {$fullName}"];
+        foreach ($items as $it) {
+            $lines[] = '• ' . $it['title'] . (!empty($it['body']) ? ' — ' . mb_substr((string) $it['body'], 0, 160) : '');
+        }
+        $base = rtrim((string) (config('app.frontend_url') ?: config('app.url', '')), '/');
+
+        return $this->deliver(
+            $toEmail, $subject, $subject, $lines,
+            $base !== '' ? ['label' => $ar ? 'فتح المنصة' : 'Open the platform', 'url' => $base] : null,
+            $locale, [], 'sendNotificationDigest', 'notification'
+        );
+    }
+
     /**
      * تسليم تقرير مجدول — بترجع true دايمًا حتى لو الإرسال فشل (نفس العقد
      * القديم، موثّق في README) عشان ReportSchedulerService يكمل جدولة

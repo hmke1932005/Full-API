@@ -43,3 +43,8 @@ Artisan::command('inspire', function () {
 // تذكيرات الامتحانات التلقائية (قبل الفتح/الإقفال) — مفعّلة فعليًا هنا، بتحتاج بس cron السيرفر:
 //   * * * * * cd /path/to/project && php artisan schedule:run >> /dev/null 2>&1
 Schedule::command('exams:notify-upcoming')->everyFiveMinutes()->withoutOverlapping();
+
+// إيميلات إشعارات مشاريع التخرج (تقديم/قرار/تقييم/ملاحظة) + تذكيرات قرب موعد التسليم — مفعّلة هنا،
+// ومحتاجة نفس cron السيرفر اللي فوق (schedule:run كل دقيقة) أو عملية `php artisan schedule:work` دايمة.
+Schedule::command('notifications:send-emails')->everyMinute()->withoutOverlapping();
+Schedule::command('projects:send-deadline-reminders')->hourly()->withoutOverlapping();
