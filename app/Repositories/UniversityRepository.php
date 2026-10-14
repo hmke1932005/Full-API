@@ -255,21 +255,31 @@ class UniversityRepository
         $uniName = ['ar' => $university->official_name_ar ?: $university->official_name_en, 'en' => $university->official_name_en ?: $university->official_name_ar];
         $affected = [];
 
-        DB::transaction(function () use ($university, $deletedBy, &$affected) {
+        $uniAccount = null;
+        DB::transaction(function () use ($university, $deletedBy, &$affected, &$uniAccount) {
             if ($university->user_id) {
+                $prev = DB::table('users')->where('id', $university->user_id)->value('status');
                 DB::table('users')->where('id', $university->user_id)->update([
-                    'deleted_at' => now(),
-                    'status'     => 'banned',
+                    'deleted_at'           => now(),
+                    'status'               => 'banned',
+                    'status_before_delete' => $prev && $prev !== 'banned' ? $prev : null,
                 ]);
+                $uniAccount = DB::table('users')->where('id', $university->user_id)->first(['id', 'email', 'full_name', 'preferred_language']);
             }
 
-            // الطلاب النشطين/المعلّقين بس — اللي مش active (banned مثلاً) نسيبهم زي ما هم.
-            $affected = DB::table('users as u')
-                ->join('students as s', 's.user_id', '=', 'u.id')
-                ->where('s.university_id', $university->id)
-                ->whereNull('u.deleted_at')
-                ->whereIn('u.status', ['active', 'pending'])
-                ->get(['u.id', 'u.email', 'u.full_name', 'u.status', 'u.preferred_language'])
+            // كل المرتبطين بالجامعة: طلاب + مشرفين + هيئة أكاديمية.
+            // النشطين/المعلّقين بس — اللي مش active (banned مثلاً) نسيبهم زي ما هم.
+            $memberIds = DB::table('students')->where('university_id', $university->id)->pluck('user_id')
+                ->merge(DB::table('supervisors')->where('university_id', $university->id)->whereNotNull('user_id')->pluck('user_id'))
+                ->merge(DB::table('academic_staff')->where('university_id', $university->id)->pluck('user_id'))
+                ->unique()->values()->all();
+
+            $affected = $memberIds === [] ? [] : DB::table('users')
+                ->whereIn('id', $memberIds)
+                ->where('id', '!=', (int) $university->user_id)
+                ->whereNull('deleted_at')
+                ->whereIn('status', ['active', 'pending'])
+                ->get(['id', 'email', 'full_name', 'status', 'preferred_language'])
                 ->all();
 
             foreach ($affected as $row) {
@@ -286,6 +296,10 @@ class UniversityRepository
         });
 
         $this->notifyStudents($affected, $uniName, removed: true);
+        if ($uniAccount) {
+            $this->notifyUniversityAccount($uniAccount, $uniName, removed: true);
+            app(\App\Services\AccountLifecycleService::class)->revokeAccess((int) $uniAccount->id, 'account_deleted');
+        }
 
         return ['ok' => true, 'students_suspended' => count($affected)];
     }
@@ -323,9 +337,10 @@ class UniversityRepository
         DB::transaction(function () use ($university, $account, $restoredEmail, &$affected) {
             if ($account) {
                 DB::table('users')->where('id', $account->id)->update([
-                    'deleted_at' => null,
-                    'status'     => 'active',
-                    'email'      => $restoredEmail,
+                    'deleted_at'           => null,
+                    'status'               => $account->status_before_delete ?: 'active',
+                    'status_before_delete' => null,
+                    'email'                => $restoredEmail,
                 ]);
             }
 
@@ -350,6 +365,9 @@ class UniversityRepository
 
         $uniName = ['ar' => $university->official_name_ar ?: $university->official_name_en, 'en' => $university->official_name_en ?: $university->official_name_ar];
         $this->notifyStudents($affected, $uniName, removed: false);
+        if ($account) {
+            $this->notifyUniversityAccount($account, $uniName, removed: false);
+        }
 
         return ['ok' => true, 'error' => null, 'students_restored' => count($affected)];
     }
@@ -359,7 +377,6 @@ class UniversityRepository
     {
         $notifications = app(\App\Services\NotificationService::class);
         $mail = app(\App\Services\MailService::class);
-        $sessions = app(\App\Services\UserSessionService::class);
 
         foreach ($students as $row) {
             $ar = ($row->preferred_language ?? 'ar') === 'ar';
@@ -370,7 +387,7 @@ class UniversityRepository
                 $body  = $ar
                     ? "تمت إزالة جامعتك ({$name}) من المنصة، ولذلك تم إيقاف حسابك مؤقتًا. تواصل مع إدارة المنصة لو محتاج مساعدة."
                     : "Your university ({$name}) was removed from the platform, so your account has been suspended. Contact platform support if you need help.";
-                try { $sessions->endAllForUser((int) $row->id, 'university_removed'); } catch (\Throwable $e) { report($e); }
+                app(\App\Services\AccountLifecycleService::class)->revokeAccess((int) $row->id, 'university_removed');
             } else {
                 $title = $ar ? "تمت إعادة تفعيل حسابك: رجعت {$name} للمنصة" : "Your account was reactivated: {$name} is back on the platform";
                 $body  = $ar ? "تمت إعادة جامعتك ({$name}) للمنصة، وتم إعادة تفعيل حسابك. تقدر تسجّل الدخول دلوقتي."
@@ -380,6 +397,24 @@ class UniversityRepository
             try { $notifications->notify((int) $row->id, 'university_status', $title, $body, null, 'high'); } catch (\Throwable $e) { report($e); }
             try { $mail->sendNotificationEmail((string) $row->email, (string) $row->full_name, $title, $body, null, $ar ? 'ar' : 'en'); } catch (\Throwable $e) { report($e); }
         }
+    }
+
+    /** إيميل + إشعار لحساب الجامعة نفسه عند حذفها/استرجاعها. */
+    private function notifyUniversityAccount(object $account, array $uniName, bool $removed): void
+    {
+        $ar = ($account->preferred_language ?? 'ar') === 'ar';
+        $name = $ar ? $uniName['ar'] : $uniName['en'];
+        if ($removed) {
+            $title = $ar ? "تم حذف جامعتك ({$name}) من المنصة" : "Your university ({$name}) was removed from the platform";
+            $body  = $ar ? 'تم حذف حساب الجامعة وإيقاف جميع المرتبطين بها. تواصل مع إدارة المنصة لو محتاج مساعدة أو لاسترجاعها.'
+                         : 'The university account was removed and everyone linked to it was suspended. Contact platform support for help or to restore it.';
+        } else {
+            $title = $ar ? "تم استرجاع جامعتك ({$name})" : "Your university ({$name}) was restored";
+            $body  = $ar ? 'تم استرجاع حساب الجامعة وجميع المرتبطين بها. تقدر تسجّل الدخول دلوقتي.'
+                         : 'The university account and everyone linked to it were reactivated. You can sign in again.';
+        }
+        try { app(\App\Services\NotificationService::class)->notify((int) $account->id, 'university_status', $title, $body, null, 'high'); } catch (\Throwable $e) { report($e); }
+        try { app(\App\Services\MailService::class)->sendNotificationEmail((string) $account->email, (string) $account->full_name, $title, $body, null, $ar ? 'ar' : 'en'); } catch (\Throwable $e) { report($e); }
     }
 
     /** جامعة واحدة بالـ slug العام (migration 137). */

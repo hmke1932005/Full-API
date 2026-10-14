@@ -10,6 +10,7 @@ use App\Services\UserSessionService;
 use App\Support\AuthCookies;
 use App\Support\SecurityLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /** يطابق RefreshTokenController::submit() + AuthService::refreshApiTokens() القديمين (rotation: توكن واحد الاستخدام + reuse detection). */
 class RefreshTokenController extends Controller
@@ -77,6 +78,14 @@ class RefreshTokenController extends Controller
             }
 
             return AuthCookies::clear($this->apiError('This refresh token is invalid, expired, or has already been used.', null, 401), $request);
+        }
+
+        // حساب اتحذف/اتوقف/اتحظر => مفيش تجديد توكن.
+        $account = DB::table('users')->where('id', $row->user_id)->first(['status', 'deleted_at']);
+        if (!$account || $account->deleted_at !== null || in_array($account->status, ['suspended', 'banned'], true)) {
+            $row->revoked_at = now();
+            $row->save();
+            return AuthCookies::clear($this->apiError('Your account is no longer active. Please contact platform support.', ['code' => 'account_inactive'], 401), $request);
         }
 
         // الجلسة اللي الـ refresh token ده تبعها: لو اتلغت من بورتال الأمان

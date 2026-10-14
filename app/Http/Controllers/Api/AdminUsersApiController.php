@@ -8,6 +8,7 @@ use App\Repositories\BlockedIpRepository;
 use App\Repositories\UserRepository;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
+use App\Services\AccountLifecycleService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -208,31 +209,27 @@ class AdminUsersApiController extends Controller
             return $this->apiError('You cannot delete your own account.', null, 422);
         }
 
-        // حساب جامعة => لازم يتحذف كجامعة كاملة (الصف + الطلاب + الإشعارات)،
-        // مش بس صف users — وإلا الجامعة تفضل ظاهرة في التسجيل والطلبة شغالين.
-        if (($target['role'] ?? null) === 'university') {
-            $uniId = DB::table('universities')->where('user_id', $target['id'])->whereNull('deleted_at')->value('id');
-            if ($uniId) {
-                $res = app(\App\Repositories\UniversityRepository::class)->softDelete((int) $uniId, (int) $request->attributes->get('uip_user_id'));
-                if ($res['ok']) {
-                    $this->auditLog->record($request->attributes->get('uip_user_id'), 'university.delete', 'University', (int) $uniId, ['email' => $target['email']], ['students_suspended' => $res['students_suspended']]);
-                    return $this->apiSuccess(['students_suspended' => $res['students_suspended']], 'University deleted. Its students were suspended and notified.');
-                }
-            }
+        // كل الأدوار بتمشي على نفس الخدمة: soft delete + قفل الجلسات + إشعارات،
+        // والجامعة بتوقف وتبلّغ كل المرتبطين بيها (طلاب/مشرفين/هيئة أكاديمية).
+        $res = app(AccountLifecycleService::class)->delete((int) $target['id'], (int) $request->attributes->get('uip_user_id'));
+
+        if (!$res['ok']) {
+            return $this->apiError($res['error'] ?: 'Could not delete this user.', null, 422);
         }
 
-        $ok = $this->users->delete($target['id']);
-
-        if ($ok) {
-            $this->auditLog->record($request->attributes->get('uip_user_id'), 'user.delete', 'User', $target['id'], ['email' => $target['email']], null);
+        if ($res['kind'] === 'university') {
+            $this->auditLog->record($request->attributes->get('uip_user_id'), 'university.delete', 'University', (int) ($res['university_id'] ?? 0), ['email' => $target['email']], ['accounts_suspended' => $res['accounts_suspended']]);
+        } else {
+            $this->auditLog->record($request->attributes->get('uip_user_id'), 'user.delete', 'User', $target['id'], ['email' => $target['email'], 'role' => $target['role'] ?? null], null);
         }
 
-        return $ok
-            ? $this->apiSuccess(null, 'User deleted successfully.')
-            : $this->apiError('Could not delete this user.', null, 422);
+        return $this->apiSuccess(
+            ['accounts_suspended' => $res['accounts_suspended'], 'students_suspended' => $res['accounts_suspended'], 'kind' => $res['kind']],
+            $res['accounts_suspended'] > 0 ? 'Deleted. Linked accounts were suspended and notified.' : 'User deleted successfully.'
+        );
     }
 
-    /** POST /api/v1/admin/users/{id}/restore — يرجّع حساب محذوف (ولو جامعة: بجامعتها وطلابها). */
+    /** POST /api/v1/admin/users/{id}/restore — يرجّع أي حساب محذوف (ولو جامعة: بجامعتها وكل المرتبطين بيها). */
     public function restore(Request $request, $id)
     {
         if ($err = $this->requireAdmin($request)) {
@@ -245,26 +242,21 @@ class AdminUsersApiController extends Controller
         }
 
         $adminId = $request->attributes->get('uip_user_id');
-
-        if (($target['role'] ?? null) === 'university') {
-            $uniId = DB::table('universities')->where('user_id', $target['id'])->whereNotNull('deleted_at')->value('id');
-            if ($uniId) {
-                $res = app(\App\Repositories\UniversityRepository::class)->restore((int) $uniId);
-                if (!$res['ok']) {
-                    return $this->apiError($res['error'], null, 422);
-                }
-                $this->auditLog->record($adminId, 'university.restore', 'University', (int) $uniId, null, ['students_restored' => $res['students_restored']]);
-                return $this->apiSuccess(['students_restored' => $res['students_restored']], 'University restored with its students.');
-            }
-        }
-
-        $res = $this->users->restore($target['id']);
+        $res = app(AccountLifecycleService::class)->restore((int) $target['id'], (int) $adminId);
         if (!$res['ok']) {
             return $this->apiError($res['error'], null, 422);
         }
-        $this->auditLog->record($adminId, 'user.restore', 'User', $target['id'], null, ['email' => $target['email']]);
 
-        return $this->apiSuccess(null, 'User restored successfully.');
+        if ($res['kind'] === 'university') {
+            $this->auditLog->record($adminId, 'university.restore', 'University', (int) ($res['university_id'] ?? 0), null, ['accounts_restored' => $res['accounts_restored']]);
+        } else {
+            $this->auditLog->record($adminId, 'user.restore', 'User', $target['id'], null, ['email' => $target['email']]);
+        }
+
+        return $this->apiSuccess(
+            ['accounts_restored' => $res['accounts_restored'], 'students_restored' => $res['accounts_restored'], 'kind' => $res['kind']],
+            $res['accounts_restored'] > 0 ? 'Restored with its linked accounts.' : 'User restored successfully.'
+        );
     }
 
     /** POST /api/v1/admin/users/{id}/suspend */
@@ -389,7 +381,20 @@ class AdminUsersApiController extends Controller
             return $this->apiError('User not found.', null, 404);
         }
 
+        if ($status === 'active') {
+            // حساب اتوقف بسبب حذف جامعته => مينفعش يتفعّل قبل ما الجامعة تترجّع.
+            $uniId = DB::table('users')->where('id', $target['id'])->value('suspended_by_university_id');
+            if ($uniId && DB::table('universities')->where('id', $uniId)->whereNotNull('deleted_at')->exists()) {
+                return $this->apiError('This account was suspended because its university was removed. Restore the university first.', null, 422);
+            }
+            DB::table('users')->where('id', $target['id'])->update(['suspended_by_university_id' => null, 'status_before_university_removal' => null]);
+        }
+
         $ok = $this->users->updateStatus($target['id'], $status);
+
+        if ($ok && $status !== 'active') {
+            app(AccountLifecycleService::class)->revokeAccess((int) $target['id'], 'account_suspended');
+        }
 
         if ($ok) {
             $this->auditLog->record($request->attributes->get('uip_user_id'), $action, 'User', $target['id'], ['status' => $target['status']], ['status' => $status]);

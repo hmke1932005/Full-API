@@ -461,7 +461,12 @@ class UserRepository
             return ['ok' => false, 'error' => 'This email is now used by another account.'];
         }
 
-        DB::table('users')->where('id', $row->id)->update(['deleted_at' => null, 'status' => 'active', 'email' => $email]);
+        DB::table('users')->where('id', $row->id)->update([
+            'deleted_at'           => null,
+            'status'               => $row->status_before_delete ?: 'active',
+            'status_before_delete' => null,
+            'email'                => $email,
+        ]);
 
         return ['ok' => true, 'error' => null];
     }
