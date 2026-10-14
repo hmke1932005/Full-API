@@ -921,6 +921,8 @@ Route::prefix('v1')->group(function () {
     Route::prefix('admin/users')->middleware(['uip.auth', 'uip.admin'])->group(function () {
         Route::get('/', [AdminUsersApiController::class, 'index']);
         Route::post('/', [AdminUsersApiController::class, 'store']);
+        // static قبل /{id} عشان مايتبلعش كـ uuid
+        Route::get('/affiliation-options', [AdminUsersApiController::class, 'affiliationOptions']);
         Route::get('/{id}', [AdminUsersApiController::class, 'show']);
         Route::patch('/{id}', [AdminUsersApiController::class, 'update']);
         Route::delete('/{id}', [AdminUsersApiController::class, 'destroy']);
@@ -931,6 +933,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/roles', [AdminUsersApiController::class, 'assignRole']);
         Route::delete('/{id}/roles/{role}', [AdminUsersApiController::class, 'revokeRole']);
         Route::post('/{id}/block-ip', [AdminUsersApiController::class, 'blockIp']);
+        Route::put('/{id}/affiliation', [AdminUsersApiController::class, 'updateAffiliation']);
+        Route::delete('/{id}/affiliation', [AdminUsersApiController::class, 'removeAffiliation']);
     });
 
     // بند 25 batch 10 — Roles & Permissions: سطح /api/v1/admin/roles/*،

@@ -9,6 +9,7 @@ use App\Repositories\UserRepository;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
 use App\Services\AccountLifecycleService;
+use App\Services\AdminUserAffiliationService;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -56,6 +57,9 @@ class AdminUsersApiController extends Controller
             'role'   => $request->input('role') ?: null,
             'status' => $request->input('status') ?: null,
             'search' => $request->input('q') ?: null,
+            'university_id' => $request->input('university_id') ?: null,
+            // affiliation=none => طلاب/مشرفين/هيئة مش مرتبطين بأي جامعة
+            'affiliation'   => $request->input('affiliation') === 'none' ? 'none' : null,
         ]);
         $page = max(1, (int) $request->input('page', 1));
         $perPage = max(1, min(self::PER_PAGE_MAX, (int) $request->input('per_page', self::PER_PAGE_DEFAULT)));
@@ -84,6 +88,7 @@ class AdminUsersApiController extends Controller
         }
 
         $target['additional_roles'] = $this->users->additionalRoleSlugs($target['id']);
+        $target['affiliation'] = app(AdminUserAffiliationService::class)->describe((int) $target['id']);
 
         return $this->apiSuccess($target, 'User retrieved successfully.');
     }
@@ -366,6 +371,78 @@ class AdminUsersApiController extends Controller
         return $ok
             ? $this->apiSuccess(['ip' => $ip], 'IP blocked successfully.', 201)
             : $this->apiError('That IP is already blocked.', null, 422);
+    }
+
+    /** GET /api/v1/admin/users/affiliation-options — الجامعات الشغالة وهيكلها (كليات/أقسام/برامج). */
+    public function affiliationOptions(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        return $this->apiSuccess(app(AdminUserAffiliationService::class)->options(), 'Universities retrieved successfully.');
+    }
+
+    /** PUT /api/v1/admin/users/{id}/affiliation — نقل/ربط طالب أو مشرف أو عضو هيئة بجامعة (وكلية/قسم/برنامج). */
+    public function updateAffiliation(Request $request, $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $target = $this->users->findWithRoleByUuid((string) $id);
+        if (!$target) {
+            return $this->apiError('User not found.', null, 404);
+        }
+
+        $data = $request->validate([
+            'university_id' => 'required|integer',
+            'faculty_id'    => 'nullable|integer',
+            'department_id' => 'nullable|integer',
+            'program_id'    => 'nullable|integer',
+        ]);
+
+        $svc = app(AdminUserAffiliationService::class);
+        $res = $svc->assign(
+            (int) $target['id'], (int) $data['university_id'],
+            !empty($data['faculty_id']) ? (int) $data['faculty_id'] : null,
+            !empty($data['department_id']) ? (int) $data['department_id'] : null,
+            !empty($data['program_id']) ? (int) $data['program_id'] : null,
+            (int) $request->attributes->get('uip_user_id')
+        );
+
+        if (!$res['ok']) {
+            return $this->apiError($res['error'], null, 422);
+        }
+
+        return $this->apiSuccess(
+            ['affiliation' => $svc->describe((int) $target['id']), 'changed' => $res['changed']],
+            'Affiliation updated successfully.'
+        );
+    }
+
+    /** DELETE /api/v1/admin/users/{id}/affiliation — يشيل الطالب من جامعته خالص. */
+    public function removeAffiliation(Request $request, $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $target = $this->users->findWithRoleByUuid((string) $id);
+        if (!$target) {
+            return $this->apiError('User not found.', null, 404);
+        }
+
+        $svc = app(AdminUserAffiliationService::class);
+        $res = $svc->detach((int) $target['id'], (int) $request->attributes->get('uip_user_id'));
+        if (!$res['ok']) {
+            return $this->apiError($res['error'], null, 422);
+        }
+
+        return $this->apiSuccess(
+            ['affiliation' => $svc->describe((int) $target['id']), 'changed' => $res['changed']],
+            'Removed from the university.'
+        );
     }
 
     // -- helpers --------------------------------------------------------------

@@ -314,6 +314,16 @@ class UserRepository
             ->whereNull('u.deleted_at');
     }
 
+    /** rolesWithOrgQuery() + الجامعة التابع لها المستخدم (طالب/مشرف/هيئة/كلية/جامعة نفسها). */
+    private function rolesWithAffiliationQuery()
+    {
+        return $this->rolesWithOrgQuery()
+            ->leftJoin('supervisors as sup', 'sup.user_id', '=', 'u.id')
+            ->leftJoin('academic_staff as ast', 'ast.user_id', '=', 'u.id')
+            ->leftJoin('faculties as fac', 'fac.user_id', '=', 'u.id')
+            ->leftJoin('universities as au', 'au.id', '=', DB::raw('COALESCE(uni.id, s.university_id, sup.university_id, ast.university_id, fac.university_id)'));
+    }
+
     /**
      * منقولة من UserRepository::paginateWithRoles() القديمة — نفس فلاتر
      * buildRoleFilters() (role/status/search)، بس هنا كـ query builder.
@@ -328,6 +338,14 @@ class UserRepository
             if (!empty($filters['status'])) {
                 $query->where('u.status', $filters['status']);
             }
+            if (!empty($filters['university_id'])) {
+                $query->whereRaw('COALESCE(uni.id, s.university_id, sup.university_id, ast.university_id, fac.university_id) = ?', [(int) $filters['university_id']]);
+            }
+            if (($filters['affiliation'] ?? null) === 'none') {
+                // اللي ينفع يتربط بجامعة (طالب/مشرف/هيئة) ومش مرتبط بأي واحدة.
+                $query->whereIn('r.slug', ['student', 'supervisor', 'academic_staff'])
+                    ->whereRaw('COALESCE(s.university_id, sup.university_id, ast.university_id) IS NULL');
+            }
             if (!empty($filters['search'])) {
                 $q = '%' . $filters['search'] . '%';
                 $query->where(function ($w) use ($q) {
@@ -338,17 +356,19 @@ class UserRepository
             }
         };
 
-        $countQuery = $this->rolesWithOrgQuery();
+        $countQuery = $this->rolesWithAffiliationQuery();
         $applyFilters($countQuery);
         $total = $countQuery->count('u.id');
 
         $perPage = max(1, $perPage);
         $offset = max(0, $page - 1) * $perPage;
 
-        $rowsQuery = $this->rolesWithOrgQuery()
+        $rowsQuery = $this->rolesWithAffiliationQuery()
             ->select(
                 'u.id', 'u.uuid', 'u.full_name', 'u.email', 'u.status', 'u.created_at',
                 'r.slug as role',
+                'au.id as university_id', 'au.official_name_en as university_en', 'au.official_name_ar as university_ar',
+                DB::raw('(au.deleted_at IS NOT NULL) as university_deleted'),
                 DB::raw('COALESCE(uni.official_name_en, s.faculty) as org_en'),
                 DB::raw('COALESCE(uni.official_name_ar, s.faculty) as org_ar')
             );
