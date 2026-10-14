@@ -407,6 +407,65 @@ class UserRepository
         return $user->delete();
     }
 
+    /** المحذوفين (soft-deleted) فقط — لتبويب "Deleted" في صفحة Users. */
+    public function paginateTrashed(string $search, int $page, int $perPage): array
+    {
+        $query = DB::table('users as u')
+            ->leftJoin(DB::raw('(SELECT ur1.user_id, ur1.role_id FROM user_roles ur1
+                    WHERE ur1.assigned_at = (SELECT MIN(ur2.assigned_at) FROM user_roles ur2 WHERE ur2.user_id = ur1.user_id)) as ur'), 'ur.user_id', '=', 'u.id')
+            ->leftJoin('roles as r', 'r.id', '=', 'ur.role_id')
+            ->whereNotNull('u.deleted_at');
+
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(fn ($w) => $w->where('u.full_name', 'like', $like)->orWhere('u.email', 'like', $like)->orWhere('u.uuid', 'like', $like));
+        }
+
+        $total = (clone $query)->count('u.id');
+        $perPage = max(1, $perPage);
+        $rows = $query->select('u.id', 'u.uuid', 'u.full_name', 'u.email', 'u.status', 'u.created_at', 'u.deleted_at', 'r.slug as role')
+            ->orderByDesc('u.deleted_at')->limit($perPage)->offset(max(0, $page - 1) * $perPage)->get()
+            ->map(fn ($r) => (array) $r)->all();
+
+        return ['rows' => $rows, 'total' => $total];
+    }
+
+    public function findTrashedByUuid(string $uuid): ?array
+    {
+        $row = DB::table('users as u')
+            ->leftJoin('user_roles as ur', 'ur.user_id', '=', 'u.id')
+            ->leftJoin('roles as r', 'r.id', '=', 'ur.role_id')
+            ->where('u.uuid', $uuid)->whereNotNull('u.deleted_at')
+            ->select('u.id', 'u.uuid', 'u.full_name', 'u.email', 'u.status', 'r.slug as role')
+            ->first();
+
+        return $row ? (array) $row : null;
+    }
+
+    /**
+     * استرجاع حساب محذوف: بيرجّع الإيميل الأصلي لو كان اتغيّر لـ tombstone
+     * (deleted-<id>-<time>-email)، ولو الإيميل اتأخد من حساب تاني بيرفض.
+     * @return array{ok:bool, error:?string}
+     */
+    public function restore($userId): array
+    {
+        $row = DB::table('users')->where('id', $userId)->whereNotNull('deleted_at')->first();
+        if (!$row) {
+            return ['ok' => false, 'error' => 'User not found in the trash.'];
+        }
+
+        $email = preg_replace('/^deleted-' . (int) $row->id . '-\d+-/', '', (string) $row->email);
+        $taken = DB::table('users')->whereNull('deleted_at')->where('id', '!=', $row->id)
+            ->whereRaw('LOWER(email) = ?', [strtolower($email)])->exists();
+        if ($taken) {
+            return ['ok' => false, 'error' => 'This email is now used by another account.'];
+        }
+
+        DB::table('users')->where('id', $row->id)->update(['deleted_at' => null, 'status' => 'active', 'email' => $email]);
+
+        return ['ok' => true, 'error' => null];
+    }
+
     // -- بند 25 batch 9 (Admin > Users — CRUD + suspend/activate/role/block-ip) --
 
     /** منقولة من UserRepository::countsByStatus() القديمة بالظبط — بطاقات إحصائيات صفحة Users. */

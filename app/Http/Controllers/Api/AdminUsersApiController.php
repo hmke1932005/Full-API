@@ -8,6 +8,7 @@ use App\Repositories\BlockedIpRepository;
 use App\Repositories\UserRepository;
 use App\Services\AuditLogService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * منقولة من app/Controllers/Api/AdminUsersApiController.php القديمة —
@@ -58,7 +59,10 @@ class AdminUsersApiController extends Controller
         $page = max(1, (int) $request->input('page', 1));
         $perPage = max(1, min(self::PER_PAGE_MAX, (int) $request->input('per_page', self::PER_PAGE_DEFAULT)));
 
-        $result = $this->users->paginateWithRoles($filters, $page, $perPage);
+        // status=deleted => سلة المحذوفات (قابلة للاسترجاع).
+        $result = ($filters['status'] ?? null) === 'deleted'
+            ? $this->users->paginateTrashed((string) ($filters['search'] ?? ''), $page, $perPage)
+            : $this->users->paginateWithRoles($filters, $page, $perPage);
 
         return $this->apiSuccess($result['rows'], 'Users retrieved successfully.', 200, [
             'page' => $page, 'perPage' => $perPage, 'total' => $result['total'],
@@ -204,6 +208,19 @@ class AdminUsersApiController extends Controller
             return $this->apiError('You cannot delete your own account.', null, 422);
         }
 
+        // حساب جامعة => لازم يتحذف كجامعة كاملة (الصف + الطلاب + الإشعارات)،
+        // مش بس صف users — وإلا الجامعة تفضل ظاهرة في التسجيل والطلبة شغالين.
+        if (($target['role'] ?? null) === 'university') {
+            $uniId = DB::table('universities')->where('user_id', $target['id'])->whereNull('deleted_at')->value('id');
+            if ($uniId) {
+                $res = app(\App\Repositories\UniversityRepository::class)->softDelete((int) $uniId, (int) $request->attributes->get('uip_user_id'));
+                if ($res['ok']) {
+                    $this->auditLog->record($request->attributes->get('uip_user_id'), 'university.delete', 'University', (int) $uniId, ['email' => $target['email']], ['students_suspended' => $res['students_suspended']]);
+                    return $this->apiSuccess(['students_suspended' => $res['students_suspended']], 'University deleted. Its students were suspended and notified.');
+                }
+            }
+        }
+
         $ok = $this->users->delete($target['id']);
 
         if ($ok) {
@@ -213,6 +230,41 @@ class AdminUsersApiController extends Controller
         return $ok
             ? $this->apiSuccess(null, 'User deleted successfully.')
             : $this->apiError('Could not delete this user.', null, 422);
+    }
+
+    /** POST /api/v1/admin/users/{id}/restore — يرجّع حساب محذوف (ولو جامعة: بجامعتها وطلابها). */
+    public function restore(Request $request, $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $target = $this->users->findTrashedByUuid((string) $id);
+        if (!$target) {
+            return $this->apiError('User not found in the trash.', null, 404);
+        }
+
+        $adminId = $request->attributes->get('uip_user_id');
+
+        if (($target['role'] ?? null) === 'university') {
+            $uniId = DB::table('universities')->where('user_id', $target['id'])->whereNotNull('deleted_at')->value('id');
+            if ($uniId) {
+                $res = app(\App\Repositories\UniversityRepository::class)->restore((int) $uniId);
+                if (!$res['ok']) {
+                    return $this->apiError($res['error'], null, 422);
+                }
+                $this->auditLog->record($adminId, 'university.restore', 'University', (int) $uniId, null, ['students_restored' => $res['students_restored']]);
+                return $this->apiSuccess(['students_restored' => $res['students_restored']], 'University restored with its students.');
+            }
+        }
+
+        $res = $this->users->restore($target['id']);
+        if (!$res['ok']) {
+            return $this->apiError($res['error'], null, 422);
+        }
+        $this->auditLog->record($adminId, 'user.restore', 'User', $target['id'], null, ['email' => $target['email']]);
+
+        return $this->apiSuccess(null, 'User restored successfully.');
     }
 
     /** POST /api/v1/admin/users/{id}/suspend */

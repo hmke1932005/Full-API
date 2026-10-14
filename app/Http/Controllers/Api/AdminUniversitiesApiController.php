@@ -48,7 +48,8 @@ class AdminUniversitiesApiController extends Controller
         $status = (string) $request->input('status', '');
         $page = max(1, (int) $request->input('page', 1));
 
-        $result = $this->universities->paginateWithStats($q, $status, $page, self::PER_PAGE);
+        $trashed = $status === 'deleted';
+        $result = $this->universities->paginateWithStats($q, $trashed ? '' : $status, $page, self::PER_PAGE, $trashed);
 
         return $this->apiSuccess($result['rows'], 'Universities retrieved successfully.', 200, [
             'page' => $page, 'perPage' => self::PER_PAGE, 'total' => $result['total'],
@@ -92,22 +93,40 @@ class AdminUniversitiesApiController extends Controller
             : $this->apiError('University not found.', null, 404);
     }
 
-    /** DELETE /api/v1/admin/universities/{id} — hard delete + bans the linked account. */
+    /** DELETE /api/v1/admin/universities/{id} — soft delete + bans the account + suspends & notifies students. */
     public function destroy(Request $request, string $id)
     {
         if ($err = $this->requireAdmin($request)) {
             return $err;
         }
 
-        $ok = $this->universities->delete((int) $id);
+        $res = $this->universities->softDelete((int) $id, (int) $request->attributes->get('uip_user_id'));
 
-        if ($ok) {
-            $this->auditLog->record($request->attributes->get('uip_user_id'), 'university.delete', 'University', (int) $id);
+        if ($res['ok']) {
+            $this->auditLog->record($request->attributes->get('uip_user_id'), 'university.delete', 'University', (int) $id, null, ['students_suspended' => $res['students_suspended']]);
         }
 
-        return $ok
-            ? $this->apiSuccess(null, 'University removed.')
+        return $res['ok']
+            ? $this->apiSuccess(['students_suspended' => $res['students_suspended']], 'University removed. Its students were suspended and notified.')
             : $this->apiError('University not found.', null, 404);
+    }
+
+    /** POST /api/v1/admin/universities/{id}/restore — يرجّع الجامعة بحسابها وطلابها. */
+    public function restore(Request $request, string $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $res = $this->universities->restore((int) $id);
+
+        if (!$res['ok']) {
+            return $this->apiError($res['error'], null, 422);
+        }
+
+        $this->auditLog->record($request->attributes->get('uip_user_id'), 'university.restore', 'University', (int) $id, null, ['students_restored' => $res['students_restored']]);
+
+        return $this->apiSuccess(['students_restored' => $res['students_restored']], 'University restored with its students.');
     }
 
     private function decide(Request $request, string $id, string $status, string $successMessage, string $action)

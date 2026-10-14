@@ -843,6 +843,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/reject', [AdminUniversitiesApiController::class, 'reject']);
         Route::patch('/{id}/reverification', [AdminUniversitiesApiController::class, 'updateReverification']);
         Route::delete('/{id}', [AdminUniversitiesApiController::class, 'destroy']);
+        Route::post('/{id}/restore', [AdminUniversitiesApiController::class, 'restore']);
     });
 
     // بند 25 batch 4 — Mobile App Management (إدارة API bearer tokens
@@ -923,6 +924,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/{id}', [AdminUsersApiController::class, 'show']);
         Route::patch('/{id}', [AdminUsersApiController::class, 'update']);
         Route::delete('/{id}', [AdminUsersApiController::class, 'destroy']);
+        Route::post('/{id}/restore', [AdminUsersApiController::class, 'restore']);
         Route::post('/{id}/suspend', [AdminUsersApiController::class, 'suspend']);
         Route::post('/{id}/activate', [AdminUsersApiController::class, 'activate']);
         Route::patch('/{id}/role', [AdminUsersApiController::class, 'changeRole']);

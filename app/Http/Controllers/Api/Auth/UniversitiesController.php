@@ -19,6 +19,7 @@ class UniversitiesController extends Controller
         $nameCol = $locale === 'ar' ? 'official_name_ar' : 'official_name_en';
 
         $data = DB::table('universities')
+            ->whereNull('deleted_at')
             ->select('id', "{$nameCol} as name")
             ->orderBy($nameCol)
             ->get();
