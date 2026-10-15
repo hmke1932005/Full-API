@@ -43,6 +43,7 @@ final class PlatformPolicy
         'response_encryption'    => true,  // AES-GCM envelope on JSON responses
         'response_enc_enforce'   => false, // clients without a session key are refused (default = RESPONSE_ENC_ENFORCE)
         'request_enc_enforce'    => false, // plain JSON request bodies are refused   (default = REQUEST_ENC_ENFORCE)
+        'messaging_restricted'   => false, // ON = students may only start chats with their project group / own institution; OFF = anyone can message anyone
     ];
 
     /**

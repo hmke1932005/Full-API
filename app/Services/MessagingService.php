@@ -14,6 +14,7 @@ use App\Repositories\AcademicStaffRepository;
 use App\Repositories\SupervisorRepository;
 use App\Repositories\SupervisorAssignmentRepository;
 use App\Repositories\UserRepository;
+use App\Support\PlatformPolicy;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
@@ -337,6 +338,10 @@ class MessagingService
      */
     private function assertGroupMessagingAllowed($userId, $recipientId): void
     {
+        // Admin → Platform Policy → "Restrict student messaging". Off (default) = anyone can message anyone.
+        if (!PlatformPolicy::flag('messaging_restricted')) {
+            return;
+        }
         $senderStudent = $this->students->findByUserId($userId);
         if (!$senderStudent) {
             return;
