@@ -361,7 +361,7 @@ class MailService
             ],
             null,
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true]],
             'sendAccountRecoveryOtp',
         );
     }
@@ -384,7 +384,7 @@ class MailService
             ],
             null,
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true]],
             'sendSessionTakeoverOtp',
             'security'
         );
@@ -410,7 +410,7 @@ class MailService
             ],
             null,
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true]],
             'sendEmailVerificationOtp',
             'info'
         );
@@ -433,9 +433,9 @@ class MailService
                 $ar ? "الرمز صالح لمدة {$minutes} دقايق ويُستخدم مرة واحدة. متشاركوش مع حد." : "The code is valid for {$minutes} minutes and works once. Never share it with anyone.",
                 $ar ? 'لو ماكنتش أنت اللي طلبت ده، تجاهل هذه الرسالة — كلمة السر مش هتتغير.' : "If you didn't request this, ignore this email — your password won't change.",
             ],
-            null,
+            ['label' => $ar ? 'فتح صفحة إعادة التعيين' : 'Open the reset page', 'url' => rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/') . '/auth/reset-password?email=' . rawurlencode($toEmail)],
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true]],
             'sendPasswordResetOtp',
             'reset'
         );

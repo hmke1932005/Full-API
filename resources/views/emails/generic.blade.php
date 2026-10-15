@@ -126,10 +126,19 @@
                                     </tr>
                                     @foreach ($meta as $row)
                                         <tr>
+                                            @if (!empty($row['code']))
+                                            {{-- رمز التحقق: كبير وواضح ومتحدّد بضغطة واحدة (نسخ سهل) --}}
+                                            <td align="center" style="padding:8px 20px 6px; text-align:center;">
+                                                <div style="font-size:13px; color:#64748b; font-weight:700; margin:0 0 10px; text-align:center;">{{ $row['label'] }}</div>
+                                                <div dir="ltr" style="background:#ffffff; border:2px dashed {{ $theme['accent'] }}; border-radius:16px; padding:18px 8px 18px 18px; font-size:38px; line-height:1.2; font-weight:800; letter-spacing:12px; color:#0f172a; font-family:Consolas,'SFMono-Regular','Courier New',monospace; text-align:center; -webkit-user-select:all; user-select:all;">{{ $row['value'] }}</div>
+                                                <div style="font-size:12.5px; color:#64748b; margin:10px 0 0; text-align:center;">{{ $locale === 'ar' ? '📋 اضغط مطولًا على الرمز (أو اضغط عليه ضغطتين) لتحديده ثم انسخه' : '📋 Tap and hold the code (or double-click) to select it, then copy' }}</div>
+                                            </td>
+                                            @else
                                             <td style="padding:8px 20px 6px; text-align:{{ $align }};">
                                                 <div style="font-size:12.5px; color:#64748b; font-weight:500; margin:0 0 5px;">{{ $row['label'] }}</div>
                                                 <div dir="ltr" style="background:#ffffff; border:1px solid {{ $theme['softBorder'] }}; border-radius:10px; padding:11px 14px; font-size:15px; font-weight:700; color:#0f172a; font-family:Consolas,'Courier New',monospace; text-align:left; word-break:break-all;">{{ $row['value'] }}</div>
                                             </td>
+                                            @endif
                                         </tr>
                                     @endforeach
                                     <tr><td style="height:12px; font-size:0; line-height:0;">&nbsp;</td></tr>
