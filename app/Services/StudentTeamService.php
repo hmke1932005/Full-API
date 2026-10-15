@@ -74,6 +74,9 @@ class StudentTeamService
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             throw new \RuntimeException($locale === 'ar' ? 'بريد إلكتروني غير صالح.' : 'Invalid email address.');
         }
+        if ($why = \App\Support\DisposableEmail::problem($email, $locale)) {
+            throw new \RuntimeException($why);
+        }
 
         if ($this->team->findByProjectAndEmail($project->id, $email)) {
             throw new \RuntimeException($locale === 'ar'

@@ -129,6 +129,9 @@ class FacultyApiController extends Controller
         if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return $this->apiError('Validation failed.', ['email' => 'A valid email is required.'], 422);
         }
+        if ($email !== '' && ($why = \App\Support\DisposableEmail::problem($email, (string) $request->input('locale', 'ar')))) {
+            return $this->apiError('Validation failed.', ['email' => $why], 422);
+        }
         $password = (string) $request->input('password', '');
 
         $userId = (int) $request->attributes->get('uip_user_id');
@@ -296,6 +299,9 @@ class FacultyApiController extends Controller
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return $this->apiError('Validation failed.', ['email' => 'A valid email is required.'], 422);
         }
+        if ($why = \App\Support\DisposableEmail::problem($email, (string) $request->input('locale', 'ar'))) {
+            return $this->apiError('Validation failed.', ['email' => $why], 422);
+        }
 
         $userId = (int) $request->attributes->get('uip_user_id');
         $university = $this->universities->getOrCreate($userId);
@@ -337,6 +343,9 @@ class FacultyApiController extends Controller
         $email = trim((string) $request->input('email', ''));
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return $this->apiError('Validation failed.', ['email' => 'A valid email is required.'], 422);
+        }
+        if ($why = \App\Support\DisposableEmail::problem($email, (string) $request->input('locale', 'ar'))) {
+            return $this->apiError('Validation failed.', ['email' => $why], 422);
         }
 
         $userId = (int) $request->attributes->get('uip_user_id');

@@ -80,6 +80,10 @@ class SupervisorManagementService
                 : 'This email is already on your supervisor roster.'];
         }
 
+        if ($why = \App\Support\DisposableEmail::problem($email, $locale)) {
+            return ['success' => false, 'message' => $why];
+        }
+
         if ($this->users->emailExists($email)) {
             return ['success' => false, 'message' => $locale === 'ar'
                 ? 'هذا البريد الإلكتروني مسجل بالفعل على المنصة بحساب آخر.'

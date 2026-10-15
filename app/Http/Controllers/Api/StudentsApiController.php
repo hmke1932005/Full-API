@@ -311,6 +311,8 @@ class StudentsApiController extends Controller
         $errors = $names['errors'];
         if ($email === '' || mb_strlen($email) > 190 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $errors['email'] = 'Required, valid email, max 190 chars.';
+        } elseif ($why = \App\Support\DisposableEmail::problem($email, $locale)) {
+            $errors['email'] = $why;
         }
         if ($errors) {
             return $this->apiError('Validation failed.', $errors, 422);

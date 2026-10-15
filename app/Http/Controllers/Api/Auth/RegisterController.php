@@ -55,7 +55,7 @@ class RegisterController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'email'     => 'required|email',
+            'email'     => ['required', 'email', new \App\Rules\RealEmail($request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en')],
             'password'  => 'required|min:8|confirmed',
             'role'      => 'required|string',
         ]);

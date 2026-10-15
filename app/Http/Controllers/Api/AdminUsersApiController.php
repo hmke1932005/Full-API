@@ -106,7 +106,7 @@ class AdminUsersApiController extends Controller
         }
 
         $request->validate([
-            'email'     => 'required|email',
+            'email'     => ['required', 'email', new \App\Rules\RealEmail(\App\Support\BilingualName::localeOf($request))],
             'password'  => 'required|string',
             'role'      => 'required',
         ]);
@@ -144,6 +144,10 @@ class AdminUsersApiController extends Controller
 
             if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $results[] = ['row' => $line, 'email' => $email, 'ok' => false, 'message' => 'Invalid or missing email.'];
+                continue;
+            }
+            if ($why = \App\Support\DisposableEmail::problem($email, \App\Support\BilingualName::localeOf($request))) {
+                $results[] = ['row' => $line, 'email' => $email, 'ok' => false, 'message' => $why];
                 continue;
             }
             if (isset($seen[$email])) {
@@ -308,7 +312,7 @@ class AdminUsersApiController extends Controller
         }
 
         $data = $request->validate([
-            'email'     => 'required|email',
+            'email'     => ['required', 'email', new \App\Rules\RealEmail(\App\Support\BilingualName::localeOf($request))],
         ]);
 
         $names = \App\Support\BilingualName::fromRequest($request);
@@ -458,7 +462,7 @@ class AdminUsersApiController extends Controller
         }
 
         if ($conflict && $resolution === 'new_email') {
-            $v = \Illuminate\Support\Facades\Validator::make($request->all(), ['email' => 'required|email|max:190']);
+            $v = \Illuminate\Support\Facades\Validator::make($request->all(), ['email' => ['required', 'email', 'max:190', new \App\Rules\RealEmail(\App\Support\BilingualName::localeOf($request))]]);
             if ($v->fails()) {
                 return $this->apiError($v->errors()->first(), null, 422);
             }

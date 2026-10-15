@@ -32,6 +32,13 @@ class ConfirmEmailChangeController extends Controller
             return $this->apiError($genericError, null, 422);
         }
 
+        // Real e-mail only: a temporary-mail address can never become the account's address.
+        if (\App\Support\DisposableEmail::isDisposable($row->new_email)) {
+            DB::table('email_verification_tokens')->where('id', $row->id)->update(['used_at' => now()]);
+            DB::table('users')->where('id', $row->user_id)->update(['pending_email' => null]);
+            return $this->apiError($genericError, null, 422);
+        }
+
         // العنوان الجديد بقى مستخدم من حد تاني في الفترة بين إنشاء التوكن واستخدامه
         if (DB::table('users')->where('email', $row->new_email)->exists()) {
             DB::table('email_verification_tokens')->where('id', $row->id)->update(['used_at' => now()]);

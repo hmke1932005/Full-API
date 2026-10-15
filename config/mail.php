@@ -120,4 +120,17 @@ return [
         'name' => env('MAIL_FROM_NAME', env('APP_NAME', 'Laravel')),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Real e-mail addresses only
+    |--------------------------------------------------------------------------
+    | Temporary / disposable mailboxes (mailinator, 10minutemail, temp-mail ...) and domains that
+    | cannot receive mail are rejected everywhere an address is accepted (App\Support\DisposableEmail).
+    | MAIL_BLOCKED_DOMAINS adds more domains without a code change; MAIL_ALLOWED_DOMAINS overrides
+    | a false positive. Both are comma separated.
+    */
+    'block_disposable' => env('MAIL_BLOCK_DISPOSABLE', true),
+    'blocked_domains'  => env('MAIL_BLOCKED_DOMAINS', ''),
+    'allowed_domains'  => env('MAIL_ALLOWED_DOMAINS', ''),
+
 ];

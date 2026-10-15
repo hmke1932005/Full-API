@@ -29,8 +29,27 @@ class User extends Authenticatable
             if ($email === '') {
                 return;
             }
+            static::assertRealEmail($user, $email);
             \App\Support\DeletedEmail::release($email);
         });
+        // Backstop for "real e-mail only": a changed address is re-checked even if a controller forgot to.
+        static::updating(function (User $user) {
+            if ($user->isDirty('email')) {
+                $email = trim((string) $user->email);
+                if ($email !== '' && !str_starts_with($email, 'deleted-')) {
+                    static::assertRealEmail($user, $email);
+                }
+            }
+        });
+    }
+
+    /** Throws a 422-style ValidationException for temporary / disposable addresses (blocklist only, no DNS). */
+    protected static function assertRealEmail(User $user, string $email): void
+    {
+        $locale = ($user->preferred_language ?? 'en') === 'ar' ? 'ar' : 'en';
+        if ($why = \App\Support\DisposableEmail::problem($email, $locale, false)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['email' => [$why]]);
+        }
     }
 
     protected $fillable = [

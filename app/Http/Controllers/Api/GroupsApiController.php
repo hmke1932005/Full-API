@@ -304,6 +304,10 @@ class GroupsApiController extends Controller
 
         $fullName = trim((string) $request->input('full_name', ''));
         $email = trim((string) $request->input('email', ''));
+        if ($email !== '' && filter_var($email, FILTER_VALIDATE_EMAIL)
+            && ($why = \App\Support\DisposableEmail::problem($email, (string) $request->input('locale', 'ar')))) {
+            return $this->apiError('Validation failed.', ['email' => $why], 422);
+        }
         if ($fullName === '' || $email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return $this->apiError('Validation failed.', [
                 'full_name' => $fullName === '' ? 'Required.' : null,
