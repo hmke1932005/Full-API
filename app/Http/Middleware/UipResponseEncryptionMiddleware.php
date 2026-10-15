@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Services\ResponseCryptoService;
+use App\Support\PlatformPolicy;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -42,6 +43,32 @@ class UipResponseEncryptionMiddleware
             || !str_contains((string) $response->headers->get('Content-Type', ''), 'json');
     }
 
+    /** Encryption disabled by the admin: never encrypt, never demand a key, but understand leftover encrypted bodies. */
+    private function handlePlain(Request $request, Closure $next, string $kid, ?array $keys)
+    {
+        $isRead = in_array($request->method(), ['GET', 'HEAD'], true);
+        if (!$isRead && $request->isJson()) {
+            $raw = (string) $request->getContent();
+            $env = $raw !== '' ? json_decode($raw, true) : null;
+            if (is_array($env) && ($env['enc'] ?? null) === 'v1' && isset($env['d'])) {
+                if ($kid === '' || ($env['kid'] ?? '') !== $kid || $keys === null) {
+                    return $this->reject('enc_key_expired');
+                }
+                $body = $this->crypto->decryptRequest((string) $env['d'], $keys['req'], $kid, $request->method(), '/' . ltrim($request->path(), '/'));
+                if ($body === null) {
+                    return $this->reject('enc_bad_request', 400);
+                }
+                $request->setJson(new InputBag($body));
+                $request->attributes->set('uip_enc_request', true);
+            }
+        }
+
+        $response = $next($request);
+        $response->headers->set('X-Enc', '0'); // tells the SPA the channel is plain right now
+
+        return $response;
+    }
+
     public function handle(Request $request, Closure $next)
     {
         if (!config('secure_transport.enabled') || $request->isMethod('OPTIONS')) {
@@ -55,6 +82,14 @@ class UipResponseEncryptionMiddleware
 
         $kid  = (string) $request->header('X-Enc-Kid', '');
         $keys = $kid !== '' ? $this->crypto->keysFor($kid) : null;
+
+        // Admin → Platform Policy switched the envelope OFF: answers are plain JSON, enforcement is lifted.
+        // A tab that still holds an old key may keep sending encrypted bodies for a while, so those are still
+        // decrypted (or answered 428 so the client re-handshakes, learns encryption is off and sends plain).
+        if (!PlatformPolicy::encryptionOn()) {
+            return $this->handlePlain($request, $next, $kid, $keys);
+        }
+
         $key  = $keys['resp'] ?? null;
         $enforce = (bool) config('secure_transport.enforce');
         $isRead  = in_array($request->method(), ['GET', 'HEAD'], true);

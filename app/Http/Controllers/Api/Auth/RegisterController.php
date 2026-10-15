@@ -39,6 +39,17 @@ class RegisterController extends Controller
 
     public function submit(Request $request)
     {
+        // Admin → Platform Policy: public sign-up can be closed without a deploy (existing users are unaffected).
+        if (!\App\Support\PlatformPolicy::registrationOpen()) {
+            return response()->json([
+                'success' => false,
+                'message' => \App\Support\PlatformPolicy::registrationClosedMessage($request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en'),
+                'data'    => ['registration_closed' => true],
+                'errors'  => ['code' => 'registration_closed'],
+                'meta'    => (object) [],
+            ], 403);
+        }
+
         // Device Restrictions Policy — نوع جهاز محظور مايقدرش يعمل حساب كمان (مش اللوجين بس).
         // UipDeviceRestrictionMiddleware بيغطي ده أصلًا؛ الفحص هنا طبقة تانية لو الميدلوير اتشال.
         if (!$this->deviceRestriction->isAllowed($request->userAgent())) {

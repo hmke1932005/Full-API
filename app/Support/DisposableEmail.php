@@ -17,6 +17,9 @@ use Illuminate\Support\Facades\Cache;
  *
  * config('mail.allowed_domains') / MAIL_ALLOWED_DOMAINS always wins (escape hatch for a false positive).
  * MAIL_BLOCK_DISPOSABLE=false switches both checks off (local / automated testing only).
+ *
+ * On top of that, the admin controls the same rules live from Admin → Platform Policy (App\Support\PlatformPolicy):
+ * a custom block list, an allow list (wins over everything), and an on/off switch per built-in check.
  */
 final class DisposableEmail
 {
@@ -173,7 +176,7 @@ final class DisposableEmail
     public static function isDisposableDomain(string $domain): bool
     {
         $domain = mb_strtolower(trim($domain));
-        if ($domain === '') {
+        if ($domain === '' || !PlatformPolicy::flag('disposable_check')) {
             return false;
         }
         if (self::inSet($domain, self::csv(config('mail.allowed_domains', '')))) {
@@ -194,7 +197,11 @@ final class DisposableEmail
 
     public static function isDisposable($email): bool
     {
-        return self::enabled() && self::isDisposableDomain(self::domainOf($email));
+        if (!self::enabled() || PlatformPolicy::emailAllowed($email)) {
+            return false;
+        }
+
+        return PlatformPolicy::emailBlockedBy($email) !== null || self::isDisposableDomain(self::domainOf($email));
     }
 
     /**
@@ -215,10 +222,10 @@ final class DisposableEmail
             return false;
         }
         $local = substr($email, 0, $at);
-        if ((bool) config('mail.block_plus_addressing', true) && str_contains($local, '+')) {
+        if (PlatformPolicy::flag('plus_addressing_check') && str_contains($local, '+')) {
             return true;
         }
-        if ((bool) config('mail.block_suspicious_gmail', true)
+        if (PlatformPolicy::flag('suspicious_gmail_check')
             && in_array(self::domainOf($email), ['gmail.com', 'googlemail.com'], true)) {
             $groups = explode('.', $local);
             $dots = count($groups) - 1;
@@ -255,35 +262,57 @@ final class DisposableEmail
     }
 
     /**
+     * Full verdict for one address, in the order the checks run:
+     * allow list -> custom block list -> built-in disposable domains -> "+tag"/dotted-Gmail pattern -> DNS.
+     *
+     * @return array{ok:bool,code:?string,rule:?string,message:?string}
+     *         code: null | custom_block | disposable | pattern | dns | allow_list (ok=true, address explicitly allowed)
+     */
+    public static function diagnose($email, string $locale = 'en', bool $checkDns = true, bool $skipPattern = false): array
+    {
+        $ok = ['ok' => true, 'code' => null, 'rule' => null, 'message' => null];
+        if (!self::enabled()) {
+            return $ok;
+        }
+        $ar = $locale === 'ar';
+        $domain = self::domainOf($email);
+        if ($domain === '') {
+            return $ok; // format errors are reported by the normal "valid email" rule
+        }
+        if (PlatformPolicy::emailAllowed($email)) {
+            return ['ok' => true, 'code' => 'allow_list'] + $ok;
+        }
+        if ($rule = PlatformPolicy::emailBlockedBy($email)) {
+            return ['ok' => false, 'code' => 'custom_block', 'rule' => $rule['value'], 'message' => $ar
+                ? 'هذا البريد الإلكتروني غير مسموح به في المنصة. استخدم بريدًا آخر.'
+                : 'This email address is not allowed on this platform. Please use a different one.'];
+        }
+        if (self::isDisposableDomain($domain)) {
+            return ['ok' => false, 'code' => 'disposable', 'rule' => $domain, 'message' => $ar
+                ? 'لا يُسمح بالبريد الإلكتروني المؤقت. استخدم بريدًا إلكترونيًا حقيقيًا.'
+                : 'Temporary / disposable email addresses are not allowed. Please use a real email address.'];
+        }
+        if (!$skipPattern && self::isSuspiciousMailbox($email) && !self::inSet($domain, self::csv(config('mail.allowed_domains', '')))) {
+            return ['ok' => false, 'code' => 'pattern', 'rule' => null, 'message' => $ar
+                ? 'هذا البريد الإلكتروني يبدو مؤقتًا أو مستعارًا (عنوان فيه + أو شكل عشوائي). استخدم بريدك الحقيقي الأساسي.'
+                : 'This looks like a temporary or alias address (contains "+" or a random pattern). Please use your real, primary email address.'];
+        }
+        if ($checkDns && PlatformPolicy::flag('email_dns_check') && !self::domainCanReceiveMail($domain)) {
+            return ['ok' => false, 'code' => 'dns', 'rule' => $domain, 'message' => $ar
+                ? 'نطاق هذا البريد الإلكتروني غير صالح أو لا يستقبل رسائل. استخدم بريدًا إلكترونيًا حقيقيًا.'
+                : 'This email domain cannot receive mail. Please use a real email address.'];
+        }
+
+        return $ok;
+    }
+
+    /**
      * @param bool $skipPattern skip only the "looks generated" pattern check (+tag / dot padding) for an address
      *                          whose inbox ownership is already proven (Google sign-in); domain blocklist still applies.
      * @return string|null a user-facing message when the address must be refused, null when it is fine.
      */
     public static function problem($email, string $locale = 'en', bool $checkDns = true, bool $skipPattern = false): ?string
     {
-        if (!self::enabled()) {
-            return null;
-        }
-        $ar = $locale === 'ar';
-        $domain = self::domainOf($email);
-        if ($domain === '') {
-            return null; // format errors are reported by the normal "valid email" rule
-        }
-        if (self::isDisposableDomain($domain)) {
-            return $ar
-                ? 'لا يُسمح بالبريد الإلكتروني المؤقت. استخدم بريدًا إلكترونيًا حقيقيًا.'
-                : 'Temporary / disposable email addresses are not allowed. Please use a real email address.';
-        }
-        if (!$skipPattern && self::isSuspiciousMailbox($email) && !self::inSet($domain, self::csv(config('mail.allowed_domains', '')))) {
-            return $ar
-                ? 'هذا البريد الإلكتروني يبدو مؤقتًا أو مستعارًا (عنوان فيه + أو شكل عشوائي). استخدم بريدك الحقيقي الأساسي.'
-                : 'This looks like a temporary or alias address (contains "+" or a random pattern). Please use your real, primary email address.';
-        }
-        if ($checkDns && !self::domainCanReceiveMail($domain)) {
-            return $ar
-                ? 'نطاق هذا البريد الإلكتروني غير صالح أو لا يستقبل رسائل. استخدم بريدًا إلكترونيًا حقيقيًا.'
-                : 'This email domain cannot receive mail. Please use a real email address.';
-        }
-        return null;
+        return self::diagnose($email, $locale, $checkDns, $skipPattern)['message'];
     }
 }

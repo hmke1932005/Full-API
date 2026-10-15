@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\ResponseCryptoService;
+use App\Support\PlatformPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -12,6 +13,11 @@ class SecureHandshakeController extends Controller
 {
     public function submit(Request $request, ResponseCryptoService $crypto)
     {
+        // Admin switched response encryption off: tell the client plainly, hand out no key.
+        if (!PlatformPolicy::encryptionOn()) {
+            return $this->apiSuccess(['enabled' => false], 'Secure channel disabled.')->header('Cache-Control', 'no-store');
+        }
+
         $pub = (string) $request->input('pub', '');
         if ($pub === '' || strlen($pub) > 200) {
             return $this->apiError('Invalid key.', null, 422);
@@ -33,6 +39,6 @@ class SecureHandshakeController extends Controller
     /** GET /api/v1/secure/selftest — booleans only; tells the operator what is missing on the server. */
     public function selftest(ResponseCryptoService $crypto)
     {
-        return $this->apiSuccess($crypto->selfTest(), 'Self-test finished.')->header('Cache-Control', 'no-store');
+        return $this->apiSuccess($crypto->selfTest() + ['enabled' => PlatformPolicy::encryptionOn()], 'Self-test finished.')->header('Cache-Control', 'no-store');
     }
 }

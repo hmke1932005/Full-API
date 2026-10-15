@@ -144,6 +144,7 @@ Route::prefix('v1')->group(function () {
     // Negotiates the per-client response-encryption key (UipResponseEncryptionMiddleware).
     Route::post('/secure/handshake', [\App\Http\Controllers\Api\SecureHandshakeController::class, 'submit'])->middleware('throttle:60,1');
     Route::get('/secure/selftest', [\App\Http\Controllers\Api\SecureHandshakeController::class, 'selftest'])->middleware('throttle:20,1');
+    Route::get('/platform/status', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'publicStatus'])->middleware('throttle:60,1');
 
     Route::prefix('auth')->group(function () {
         // بدون Middleware — يطابق القديم بالظبط
@@ -871,6 +872,15 @@ Route::prefix('v1')->group(function () {
         Route::get('/', [AdminMobileApiController::class, 'index']);
         Route::post('/', [AdminMobileApiController::class, 'store']);
         Route::post('/{id}/revoke', [AdminMobileApiController::class, 'revoke']);
+    });
+
+    // Admin → Platform Policy: حظر إيميلات/دومينات، قفل التسجيل، تشغيل/إيقاف تشفير الـ response.
+    Route::prefix('admin/platform-policy')->middleware(['uip.auth', 'uip.admin'])->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'show']);
+        Route::patch('/flags', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'updateFlags']);
+        Route::post('/rules', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'addRules']);
+        Route::delete('/rules', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'removeRule']);
+        Route::post('/test', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'test']);
     });
 
     Route::prefix('admin/notification-settings')->middleware(['uip.auth', 'uip.admin'])->group(function () {

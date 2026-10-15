@@ -83,7 +83,12 @@ class GoogleAuthController extends Controller
             return $this->signIn($request, $user, $g, $locale);
         }
 
-        // مفيش حساب: إنشاء ذاتي للطالب بس، ومن جهاز مسموح.
+        // مفيش حساب: التسجيل ممكن يكون مقفول من Admin → Platform Policy.
+        if (!\App\Support\PlatformPolicy::registrationOpen()) {
+            return $this->fail(\App\Support\PlatformPolicy::registrationClosedMessage($locale), 403, ['code' => 'registration_closed']);
+        }
+
+        // إنشاء ذاتي للطالب بس، ومن جهاز مسموح.
         if (!$this->deviceRestriction->isAllowed($request->userAgent(), 'student')) {
             return $this->deviceBlocked($request, $locale, 'student');
         }
@@ -144,6 +149,10 @@ class GoogleAuthController extends Controller
         // اتسجّل قبل كده (ضغط مرتين مثلًا) -> ندخّله بس.
         if ($existing = $this->findUser($g)) {
             return $this->signIn($request, $existing, $g, $locale);
+        }
+
+        if (!\App\Support\PlatformPolicy::registrationOpen()) {
+            return $this->fail(\App\Support\PlatformPolicy::registrationClosedMessage($locale), 403, ['code' => 'registration_closed']);
         }
 
         if (!$this->deviceRestriction->isAllowed($request->userAgent(), 'student')) {
