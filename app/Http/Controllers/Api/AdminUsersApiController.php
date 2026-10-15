@@ -234,7 +234,14 @@ class AdminUsersApiController extends Controller
         );
     }
 
-    /** POST /api/v1/admin/users/{id}/restore — يرجّع أي حساب محذوف (ولو جامعة: بجامعتها وكل المرتبطين بيها). */
+    /**
+     * POST /api/v1/admin/users/{id}/restore — يرجّع أي حساب محذوف (ولو جامعة: بجامعتها وكل المرتبطين بيها).
+     *
+     * لو إيميل الحساب المحذوف بقى ماسكه حساب شغّال تاني: بيرجّع 409 (code=email_conflict) فيه بيانات الحساب
+     * الشغّال والاختيارات، والأدمن يعيد الطلب بـ resolution:
+     *   - new_email          { email }  : يرجّع القديم بإيميل جديد.
+     *   - merge_into_current { groups[] }: يدمج بيانات القديم (المجموعات المختارة) في الحساب الشغّال، والقديم يفضل محذوف.
+     */
     public function restore(Request $request, $id)
     {
         if ($err = $this->requireAdmin($request)) {
@@ -246,8 +253,59 @@ class AdminUsersApiController extends Controller
             return $this->apiError('User not found in the trash.', null, 404);
         }
 
-        $adminId = $request->attributes->get('uip_user_id');
-        $res = app(AccountLifecycleService::class)->restore((int) $target['id'], (int) $adminId);
+        $adminId = (int) $request->attributes->get('uip_user_id');
+        $recovery = app(\App\Services\AccountRecoveryService::class);
+        $merger = app(\App\Services\AccountMergeService::class);
+        $deletedRow = \Illuminate\Support\Facades\DB::table('users')->where('id', $target['id'])->first();
+        $conflict = $deletedRow ? $recovery->emailConflict($deletedRow) : null;
+        $resolution = (string) $request->input('resolution', '');
+        $emailOverride = null;
+
+        if ($conflict && $resolution === '') {
+            $isUniversity = app(AccountLifecycleService::class)->kindOf((int) $target['id']) === 'university';
+            return $this->apiError('This email is now used by another account.', [
+                'code'     => 'email_conflict',
+                'conflict' => [
+                    'uuid'   => $conflict->uuid,
+                    'name'   => $conflict->full_name,
+                    'email'  => $conflict->email,
+                    'status' => $conflict->status,
+                    'role'   => app(\App\Services\RoleService::class)->primaryRoleFor((int) $conflict->id),
+                    'created_at' => $conflict->created_at,
+                ],
+                'options' => $isUniversity ? ['new_email'] : ['new_email', 'merge_into_current'],
+                'groups'  => $isUniversity ? [] : $merger->preview((int) $target['id'], (int) $conflict->id, 'en', true),
+            ], 409);
+        }
+
+        if ($conflict && $resolution === 'merge_into_current') {
+            if (app(AccountLifecycleService::class)->kindOf((int) $target['id']) === 'university') {
+                return $this->apiError('A university account cannot be merged. Restore it with a new email instead.', null, 422);
+            }
+            try {
+                $result = $merger->merge((int) $target['id'], (int) $conflict->id, (array) $request->input('groups', []), $adminId, 'admin');
+            } catch (\Throwable $e) {
+                return $this->apiError($e->getMessage(), null, 422);
+            }
+            $this->auditLog->record($adminId, 'user.merge', 'User', $target['id'], null, ['into' => $conflict->uuid, 'groups' => $result['groups']]);
+
+            return $this->apiSuccess(
+                ['merged' => true, 'into' => $conflict->uuid, 'moved' => $result['moved'], 'left_behind' => $result['left_behind']],
+                'Old account data was merged into the active account. The old account stays deleted.'
+            );
+        }
+
+        if ($conflict && $resolution === 'new_email') {
+            $v = \Illuminate\Support\Facades\Validator::make($request->all(), ['email' => 'required|email|max:190']);
+            if ($v->fails()) {
+                return $this->apiError($v->errors()->first(), null, 422);
+            }
+            $emailOverride = strtolower(trim((string) $request->input('email')));
+        } elseif ($conflict) {
+            return $this->apiError('Unknown resolution.', null, 422);
+        }
+
+        $res = app(AccountLifecycleService::class)->restore((int) $target['id'], $adminId, $emailOverride);
         if (!$res['ok']) {
             return $this->apiError($res['error'], null, 422);
         }
@@ -255,7 +313,7 @@ class AdminUsersApiController extends Controller
         if ($res['kind'] === 'university') {
             $this->auditLog->record($adminId, 'university.restore', 'University', (int) ($res['university_id'] ?? 0), null, ['accounts_restored' => $res['accounts_restored']]);
         } else {
-            $this->auditLog->record($adminId, 'user.restore', 'User', $target['id'], null, ['email' => $target['email']]);
+            $this->auditLog->record($adminId, 'user.restore', 'User', $target['id'], null, ['email' => $emailOverride ?? $target['email'], 'new_email' => $emailOverride !== null]);
         }
 
         return $this->apiSuccess(

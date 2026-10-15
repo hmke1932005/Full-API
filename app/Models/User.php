@@ -29,15 +29,7 @@ class User extends Authenticatable
             if ($email === '') {
                 return;
             }
-            $trashed = \Illuminate\Support\Facades\DB::table('users')
-                ->whereNotNull('deleted_at')
-                ->whereRaw('LOWER(email) = ?', [strtolower($email)])
-                ->get(['id', 'email']);
-            foreach ($trashed as $row) {
-                \Illuminate\Support\Facades\DB::table('users')->where('id', $row->id)->update([
-                    'email' => substr('deleted-' . $row->id . '-' . time() . '-' . $row->email, 0, 190),
-                ]);
-            }
+            \App\Support\DeletedEmail::release($email);
         });
     }
 

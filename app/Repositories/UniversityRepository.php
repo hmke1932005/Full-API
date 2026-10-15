@@ -314,7 +314,7 @@ class UniversityRepository
      * استرجاع جامعة محذوفة بحسابها وطلابها.
      * @return array{ok:bool, error:?string, students_restored:int}
      */
-    public function restore($id): array
+    public function restore($id, ?string $emailOverride = null): array
     {
         $university = University::withTrashed()->find($id);
         if (!$university || !$university->trashed()) {
@@ -325,7 +325,7 @@ class UniversityRepository
         $account = $university->user_id ? DB::table('users')->where('id', $university->user_id)->first() : null;
         $restoredEmail = null;
         if ($account) {
-            $restoredEmail = preg_replace('/^deleted-' . (int) $account->id . '-\d+-/', '', (string) $account->email);
+            $restoredEmail = ($emailOverride !== null && trim($emailOverride) !== '') ? trim($emailOverride) : \App\Support\DeletedEmail::original($account);
             $taken = DB::table('users')->whereNull('deleted_at')->where('id', '!=', $account->id)
                 ->whereRaw('LOWER(email) = ?', [strtolower($restoredEmail)])->exists();
             if ($taken) {
@@ -336,11 +336,13 @@ class UniversityRepository
         $affected = [];
         DB::transaction(function () use ($university, $account, $restoredEmail, &$affected) {
             if ($account) {
+                \App\Support\DeletedEmail::release((string) $restoredEmail, (int) $account->id);
                 DB::table('users')->where('id', $account->id)->update([
                     'deleted_at'           => null,
                     'status'               => $account->status_before_delete ?: 'active',
                     'status_before_delete' => null,
                     'email'                => $restoredEmail,
+                    'original_email'       => null,
                 ]);
             }
 

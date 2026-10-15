@@ -120,6 +120,30 @@ class RegisterController extends Controller
         }
 
         $existing = User::whereRaw('LOWER(email) = ?', [strtolower($data['email'])])->first();
+
+        // الإيميل ده كان لحساب اتحذف: نقول لصاحبه ونعرض الاسترجاع (OTP) بدل ما نعمله حساب جديد من غير ما يعرف.
+        // لو اختار يكمّل حساب جديد (continue_as_new) بنكمّل عادي والحساب القديم يفضل محذوف.
+        if (!$request->boolean('continue_as_new')) {
+            $recovery = app(\App\Services\AccountRecoveryService::class);
+            $deleted = $recovery->findDeleted($data['email']);
+            if ($deleted && (!$existing || EmailVerificationService::blocksLogin($existing))) {
+                $st = $recovery->state($data['email']);
+                return response()->json([
+                    'success' => false,
+                    'message' => $request->header('X-Locale', 'en') === 'ar'
+                        ? 'الإيميل ده كان عليه حساب اتحذف. تقدر تسترجعه، أو تكمّل وتعمل حساب جديد.'
+                        : 'This email belonged to a deleted account. You can restore it, or continue and create a new account.',
+                    'data'    => [
+                        'deleted_account'  => true,
+                        'can_self_restore' => $st['state'] === \App\Services\AccountRecoveryService::STATE_RESTORABLE,
+                        'reason'           => $st['code'],
+                        'email'            => $data['email'],
+                    ],
+                    'errors'  => ['code' => 'deleted_account_found'],
+                    'meta'    => (object) [],
+                ], 409);
+            }
+        }
         // حساب سابق لسه pending ومتأكدش إيميله ومفيش جوجل مربوط بيه: محدش أثبت إنه بتاعه أصلًا (ممكن حد سجّل
         // بإيميل مش بتاعه). فنسمح لصاحب الإيميل الحقيقي يسجّل فوقه بدل ما نقفل الإيميل عليه، والتأكيد بيروح
         // للإيميل نفسه فمحدش غيره يقدر يفعّله.

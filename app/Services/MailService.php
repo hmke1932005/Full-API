@@ -339,6 +339,33 @@ class MailService
         return true;
     }
 
+    /** رمز OTP لاسترجاع حساب محذوف (restore) أو دمج بياناته في الحساب الحالي (merge). */
+    public function sendAccountRecoveryOtp(string $toEmail, string $fullName, string $otp, int $minutes, string $purpose, ?string $ip, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+        $merge = $purpose === 'merge';
+        $from = $ip ? ($ar ? " (من IP: {$ip})" : " (from IP: {$ip})") : '';
+
+        return $this->deliver(
+            $toEmail,
+            $merge ? ($ar ? 'رمز استرجاع بيانات حسابك القديم' : 'Code to recover your old account data') : ($ar ? 'رمز استرجاع حسابك المحذوف' : 'Code to restore your deleted account'),
+            $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
+            [
+                $merge
+                    ? ($ar ? "طُلب نقل بيانات حسابك القديم (المحذوف) إلى حسابك الحالي{$from}. استخدم الرمز التالي لتأكيد إنك صاحب الإيميل."
+                           : "A request was made to move the data of your old (deleted) account into your current account{$from}. Use the code below to confirm you own this email.")
+                    : ($ar ? "طُلب استرجاع حسابك المحذوف على المنصة{$from}. استخدم الرمز التالي لتأكيد إنك صاحب الإيميل وتحديد كلمة سر جديدة."
+                           : "A request was made to restore your deleted account on the platform{$from}. Use the code below to confirm you own this email and set a new password."),
+                $ar ? "الرمز صالح لمدة {$minutes} دقايق ويُستخدم مرة واحدة. متشاركوش مع حد." : "The code is valid for {$minutes} minutes and works once. Never share it with anyone.",
+                $ar ? 'لو ماكنتش أنت، تجاهل الرسالة — مفيش حاجة هتتغير.' : "If this wasn't you, ignore this email — nothing will change.",
+            ],
+            null,
+            $locale,
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp]],
+            'sendAccountRecoveryOtp',
+        );
+    }
+
     /** رمز OTP لاسترجاع حساب مفتوح على جهاز تاني ("مش أنا") — بيرجّع نتيجة الإرسال الفعلية. */
     public function sendSessionTakeoverOtp(string $toEmail, string $fullName, string $otp, int $minutes, ?string $ip, string $locale = 'ar'): bool
     {

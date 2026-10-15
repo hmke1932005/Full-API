@@ -149,6 +149,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/google/config', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'config']);
         Route::post('/google', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'submit'])->middleware('throttle:20,1');
         Route::post('/google/complete', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'complete'])->middleware('throttle:10,1');
+        Route::post('/google/restore', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'restoreDeleted'])->middleware('throttle:10,1');
         Route::post('/refresh-token', [RefreshTokenController::class, 'submit']);
         Route::post('/logout', [LogoutController::class, 'handle']);
         Route::post('/forgot-password', [ForgotPasswordController::class, 'submit']);
@@ -162,6 +163,11 @@ Route::prefix('v1')->group(function () {
         Route::get('/universities', [UniversitiesController::class, 'index']);
         Route::get('/university-hierarchy/{id}', [UniversitiesController::class, 'hierarchy']);
 
+        // استرجاع حساب محذوف / دمج بياناته بإثبات ملكية الإيميل (OTP).
+        Route::post('/account-recovery/check', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'check'])->middleware('throttle:20,1');
+        Route::post('/account-recovery/send', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'send'])->middleware('throttle:6,1');
+        Route::post('/account-recovery/restore', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'restore'])->middleware('throttle:12,1');
+
         // محتاج Bearer token — يطابق AuthMiddleware القديمة (الجزء الخاص بالـ API بس)
         Route::middleware('uip.auth')->group(function () {
             Route::get('/permissions', [\App\Http\Controllers\Api\MyPermissionsApiController::class, 'show']);
@@ -169,6 +175,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/mfa/status', [\App\Http\Controllers\Api\Auth\MfaEnrollmentController::class, 'status']);
             Route::post('/mfa/setup', [\App\Http\Controllers\Api\Auth\MfaEnrollmentController::class, 'setup'])->middleware('throttle:20,1');
             Route::post('/mfa/confirm', [\App\Http\Controllers\Api\Auth\MfaEnrollmentController::class, 'confirm'])->middleware('throttle:10,1');
+            Route::get('/account-recovery/merge/candidates', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'mergeCandidates']);
+            Route::post('/account-recovery/merge/send', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'mergeSend'])->middleware('throttle:6,1');
+            Route::post('/account-recovery/merge/confirm', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'mergeConfirm'])->middleware('throttle:12,1');
             Route::get('/sessions', [SessionsController::class, 'index']);
             Route::delete('/sessions/{id}', [SessionsController::class, 'revoke']);
         });

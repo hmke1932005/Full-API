@@ -130,7 +130,7 @@ class AccountLifecycleService
     /**
      * @return array{ok:bool, kind:?string, accounts_restored:int, error:?string}
      */
-    public function restore(int $userId, ?int $actorId = null): array
+    public function restore(int $userId, ?int $actorId = null, ?string $emailOverride = null): array
     {
         $row = DB::table('users')->where('id', $userId)->whereNotNull('deleted_at')->first();
         if (!$row) {
@@ -142,7 +142,7 @@ class AccountLifecycleService
         if ($kind === 'university') {
             $uniId = DB::table('universities')->where('user_id', $userId)->whereNotNull('deleted_at')->value('id');
             if ($uniId) {
-                $res = app(UniversityRepository::class)->restore((int) $uniId);
+                $res = app(UniversityRepository::class)->restore((int) $uniId, $emailOverride);
                 return [
                     'ok' => $res['ok'], 'kind' => $kind, 'accounts_restored' => $res['students_restored'],
                     'error' => $res['error'], 'university_id' => (int) $uniId,
@@ -156,7 +156,7 @@ class AccountLifecycleService
             return ['ok' => false, 'kind' => $kind, 'accounts_restored' => 0, 'error' => 'This account belongs to a deleted university. Restore the university first.'];
         }
 
-        $res = app(UserRepository::class)->restore($userId);
+        $res = app(UserRepository::class)->restore($userId, $emailOverride);
         if (!$res['ok']) {
             return ['ok' => false, 'kind' => $kind, 'accounts_restored' => 0, 'error' => $res['error']];
         }

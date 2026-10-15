@@ -467,25 +467,32 @@ class UserRepository
      * (deleted-<id>-<time>-email)، ولو الإيميل اتأخد من حساب تاني بيرفض.
      * @return array{ok:bool, error:?string}
      */
-    public function restore($userId): array
+    /**
+     * @param string|null $emailOverride إيميل بديل (الأدمن اختار إيميل جديد بدل الأصلي المتاخد).
+     * @return array{ok:bool, error:?string, code?:string}
+     */
+    public function restore($userId, ?string $emailOverride = null): array
     {
         $row = DB::table('users')->where('id', $userId)->whereNotNull('deleted_at')->first();
         if (!$row) {
             return ['ok' => false, 'error' => 'User not found in the trash.'];
         }
 
-        $email = preg_replace('/^deleted-' . (int) $row->id . '-\d+-/', '', (string) $row->email);
+        $email = $emailOverride !== null && trim($emailOverride) !== '' ? trim($emailOverride) : \App\Support\DeletedEmail::original($row);
         $taken = DB::table('users')->whereNull('deleted_at')->where('id', '!=', $row->id)
             ->whereRaw('LOWER(email) = ?', [strtolower($email)])->exists();
         if ($taken) {
-            return ['ok' => false, 'error' => 'This email is now used by another account.'];
+            return ['ok' => false, 'error' => 'This email is now used by another account.', 'code' => 'email_taken'];
         }
+        // إيميل بديل: نحرّره من أي صف محذوف تاني ماسكه (unique).
+        \App\Support\DeletedEmail::release($email, (int) $row->id);
 
         DB::table('users')->where('id', $row->id)->update([
             'deleted_at'           => null,
             'status'               => $row->status_before_delete ?: 'active',
             'status_before_delete' => null,
             'email'                => $email,
+            'original_email'       => null,
         ]);
 
         return ['ok' => true, 'error' => null];

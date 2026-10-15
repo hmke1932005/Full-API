@@ -88,6 +88,7 @@ class GoogleAuthController extends Controller
             return $this->deviceBlocked($request, $locale, 'student');
         }
 
+        $deletedState = app(\App\Services\AccountRecoveryService::class)->state($g['email']);
         $suggest = $this->suggestNames($g);
         $token = UipJwtService::encode([
             'typ'     => self::SIGNUP_TYP,
@@ -103,6 +104,11 @@ class GoogleAuthController extends Controller
             'data'    => [
                 'needs_registration' => true,
                 'registration_token' => $token,
+                // الإيميل ده كان لحساب اتحذف: الفرونت يعرض "استرجع حسابك" (POST /auth/google/restore) أو يكمّل حساب جديد.
+                'deleted_account'    => $deletedState['state'] === 'none' ? null : [
+                    'can_restore' => $deletedState['state'] === 'restorable',
+                    'reason'      => $deletedState['code'],
+                ],
                 'profile'            => [
                     'email'   => $g['email'],
                     'name'    => $g['name'],
@@ -213,6 +219,56 @@ class GoogleAuthController extends Controller
         SecurityLog::write('User registered with Google', ['user_id' => $user->id, 'email' => $user->email, 'role' => 'student']);
 
         return $this->login->finishLogin($request, $user->fresh(), 'student', $locale);
+    }
+
+    /**
+     * POST /auth/google/restore { registration_token }
+     * جوجل أثبت ملكية الإيميل، فالحساب المحذوف بيرجع بكل بياناته من غير OTP (بنفس شروط الاسترجاع الذاتي)
+     * ويدخل فورًا بنفس حراسات اللوجين.
+     */
+    public function restoreDeleted(Request $request)
+    {
+        $locale = $this->locale($request);
+        $claims = UipJwtService::decode((string) $request->input('registration_token', ''));
+        if (!$claims || ($claims['typ'] ?? null) !== self::SIGNUP_TYP || empty($claims['email']) || empty($claims['gsub'])) {
+            return $this->fail($locale === 'ar'
+                ? 'انتهت مهلة التسجيل. ارجع واختار حساب جوجل تاني.'
+                : 'Your sign-up session expired. Please choose your Google account again.', 422, ['code' => 'signup_expired']);
+        }
+        $g = [
+            'sub' => (string) $claims['gsub'], 'email' => strtolower((string) $claims['email']),
+            'name' => (string) ($claims['name'] ?? ''), 'picture' => $claims['picture'] ?? null,
+            'given_name' => '', 'family_name' => '', 'locale' => null,
+        ];
+
+        $recovery = app(\App\Services\AccountRecoveryService::class);
+        $st = $recovery->state($g['email']);
+        $squatter = $st['active'] && $recovery->isSquatter($st['active']) ? $st['active'] : null;
+        if ($st['state'] === 'none' || ($st['state'] === 'needs_login_merge')) {
+            // مفيش محذوف، أو فيه حساب شغّال: دخول عادي لو موجود.
+            if ($existing = $this->findUser($g)) {
+                return $this->signIn($request, $existing, $g, $locale);
+            }
+            return $this->fail($locale === 'ar' ? 'مفيش حساب محذوف نقدر نسترجعه.' : 'There is no deleted account to restore.', 404, ['code' => 'not_found']);
+        }
+        if ($st['state'] !== 'restorable') {
+            return $this->fail($locale === 'ar'
+                ? 'استرجاع الحساب ده محتاج موافقة الإدارة. تواصل مع الدعم.'
+                : 'Restoring this account requires an administrator. Contact support.', 403, ['code' => (string) $st['code']]);
+        }
+        if (!$this->deviceRestriction->isAllowed($request->userAgent(), 'student')) {
+            return $this->deviceBlocked($request, $locale, 'student');
+        }
+
+        $res = $recovery->restoreVerified($st['deleted'], $squatter, null);
+        if (!$res['ok']) {
+            return $this->fail((string) $res['error'], 422, ['code' => 'restore_failed']);
+        }
+        SecurityLog::write('Deleted account restored with Google', ['user_id' => $st['deleted']->id, 'ip' => $request->ip()]);
+
+        $user = User::find((int) $st['deleted']->id);
+
+        return $this->signIn($request, $user, $g, $locale);
     }
 
     // ------------------------------------------------------------------ helpers
