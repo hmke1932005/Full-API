@@ -79,6 +79,24 @@ class LoginController extends Controller
         $data = $validator->validated();
         $locale = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
 
+        // Staff gate: the hidden staff sign-in only accepts a request that carries a ticket from POST /auth/staff-gate
+        // (a correct access code). Checked before any account lookup, so nothing about accounts leaks without it.
+        // The ticket also fixes which staff roles may sign in with it (checked again below, once the role is known).
+        $gateRoles = null;
+        if ($request->input('portal') === 'staff' && \App\Support\StaffGate::enabled()) {
+            $gateRoles = \App\Support\StaffGate::rolesFromTicket($request->input('gate_token'));
+            if ($gateRoles === null) {
+                SecurityLog::write('Staff login refused - no valid gate ticket', ['ip' => $request->ip()]);
+                return response()->json([
+                    'success' => false,
+                    'message' => $locale === 'ar' ? 'أدخل كود الدخول أولًا.' : 'Enter the access code first.',
+                    'data'    => null,
+                    'errors'  => ['code' => 'staff_gate_required'],
+                    'meta'    => (object) [],
+                ], 403);
+            }
+        }
+
         // Device Restrictions Policy — قاعدة على مستوى المنصة (مش مرتبطة بحساب بعينه)،
         // فبتتفحص قبل أي بحث عن الحساب أو تحقق من كلمة السر.
         if (!$this->deviceRestriction->isAllowed($request->userAgent())) {
@@ -166,6 +184,20 @@ class LoginController extends Controller
                 if ($candidates) {
                     $role = $candidates[0];
                 }
+            }
+        }
+        // The code that opened the gate decides which staff accounts may enter: anything else gets the same
+        // "wrong e-mail or password" answer (a joker account falls back to a role the code does allow).
+        if ($gateRoles !== null && !in_array($role, $gateRoles, true)) {
+            $held = $isJoker ? $this->roles->allRolesFor((int) $user->id) : [];
+            $fallback = array_values(array_intersect($gateRoles, $held));
+            if ($fallback) {
+                $role = $fallback[0];
+            } else {
+                SecurityLog::write('Staff login refused - role not covered by the access code', [
+                    'user_id' => $user->id, 'role' => $role, 'ip' => $request->ip(),
+                ]);
+                return response()->json(['success' => false, 'message' => 'Invalid email or password.'], 422);
             }
         }
         if (!$isJoker && in_array($role, self::STAFF_ROLES, true) !== $viaStaffPortal) {
