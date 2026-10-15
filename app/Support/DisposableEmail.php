@@ -120,6 +120,26 @@ final class DisposableEmail
     /** @var array<string,true>|null */
     private static ?array $blockedSet = null;
 
+    /** @var array<string,true>|null  bundled list: resources/data/disposable_email_domains.txt (~9.9k domains) */
+    private static ?array $fileSet = null;
+
+    private static function fileSet(): array
+    {
+        if (self::$fileSet === null) {
+            self::$fileSet = [];
+            $path = function_exists('resource_path') ? resource_path('data/disposable_email_domains.txt') : '';
+            if ($path !== '' && is_file($path)) {
+                foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [] as $d) {
+                    $d = mb_strtolower(trim($d));
+                    if ($d !== '' && $d[0] !== '#') {
+                        self::$fileSet[$d] = true;
+                    }
+                }
+            }
+        }
+        return self::$fileSet;
+    }
+
     public static function enabled(): bool
     {
         return (bool) config('mail.block_disposable', true);
@@ -165,7 +185,7 @@ final class DisposableEmail
         $parts = explode('.', $domain);
         for ($i = 0, $n = count($parts); $i < $n - 1; $i++) {
             $candidate = implode('.', array_slice($parts, $i));
-            if (isset(self::$blockedSet[$candidate]) || isset(self::$remoteSet[$candidate]) || in_array($candidate, $extra, true)) {
+            if (isset(self::$blockedSet[$candidate]) || isset(self::fileSet()[$candidate]) || isset(self::$remoteSet[$candidate]) || in_array($candidate, $extra, true)) {
                 return true;
             }
         }
@@ -178,27 +198,30 @@ final class DisposableEmail
     }
 
     /**
-     * Gmail "temp mail" services hand out real @gmail.com addresses whose local part is padded with
-     * dots / digit groups (Gmail ignores dots), e.g. frederickfie.lds.99.2.53@gmail.com. The domain is
-     * legitimate so no domain blocklist can catch them; real people almost never have such an address.
-     * Flags a Gmail/Googlemail address whose name has a +tag (alias), 4+ dots or 2+ all-digit groups.
+     * Throw-away tricks on otherwise legitimate domains (gmail, outlook, ...), which no domain
+     * blocklist can catch:
+     *  - plus-addressing on ANY domain (name+tag@outlook.com): unlimited aliases of one inbox;
+     *  - Gmail/Googlemail "temp mail" addresses padded with dots / digit groups, e.g.
+     *    frederickfie.lds.99.2.53@gmail.com (4+ dots or 2+ all-digit groups; Gmail ignores dots).
      */
-    public static function isSuspiciousGmail($email): bool
+    public static function isSuspiciousMailbox($email): bool
     {
-        if (!(bool) config('mail.block_suspicious_gmail', true)) {
-            return false;
-        }
         $email = mb_strtolower(trim((string) $email));
-        if (!in_array(self::domainOf($email), ['gmail.com', 'googlemail.com'], true)) {
+        $at = strrpos($email, '@');
+        if ($at === false) {
             return false;
         }
-        $local = substr($email, 0, (int) strrpos($email, '@'));
-        if (str_contains($local, '+')) {
-            return true; // plus-addressing (name+tag@gmail.com) = unlimited throw-away aliases of one inbox
+        $local = substr($email, 0, $at);
+        if ((bool) config('mail.block_plus_addressing', true) && str_contains($local, '+')) {
+            return true;
         }
-        $groups = explode('.', $local);
-        $numeric = count(array_filter($groups, fn ($g) => $g !== '' && ctype_digit($g)));
-        return (count($groups) - 1) >= 4 || $numeric >= 2;
+        if ((bool) config('mail.block_suspicious_gmail', true)
+            && in_array(self::domainOf($email), ['gmail.com', 'googlemail.com'], true)) {
+            $groups = explode('.', $local);
+            $numeric = count(array_filter($groups, fn ($g) => $g !== '' && ctype_digit($g)));
+            return (count($groups) - 1) >= 4 || $numeric >= 2;
+        }
+        return false;
     }
 
     /** Can the domain receive mail? (MX, or A/AAAA as the implicit-MX fallback). Cached. */
@@ -241,10 +264,10 @@ final class DisposableEmail
                 ? 'لا يُسمح بالبريد الإلكتروني المؤقت. استخدم بريدًا إلكترونيًا حقيقيًا.'
                 : 'Temporary / disposable email addresses are not allowed. Please use a real email address.';
         }
-        if (self::isSuspiciousGmail($email) && !self::inSet($domain, self::csv(config('mail.allowed_domains', '')))) {
+        if (self::isSuspiciousMailbox($email) && !self::inSet($domain, self::csv(config('mail.allowed_domains', '')))) {
             return $ar
-                ? 'هذا البريد الإلكتروني يبدو مؤقتًا (بريد جيميل عشوائي). استخدم بريدك الحقيقي.'
-                : 'This looks like a temporary Gmail address. Please use your real email address.';
+                ? 'هذا البريد الإلكتروني يبدو مؤقتًا أو مستعارًا (عنوان فيه + أو شكل عشوائي). استخدم بريدك الحقيقي الأساسي.'
+                : 'This looks like a temporary or alias address (contains "+" or a random pattern). Please use your real, primary email address.';
         }
         if ($checkDns && !self::domainCanReceiveMail($domain)) {
             return $ar
