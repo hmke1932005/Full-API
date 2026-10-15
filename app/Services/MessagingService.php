@@ -455,7 +455,7 @@ class MessagingService
             'conversation_id'    => (int) $m['conversation_id'],
             'body'               => $m['is_deleted'] ? null : $m['body'],
             'message_type'       => $m['message_type'] ?? 'text',
-            'metadata'           => isset($m['metadata']) && $m['metadata'] ? json_decode($m['metadata'], true) : null,
+            'metadata'           => !$m['is_deleted'] && isset($m['metadata']) && $m['metadata'] ? json_decode($m['metadata'], true) : null,
             'sender_id'          => $m['sender_id'],
             'sender_name'        => $m['sender_name'],
             'sender_avatar'      => $this->isAvatarHidden((int) $m['sender_id'], $viewerId) ? null : ($m['sender_avatar'] ?? null),
@@ -463,13 +463,14 @@ class MessagingService
             'is_edited'          => (bool) ($m['is_edited'] ?? false),
             'is_pinned'          => (bool) ($m['is_pinned'] ?? false),
             'is_deleted'         => (bool) ($m['is_deleted'] ?? false),
+            'deleted_reason'     => !empty($m['is_deleted']) ? ($m['deleted_reason'] ?? null) : null,
             'created_at'         => $m['created_at'],
             'edited_at'          => $m['edited_at'] ?? null,
             'parent_message_id'  => $m['parent_message_id'] ?? null,
             'parent_body'        => $m['parent_body'] ?? null,
             'parent_sender_name' => $m['parent_sender_name'] ?? null,
             'forwarded_from_id'  => $m['forwarded_from_id'] ?? null,
-            'attachments'        => array_map(fn ($a) => $this->shapeAttachment($a), $m['attachments'] ?? []),
+            'attachments'        => !empty($m['is_deleted']) ? [] : array_map(fn ($a) => $this->shapeAttachment($a), $m['attachments'] ?? []),
             'reactions'          => $m['reactions'] ?? [],
             'mentions'           => $m['mentions'] ?? [],
         ];
@@ -673,7 +674,7 @@ class MessagingService
             }
         }
 
-        $this->messages->hardDelete($messageId);
+        $this->messages->unsend($messageId, $userId);
     }
 
     public function history(int $messageId, $userId): array
@@ -981,7 +982,7 @@ class MessagingService
     }
 
     /** "إيه اللي اتغير من آخر poll" — رسايل جديدة في $conversationId بعد $sinceMessageId + مين بيكتب دلوقتي. */
-    public function poll(int $conversationId, $userId, int $sinceMessageId = 0): array
+    public function poll(int $conversationId, $userId, int $sinceMessageId = 0, ?string $changesSince = null): array
     {
         if (!$this->conversations->isParticipant($conversationId, $userId)) {
             throw new \RuntimeException('Conversation not found.');
@@ -1003,9 +1004,34 @@ class MessagingService
         // with a file/video arrived as an empty bubble until the page was reloaded.
         $rows = $this->messages->attachRelations($rows);
 
+        // رسائل أقدم من since_id اتحذفت/اتعدّلت من بعد آخر poll (حذف للجميع، إلغاء الإرسال، تعديل) —
+        // من غير الجزء ده الطرف التاني مكانش بيشوف أي تغيير في رسالة قديمة غير بعد refresh.
+        $updated = [];
+        if ($changesSince !== null && ($ts = strtotime($changesSince)) !== false) {
+            $from = date('Y-m-d H:i:s', $ts - 5); // هامش أمان؛ الواجهة بتدمج بالـ id فمفيش مشكلة لو اتكرر
+            $changed = DB::select(
+                "SELECT m.*, u.full_name AS sender_name, u.avatar_path AS sender_avatar,
+                        p.body AS parent_body, pu.full_name AS parent_sender_name
+                 FROM messages m
+                 INNER JOIN users u ON u.id = m.sender_id
+                 LEFT JOIN messages p ON p.id = m.parent_message_id
+                 LEFT JOIN users pu ON pu.id = p.sender_id
+                 WHERE m.conversation_id = ? AND m.id <= ?
+                   AND (m.deleted_at >= ? OR m.edited_at >= ?)
+                   AND m.id NOT IN (SELECT message_id FROM message_hidden_for_user WHERE user_id = ?)
+                 ORDER BY m.id ASC
+                 LIMIT 200",
+                [$conversationId, $sinceMessageId, $from, $from, $userId]
+            );
+            $changed = $this->messages->attachRelations(array_map(fn ($r) => (array) $r, $changed));
+            $updated = array_map(fn ($m) => $this->shapeMessage($m, $userId), $changed);
+        }
+
         return [
-            'messages' => array_map(fn ($m) => $this->shapeMessage($m, $userId), $rows),
-            'typing'   => $this->typingIn($conversationId, $userId),
+            'messages'    => array_map(fn ($m) => $this->shapeMessage($m, $userId), $rows),
+            'updated'     => $updated,
+            'server_time' => now()->format('Y-m-d H:i:s'),
+            'typing'      => $this->typingIn($conversationId, $userId),
         ];
     }
 

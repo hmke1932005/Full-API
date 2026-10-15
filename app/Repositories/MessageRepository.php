@@ -175,6 +175,20 @@ class MessageRepository
         Message::where('id', $messageId)->delete();
     }
 
+    /**
+     * "Cancel" (Undo Send) — بنمسح المحتوى والمرفقات فعليًا، بس بنسيب الصف بعلامة deleted_reason='unsent'
+     * عشان الـ poll يقدر يبلّغ الطرف التاني إن الرسالة اتلغت (الصف المحذوف نهائيًا مفيش طريقة نوصّل بيها الخبر).
+     * الواجهة بتخفي الرسائل اللي deleted_reason='unsent' بالكامل (من غير tombstone).
+     */
+    public function unsend(int $messageId, $by): void
+    {
+        DB::table('message_attachments')->where('message_id', $messageId)->delete();
+        Message::where('id', $messageId)->update([
+            'is_deleted' => 1, 'deleted_at' => now(), 'deleted_by' => $by, 'deleted_reason' => 'unsent',
+            'body' => '', 'metadata' => null, 'is_pinned' => 0,
+        ]);
+    }
+
     /** الرسايل اللي فيها mention لليوزر ده — فلتر "mentions of me". */
     public function mentionsOf($userId, int $limit = 50): array
     {

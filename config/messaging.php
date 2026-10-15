@@ -17,7 +17,8 @@ return [
 
     'edit_window_minutes' => 0, // 0 = بدون حد زمني للتعديل
     'delete_for_everyone_window_minutes' => 15,
-    'undo_send_window_seconds' => 10,
+    // نافذة "إلغاء الإرسال" (زرار Cancel جنب الرسالة). بعدها الزرار بيبقى "حذف".
+    'undo_send_window_seconds' => (int) env('MESSAGING_UNDO_WINDOW_SECONDS', 60),
 
     'presence' => [
         'online_threshold_s' => 30,

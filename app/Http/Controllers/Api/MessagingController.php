@@ -199,12 +199,13 @@ class MessagingController extends Controller
         });
     }
 
-    /** GET /api/v1/messaging/conversations/{id}/poll — query: since_id */
+    /** GET /api/v1/messaging/conversations/{id}/poll — query: since_id, changes_since (server_time من الـ poll السابق) */
     public function poll(Request $request, $id)
     {
         return $this->handle(function () use ($request, $id) {
             $sinceId = (int) $request->input('since_id', 0);
-            return $this->apiSuccess($this->messaging->poll((int) $id, $this->uid($request), $sinceId), 'Poll retrieved successfully.');
+            $changesSince = $request->input('changes_since');
+            return $this->apiSuccess($this->messaging->poll((int) $id, $this->uid($request), $sinceId, is_string($changesSince) && $changesSince !== '' ? $changesSince : null), 'Poll retrieved successfully.');
         });
     }
 
