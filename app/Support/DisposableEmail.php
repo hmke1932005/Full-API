@@ -181,7 +181,7 @@ final class DisposableEmail
      * Gmail "temp mail" services hand out real @gmail.com addresses whose local part is padded with
      * dots / digit groups (Gmail ignores dots), e.g. frederickfie.lds.99.2.53@gmail.com. The domain is
      * legitimate so no domain blocklist can catch them; real people almost never have such an address.
-     * Flags a Gmail/Googlemail address whose name (before any +tag) has 4+ dots or 2+ all-digit groups.
+     * Flags a Gmail/Googlemail address whose name has a +tag (alias), 4+ dots or 2+ all-digit groups.
      */
     public static function isSuspiciousGmail($email): bool
     {
@@ -193,7 +193,9 @@ final class DisposableEmail
             return false;
         }
         $local = substr($email, 0, (int) strrpos($email, '@'));
-        $local = explode('+', $local, 2)[0];
+        if (str_contains($local, '+')) {
+            return true; // plus-addressing (name+tag@gmail.com) = unlimited throw-away aliases of one inbox
+        }
         $groups = explode('.', $local);
         $numeric = count(array_filter($groups, fn ($g) => $g !== '' && ctype_digit($g)));
         return (count($groups) - 1) >= 4 || $numeric >= 2;
