@@ -57,21 +57,65 @@ class ResponseCryptoService
 
         $salt = random_bytes(32);
         $kid  = bin2hex(random_bytes(16));
-        $key  = hash_hkdf('sha256', $shared, 32, 'uip-resp-enc-v1', $salt);
+        // Two independent keys: server->client (responses) and client->server (requests).
+        $keys = [
+            'resp' => hash_hkdf('sha256', $shared, 32, 'uip-resp-enc-v1', $salt),
+            'req'  => hash_hkdf('sha256', $shared, 32, 'uip-req-enc-v1', $salt),
+        ];
 
-        Cache::put('resp_enc:' . $kid, base64_encode($key), (int) config('secure_transport.key_ttl', 7200));
+        Cache::put('resp_enc:' . $kid, json_encode(array_map('base64_encode', $keys)), (int) config('secure_transport.key_ttl', 7200));
 
         return ['kid' => $kid, 'server_pub' => self::b64uEncode($serverPub), 'salt' => self::b64uEncode($salt)];
     }
 
-    public function keyFor(string $kid): ?string
+    /** @return array{resp:string,req:string}|null */
+    public function keysFor(string $kid): ?array
     {
         if (!preg_match('/^[a-f0-9]{32}$/', $kid)) {
             return null;
         }
         $v = Cache::get('resp_enc:' . $kid);
+        $arr = $v ? json_decode($v, true) : null;
+        if (!is_array($arr) || !isset($arr['resp'], $arr['req'])) {
+            return null;
+        }
 
-        return $v ? base64_decode($v) : null;
+        return ['resp' => base64_decode($arr['resp']), 'req' => base64_decode($arr['req'])];
+    }
+
+    /**
+     * Decrypts a client->server envelope body. AAD binds it to key id + method + path, and the
+     * plaintext carries a timestamp + nonce so a captured request cannot be replayed.
+     * @return array|null decoded JSON body, or null when invalid/stale/replayed
+     */
+    public function decryptRequest(string $d, string $key, string $kid, string $method, string $path): ?array
+    {
+        $raw = self::b64uDecode($d);
+        if (strlen($raw) < 12 + 16 + 1) {
+            return null;
+        }
+        $iv  = substr($raw, 0, 12);
+        $tag = substr($raw, -16);
+        $ct  = substr($raw, 12, -16);
+
+        $plain = openssl_decrypt($ct, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, "uip-req|$kid|" . strtoupper($method) . '|' . $path);
+        if ($plain === false) {
+            return null;
+        }
+        $wrap = json_decode($plain, true);
+        if (!is_array($wrap) || !isset($wrap['t'], $wrap['n'])) {
+            return null;
+        }
+        if (abs((int) (microtime(true) * 1000) - (int) $wrap['t']) > 120000) {
+            return null; // stale
+        }
+        if (!Cache::add('req_nonce:' . $kid . ':' . substr((string) $wrap['n'], 0, 40), 1, 300)) {
+            return null; // replay
+        }
+
+        $body = json_decode((string) ($wrap['b'] ?? ''), true);
+
+        return is_array($body) ? $body : [];
     }
 
     /** AES-256-GCM; AAD binds the ciphertext to this key id and HTTP status. Output = base64url(iv|ct|tag). */

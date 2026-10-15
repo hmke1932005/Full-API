@@ -8,6 +8,8 @@
 return [
     'enabled' => (bool) env('RESPONSE_ENC_ENABLED', true),
     'enforce' => (bool) env('RESPONSE_ENC_ENFORCE', false),
+    // true -> JSON request bodies must arrive encrypted (uploads/multipart are exempt).
+    'enforce_requests' => (bool) env('REQUEST_ENC_ENFORCE', false),
     'key_ttl' => (int) env('RESPONSE_ENC_KEY_TTL', 7200), // seconds a negotiated key lives
     // Paths (relative to the app root) never encrypted / never demanding a key.
     'except'  => ['api/v1/secure/handshake'],
