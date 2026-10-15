@@ -365,7 +365,7 @@ class UserRepository
 
         $rowsQuery = $this->rolesWithAffiliationQuery()
             ->select(
-                'u.id', 'u.uuid', 'u.full_name', 'u.email', 'u.status', 'u.created_at',
+                'u.id', 'u.uuid', 'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.status', 'u.created_at',
                 'r.slug as role',
                 'au.id as university_id', 'au.official_name_en as university_en', 'au.official_name_ar as university_ar',
                 DB::raw('(au.deleted_at IS NOT NULL) as university_deleted'),
@@ -391,7 +391,7 @@ class UserRepository
             ->leftJoin('roles as r', 'r.id', '=', 'ur.role_id')
             ->where('u.uuid', $uuid)
             ->whereNull('u.deleted_at')
-            ->select('u.id', 'u.uuid', 'u.full_name', 'u.email', 'u.phone', 'u.status', 'u.created_at',
+            ->select('u.id', 'u.uuid', 'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.phone', 'u.status', 'u.created_at',
                 'u.last_login_at', 'u.last_login_ip', 'r.slug as role')
             ->first();
 
@@ -443,7 +443,7 @@ class UserRepository
 
         $total = (clone $query)->count('u.id');
         $perPage = max(1, $perPage);
-        $rows = $query->select('u.id', 'u.uuid', 'u.full_name', 'u.email', 'u.status', 'u.created_at', 'u.deleted_at', 'r.slug as role')
+        $rows = $query->select('u.id', 'u.uuid', 'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.status', 'u.created_at', 'u.deleted_at', 'r.slug as role')
             ->orderByDesc('u.deleted_at')->limit($perPage)->offset(max(0, $page - 1) * $perPage)->get()
             ->map(fn ($r) => (array) $r)->all();
 
