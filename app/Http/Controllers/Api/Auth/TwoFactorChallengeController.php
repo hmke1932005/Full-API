@@ -13,6 +13,7 @@ use App\Support\AuthCookies;
 use App\Support\SecurityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 
 /**
@@ -66,9 +67,29 @@ class TwoFactorChallengeController extends Controller
             return response()->json(['success' => false, 'message' => $block[0], 'data' => $block[1], 'errors' => null, 'meta' => (object) []], 409);
         }
 
+        // A 6-digit code can be brute-forced, so wrong codes are counted per ACCOUNT (not per IP, so
+        // rotating IPs doesn't help): 5 wrong codes lock 2FA for this account for 15 minutes.
+        $limiterKey = '2fa_fail:' . (int) $user->id;
+        if (RateLimiter::tooManyAttempts($limiterKey, 5)) {
+            $wait = RateLimiter::availableIn($limiterKey);
+            SecurityLog::write('2FA blocked - too many wrong codes', ['user_id' => $user->id, 'ip' => $request->ip()]);
+
+            return $this->apiError(
+                $locale === 'ar'
+                    ? 'محاولات كتير غلط. حاول تاني بعد ' . (int) ceil($wait / 60) . ' دقيقة.'
+                    : 'Too many wrong codes. Try again in ' . (int) ceil($wait / 60) . ' minute(s).',
+                ['code' => ['two_factor_locked'], 'retry_after' => $wait],
+                429
+            );
+        }
+
         if (!$this->twoFactor->verifyLoginCode($user, (string) $request->input('code'))) {
+            RateLimiter::hit($limiterKey, 15 * 60);
+            SecurityLog::write('2FA wrong code', ['user_id' => $user->id, 'ip' => $request->ip()]);
+
             return $this->apiError('Invalid or expired code. Please try again.', ['code' => ['Invalid or expired code.']], 422);
         }
+        RateLimiter::clear($limiterKey);
 
         $role = (string) ($claims['role'] ?? $this->roles->primaryRoleFor($user->id));
 

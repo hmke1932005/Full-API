@@ -147,14 +147,14 @@ Route::prefix('v1')->group(function () {
 
     Route::prefix('auth')->group(function () {
         // بدون Middleware — يطابق القديم بالظبط
-        Route::post('/login', [LoginController::class, 'submit']);
-        Route::post('/register', [RegisterController::class, 'submit']);
+        Route::post('/login', [LoginController::class, 'submit'])->middleware('throttle:20,1');
+        Route::post('/register', [RegisterController::class, 'submit'])->middleware('throttle:10,1');
         // Sign in / sign up with Google (ويب + أندرويد).
         Route::get('/google/config', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'config']);
         Route::post('/google', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'submit'])->middleware('throttle:20,1');
         Route::post('/google/complete', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'complete'])->middleware('throttle:10,1');
         Route::post('/google/restore', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'restoreDeleted'])->middleware('throttle:10,1');
-        Route::post('/refresh-token', [RefreshTokenController::class, 'submit']);
+        Route::post('/refresh-token', [RefreshTokenController::class, 'submit'])->middleware('throttle:60,1');
         Route::post('/logout', [LogoutController::class, 'handle']);
         Route::post('/forgot-password', [ForgotPasswordController::class, 'submit'])->middleware('throttle:10,1');
         Route::post('/reset-password', [ResetPasswordController::class, 'submit'])->middleware('throttle:10,1');
@@ -190,8 +190,8 @@ Route::prefix('v1')->group(function () {
         });
 
         // Stateless (challenge_token) — بدون Middleware، زي القديم بالظبط
-        Route::post('/two-factor/verify', [TwoFactorChallengeController::class, 'submit']);
-        Route::post('/two-factor/cancel', [TwoFactorChallengeController::class, 'cancel']);
+        Route::post('/two-factor/verify', [TwoFactorChallengeController::class, 'submit'])->middleware('throttle:10,1');
+        Route::post('/two-factor/cancel', [TwoFactorChallengeController::class, 'cancel'])->middleware('throttle:20,1');
 
         // "الحساب مفتوح في مكان تاني وده مش أنا": OTP على الإيميل ← كلمة سر جديدة ← طرد الجلسات التانية.
         Route::post('/session-takeover/send', [\App\Http\Controllers\Api\Auth\SessionTakeoverController::class, 'send'])->middleware('throttle:6,1');

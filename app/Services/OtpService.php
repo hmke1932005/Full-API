@@ -62,6 +62,17 @@ class OtpService
     /** يفحص الرمز من غير ما يحرقه (الغلط بيتعدّ). بعد النجاح الكولر يستدعي forget() لما العملية تخلص. */
     public function check(string $purpose, int $userId, string $given): string
     {
+        // Serialise checks for one code: without the lock, parallel requests could all read
+        // "attempts = 0" and together try far more than MAX_ATTEMPTS guesses.
+        try {
+            return Cache::lock('lock:' . $this->key($purpose, $userId), 5)->block(3, fn () => $this->checkLocked($purpose, $userId, $given));
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException) {
+            return self::INVALID;
+        }
+    }
+
+    private function checkLocked(string $purpose, int $userId, string $given): string
+    {
         $key = $this->key($purpose, $userId);
         $state = Cache::get($key);
         if (!$state) {
