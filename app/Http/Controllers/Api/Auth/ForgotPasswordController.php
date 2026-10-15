@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\MailService;
 use App\Services\OtpService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
@@ -38,11 +39,20 @@ class ForgotPasswordController extends Controller
         }
 
         $email = $request->input('email');
-        $user = User::where('email', $email)->first();
+
+        // Per-address cooldown that exists for EVERY address (known or not), so the answer — including
+        // `retry_after` — is identical either way and reveals nothing. Cache::add is atomic: only one of
+        // several simultaneous requests starts a new window (and may send); the others just get the time left.
+        $cooldownKey = 'pw_reset_cd:' . sha1(mb_strtolower(trim((string) $email)));
+        $now = time();
+        $started = Cache::add($cooldownKey, $now + self::RESEND_AFTER, self::RESEND_AFTER);
+        $retryAfter = $started ? self::RESEND_AFTER : max(1, (int) Cache::get($cooldownKey, $now + 1) - $now);
+
+        $user = $started ? User::where('email', $email)->first() : null;
 
         if ($user) {
             $otp = app(OtpService::class);
-            // مفيش إرسال أسرع من مرة كل 60 ثانية لنفس الحساب (والرد بيفضل ثابت).
+            // برضه مفيش إرسال أسرع من مرة كل 60 ثانية لنفس الحساب (والرد بيفضل ثابت).
             if ($otp->secondsUntilResend(self::OTP_PURPOSE, (int) $user->id) === 0) {
                 $code = $otp->issue(self::OTP_PURPOSE, (int) $user->id);
 
@@ -65,6 +75,8 @@ class ForgotPasswordController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'If an account with that email exists, a reset code has been sent.',
+            'retry_after' => $retryAfter,
+            'data' => ['retry_after' => $retryAfter],
         ]);
     }
 }
