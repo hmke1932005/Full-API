@@ -192,10 +192,10 @@ final class PlatformPolicy
         return [$v, 'email'];
     }
 
-    /** A wildcard rule must keep at least 3 literal characters, so `*`, `*@*` or `*.*` can never block everybody. */
+    /** A wildcard rule must keep at least 2 literal characters (so `*@*.tk` is fine), so `*`, `*@*` or `*.*` can never block everybody. */
     private static function meaningful(string $v): bool
     {
-        return mb_strlen(str_replace(['*', '@', '.'], '', $v)) >= 3;
+        return mb_strlen(str_replace(['*', '@', '.'], '', $v)) >= 2;
     }
 
     /** @param array{value:string,type:string} $rule */
