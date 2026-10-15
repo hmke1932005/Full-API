@@ -175,6 +175,8 @@ class MessagingController extends Controller
                 'forwarded_from_id'   => $request->filled('forwarded_from_id') ? (int) $request->input('forwarded_from_id') : null,
                 'mentioned_user_ids'  => (array) $request->input('mentioned_user_ids', []),
                 'attachments'         => $request->file('attachments', []),
+                // denoise[] = '1'/'0' لكل ملف بنفس ترتيب attachments[] (عزل الضوضاء بعد الرفع).
+                'denoise'             => array_map(fn ($v) => filter_var($v, FILTER_VALIDATE_BOOLEAN), array_values((array) $request->input('denoise', []))),
             ]);
             return $this->apiSuccess($message, 'Message sent successfully.', 201);
         });

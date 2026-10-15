@@ -25,4 +25,10 @@ return [
     ],
 
     'poll_interval_ms' => 4000,
+
+    // عزل الضوضاء عند الرفع (اختياري من المرسل) — بيحتاج ffmpeg على السيرفر. بدون ffmpeg الملف بيتبعت زي ما هو.
+    'denoise' => [
+        'model_path' => env('MESSAGING_DENOISE_MODEL', resource_path('audio/rnnoise-bd.rnnn')), // RNNoise model لفلتر arnndn
+        'timeout'    => 180, // ثواني لكل ملف
+    ],
 ];

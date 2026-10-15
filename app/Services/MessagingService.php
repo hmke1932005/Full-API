@@ -56,6 +56,7 @@ class MessagingService
         private SupervisorAssignmentRepository $supervisorAssignments,
         private SettingRepository $settings,
         private RoleService $roles,
+        private AudioDenoiseService $denoise,
     ) {
     }
 
@@ -212,6 +213,21 @@ class MessagingService
 
         $this->assertNotRateLimited($userId);
 
+        // عزل الضوضاء (اختياري لكل ملف): بنعالج الملفات المؤقتة قبل الـ transaction عشان ffmpeg ما يمسكش lock على الرسالة.
+        // $options['denoise'] = مصفوفة flags بنفس ترتيب attachments. الفشل = الملف الأصلي بيتبعت (fail-open) والـ client بيتبلّغ.
+        $noise = ['requested' => 0, 'applied' => 0];
+        if ($hasAttachments) {
+            foreach (array_values((array) $options['attachments']) as $i => $file) {
+                if (empty($options['denoise'][$i]) || !($file instanceof UploadedFile)) {
+                    continue;
+                }
+                $noise['requested']++;
+                if ($this->denoise->denoiseUpload($file)) {
+                    $noise['applied']++;
+                }
+            }
+        }
+
         // One transaction: a concurrent poll() must never see the message row
         // before its attachments exist (it would be delivered as an empty bubble
         // and never re-fetched, because the client's since_id moves past it).
@@ -265,7 +281,11 @@ class MessagingService
             );
         }
 
-        return $this->shapeMessage($this->messages->withRelations((int) $message->id), $userId);
+        $shaped = $this->shapeMessage($this->messages->withRelations((int) $message->id), $userId);
+        if ($noise['requested'] > 0) {
+            $shaped['noise_reduction'] = $noise;
+        }
+        return $shaped;
     }
 
     /** يبدأ محادثة مباشرة (find-or-create) بالإيميل، من غير ما يبعت رسالة. */
