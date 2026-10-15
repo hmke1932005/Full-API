@@ -885,6 +885,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/rules', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'addRules']);
         Route::delete('/rules', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'removeRule']);
         Route::post('/test', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'test']);
+        Route::post('/decrypt', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'decrypt'])->middleware('throttle:30,1');
         Route::get('/staff-gate', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'staffGate']);
         Route::put('/staff-gate/{group}', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'setStaffGateCode'])->middleware('throttle:10,1');
         Route::delete('/staff-gate/{group}', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'resetStaffGateCode'])->middleware('throttle:10,1');

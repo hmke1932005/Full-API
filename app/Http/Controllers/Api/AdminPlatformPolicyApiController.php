@@ -330,6 +330,57 @@ class AdminPlatformPolicyApiController extends Controller
         ], $verdict['ok'] ? 'This address would be accepted.' : 'This address would be refused.');
     }
 
+    /**
+     * POST /api/v1/admin/platform-policy/decrypt — { envelope: '{"enc":"v1","kid":"…","d":"…"}' | "<d>", kid?, status? }
+     * Decrypts a captured API response using the session key held in cache (what `Cache::get('resp_enc:<kid>')` was for),
+     * without ever returning the key. Works only while the key is alive (secure_transport.key_ttl, default 2 h).
+     */
+    public function decrypt(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $input = trim((string) $request->input('envelope', ''));
+        if ($input === '' || strlen($input) > 2_000_000) {
+            return $this->apiError('Paste the encrypted response (the {"enc":"v1",…} text from the Network tab).', ['envelope' => 'required'], 422);
+        }
+        $kid = strtolower(trim((string) $request->input('kid', '')));
+        $d = $input;
+        if (str_starts_with($input, '{')) {
+            $env = json_decode($input, true);
+            if (!is_array($env) || !isset($env['d'])) {
+                return $this->apiError('That is not a valid encrypted response.', ['envelope' => 'invalid'], 422);
+            }
+            $d = (string) $env['d'];
+            $kid = $kid !== '' ? $kid : strtolower((string) ($env['kid'] ?? ''));
+        }
+        if (!preg_match('/^[a-f0-9]{32}$/', $kid)) {
+            return $this->apiError('Key ID (kid) is missing or malformed.', ['kid' => 'invalid'], 422);
+        }
+        $status = $request->filled('status') ? (int) $request->input('status') : null;
+
+        $crypto = app(ResponseCryptoService::class);
+        if ($crypto->keysFor($kid) === null) {
+            return $this->apiError('That key is gone — response keys live only for a couple of hours after the page was opened.', ['kid' => 'expired'], 404);
+        }
+        $res = $crypto->decryptResponse($d, $kid, $status);
+        if ($res === null) {
+            return $this->apiError('The key exists but this data does not decrypt with it (wrong kid, truncated text, or not from that session).', ['envelope' => 'mismatch'], 422);
+        }
+
+        // content is deliberately NOT logged — only who looked and which key
+        $this->auditLog->record($this->adminId($request), 'platform.response_decrypt', 'Setting', null, null, ['kid' => $kid, 'bytes' => strlen($res['plain'])], $request->ip());
+
+        $json = json_decode($res['plain'], true);
+
+        return $this->apiSuccess([
+            'status'  => $res['status'],
+            'json'    => $json !== null ? $json : null,
+            'text'    => $json !== null ? json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $res['plain'],
+        ], 'Decrypted.')->header('Cache-Control', 'no-store');
+    }
+
     // ───────────── staff access codes ─────────────
 
     private function gatePayload(): array

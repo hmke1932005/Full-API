@@ -131,6 +131,31 @@ class ResponseCryptoService
         return self::b64uEncode($iv . $ct . $tag);
     }
 
+    /**
+     * Admin debugging aid: decrypts a captured response envelope with the session key still held in cache.
+     * The key itself never leaves the server. Tries the usual HTTP statuses (they are part of the AAD) unless one is given.
+     * @return array{status:int,plain:string}|null null when the key expired (key_ttl) or the data does not match
+     */
+    public function decryptResponse(string $d, string $kid, ?int $status = null): ?array
+    {
+        $key = $this->keysFor($kid)['resp'] ?? null;
+        $raw = self::b64uDecode($d);
+        if ($key === null || strlen($raw) < 12 + 16 + 1) {
+            return null;
+        }
+        $iv  = substr($raw, 0, 12);
+        $tag = substr($raw, -16);
+        $ct  = substr($raw, 12, -16);
+        foreach ($status ? [$status] : [200, 201, 202, 204, 400, 401, 403, 404, 405, 409, 410, 413, 422, 423, 428, 429, 500, 502, 503] as $s) {
+            $plain = openssl_decrypt($ct, 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag, "uip-resp|$kid|$s");
+            if ($plain !== false) {
+                return ['status' => $s, 'plain' => $plain];
+            }
+        }
+
+        return null;
+    }
+
     /** Server-side health check of everything the handshake needs (booleans only, no secrets). */
     public function selfTest(): array
     {
