@@ -97,7 +97,7 @@ class AdminUsersApiController extends Controller
     /**
      * POST /api/v1/admin/users — generic "create account" used across
      * Users/Universities/Team pages on the web, preset by role.
-     * Optional `is_joker: true` makes the account a joker (all roles + role switcher).
+     * Optional `is_joker: true` makes the account a Super Admin (all roles + role switcher).
      */
     public function store(Request $request)
     {
@@ -260,7 +260,7 @@ class AdminUsersApiController extends Controller
         $enabled = filter_var($request->input('enabled', true), FILTER_VALIDATE_BOOLEAN);
         $this->makeJoker($request, (int) $target['id'], $enabled);
 
-        return $this->apiSuccess(['is_joker' => $enabled], $enabled ? 'Joker access enabled.' : 'Joker access removed.');
+        return $this->apiSuccess(['is_joker' => $enabled], $enabled ? 'Super Admin access enabled.' : 'Super Admin access removed.');
     }
 
     /**
