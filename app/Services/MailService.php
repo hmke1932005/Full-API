@@ -87,6 +87,17 @@ class MailService
         }
     }
 
+    /**
+     * "Copy code" page on the frontend. E-mail clients can't run scripts, so the button opens a page
+     * that copies the code. The code goes in the URL fragment (#), which browsers never send to a server.
+     */
+    private function copyCodeUrl(string $otp): string
+    {
+        $base = rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/');
+
+        return "{$base}/auth/copy-code#code=" . rawurlencode($otp);
+    }
+
     private function loginUrl(): string
     {
         $base = rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/');
@@ -361,7 +372,7 @@ class MailService
             ],
             null,
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true, 'copyUrl' => $this->copyCodeUrl($otp)]],
             'sendAccountRecoveryOtp',
         );
     }
@@ -384,7 +395,7 @@ class MailService
             ],
             null,
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true, 'copyUrl' => $this->copyCodeUrl($otp)]],
             'sendSessionTakeoverOtp',
             'security'
         );
@@ -410,7 +421,7 @@ class MailService
             ],
             null,
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true, 'copyUrl' => $this->copyCodeUrl($otp)]],
             'sendEmailVerificationOtp',
             'info'
         );
@@ -435,7 +446,7 @@ class MailService
             ],
             ['label' => $ar ? 'فتح صفحة إعادة التعيين' : 'Open the reset page', 'url' => rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/') . '/auth/reset-password?email=' . rawurlencode($toEmail)],
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true, 'copyUrl' => $this->copyCodeUrl($otp)]],
             'sendPasswordResetOtp',
             'reset'
         );

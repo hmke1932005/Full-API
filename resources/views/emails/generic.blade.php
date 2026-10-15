@@ -130,8 +130,17 @@
                                             {{-- رمز التحقق: كبير وواضح ومتحدّد بضغطة واحدة (نسخ سهل) --}}
                                             <td align="center" style="padding:8px 20px 6px; text-align:center;">
                                                 <div style="font-size:13px; color:#64748b; font-weight:700; margin:0 0 10px; text-align:center;">{{ $row['label'] }}</div>
+                                                @if (!empty($row['copyUrl']))
+                                                <table role="presentation" align="center" cellpadding="0" cellspacing="0" style="margin:0 auto 12px;">
+                                                    <tr>
+                                                        <td align="center" bgcolor="{{ $theme['accent'] }}" style="border-radius:12px; background-color:{{ $theme['accent'] }};">
+                                                            <a href="{{ $row['copyUrl'] }}" target="_blank" style="display:inline-block; padding:13px 34px; font-size:15px; font-weight:800; color:#ffffff; text-decoration:none; border-radius:12px;">📋&nbsp; {{ $locale === 'ar' ? 'نسخ الرمز' : 'Copy code' }}</a>
+                                                        </td>
+                                                    </tr>
+                                                </table>
+                                                @endif
                                                 <div dir="ltr" style="background:#ffffff; border:2px dashed {{ $theme['accent'] }}; border-radius:16px; padding:18px 8px 18px 18px; font-size:38px; line-height:1.2; font-weight:800; letter-spacing:12px; color:#0f172a; font-family:Consolas,'SFMono-Regular','Courier New',monospace; text-align:center; -webkit-user-select:all; user-select:all;">{{ $row['value'] }}</div>
-                                                <div style="font-size:12.5px; color:#64748b; margin:10px 0 0; text-align:center;">{{ $locale === 'ar' ? '📋 اضغط مطولًا على الرمز (أو اضغط عليه ضغطتين) لتحديده ثم انسخه' : '📋 Tap and hold the code (or double-click) to select it, then copy' }}</div>
+                                                <div style="font-size:12.5px; color:#64748b; margin:10px 0 0; text-align:center;">{{ $locale === 'ar' ? 'أو اضغط مطولًا على الرمز لتحديده ثم انسخه' : 'Or tap and hold the code to select it, then copy' }}</div>
                                             </td>
                                             @else
                                             <td style="padding:8px 20px 6px; text-align:{{ $align }};">
