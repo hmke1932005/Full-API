@@ -47,6 +47,9 @@ class AiInsightsReportExporter
             'c_anomaly' => 'Anomaly', 'c_severity' => 'Severity', 'c_risk' => 'Risk', 'c_opportunity' => 'Opportunity',
             'c_impact' => 'Potential impact', 'c_issue' => 'Issue', 'c_cause' => 'Likely cause', 'c_kpi' => 'KPI',
             'c_analysis' => 'Analysis', 'c_recommendation' => 'Recommendation', 'c_perf' => 'Performance recommendation',
+            'health_overview' => 'Platform Health', 'data_limitations' => 'Data Limitations', 'c_area' => 'Area', 'c_status' => 'Status', 'c_priority' => 'Priority',
+            'good' => 'Healthy', 'watch' => 'Needs attention', 'critical' => 'Critical',
+            'area_users' => 'Users', 'area_projects' => 'Projects', 'area_universities' => 'Universities', 'area_exams' => 'Exams', 'area_integrity' => 'Academic integrity', 'area_security' => 'Security', 'area_ai_usage' => 'AI usage', 'area_visitors' => 'Visitors', 'area_data_quality' => 'Data quality',
             'high' => 'High', 'medium' => 'Medium', 'low' => 'Low', 'strong' => 'Strong', 'moderate' => 'Moderate',
             'weak' => 'Weak', 'up' => 'Up', 'down' => 'Down', 'flat' => 'Flat',
         ],
@@ -64,6 +67,9 @@ class AiInsightsReportExporter
             'c_anomaly' => 'الحالة الشاذة', 'c_severity' => 'الشدة', 'c_risk' => 'الخطر', 'c_opportunity' => 'الفرصة',
             'c_impact' => 'الأثر المحتمل', 'c_issue' => 'المشكلة', 'c_cause' => 'السبب المحتمل', 'c_kpi' => 'المؤشر',
             'c_analysis' => 'التحليل', 'c_recommendation' => 'التوصية', 'c_perf' => 'توصية الأداء',
+            'health_overview' => 'حالة المنصة', 'data_limitations' => 'حدود البيانات', 'c_area' => 'المجال', 'c_status' => 'الحالة', 'c_priority' => 'الأولوية',
+            'good' => 'سليم', 'watch' => 'يحتاج متابعة', 'critical' => 'حرج',
+            'area_users' => 'المستخدمون', 'area_projects' => 'المشاريع', 'area_universities' => 'الجامعات', 'area_exams' => 'الامتحانات', 'area_integrity' => 'النزاهة الأكاديمية', 'area_security' => 'الأمان', 'area_ai_usage' => 'استخدام الذكاء الاصطناعي', 'area_visitors' => 'الزوار', 'area_data_quality' => 'جودة البيانات',
             'high' => 'مرتفع', 'medium' => 'متوسط', 'low' => 'منخفض', 'strong' => 'قوي', 'moderate' => 'متوسط',
             'weak' => 'ضعيف', 'up' => 'صاعد', 'down' => 'هابط', 'flat' => 'مستقر',
         ],
@@ -139,7 +145,7 @@ class AiInsightsReportExporter
             return trim((string) $v);
         }
         if (is_array($v)) {
-            foreach (['description', 'text', 'title'] as $k) {
+            foreach (['description', 'text', 'title', 'action'] as $k) {
                 if (isset($v[$k]) && is_scalar($v[$k])) {
                     return trim((string) $v[$k]);
                 }
@@ -176,6 +182,9 @@ class AiInsightsReportExporter
         $summary = $this->text($result['executive_summary'] ?? '');
         $push($L['summary'], ['', $L['c_summary'], ''], $summary !== '' ? [['', $summary, '']] : [], true);
 
+        $push($L['health_overview'], [$L['c_area'], $L['c_description'], $L['c_status']],
+            array_map(fn ($r) => [$L['area_' . $this->text($get($r, 'area'))] ?? $this->text($get($r, 'area')), $this->text($get($r, 'summary')), $this->level($get($r, 'status'), $L)], $list('health_overview')));
+
         $push($L['insights'], ['', $L['c_insight'], ''],
             array_map(fn ($r) => ['', $this->text($r), ''], $list('insights')));
 
@@ -200,11 +209,16 @@ class AiInsightsReportExporter
         $push($L['kpi_analysis'], [$L['c_kpi'], $L['c_analysis'], ''],
             array_map(fn ($r) => [$this->text($get($r, 'kpi')), $this->text($get($r, 'analysis')), ''], $list('kpi_analysis')));
 
-        $push($L['recommendations'], ['', $L['c_recommendation'], ''],
-            array_map(fn ($r) => ['', $this->text($r), ''], $list('recommendations')));
+        $push($L['recommendations'], [$L['c_recommendation'], $L['details'], $L['c_priority']],
+            array_map(fn ($r) => is_array($r)
+                ? [$this->text($get($r, 'action')), $this->text($get($r, 'reason')), $this->level($get($r, 'priority'), $L)]
+                : [$this->text($r), '', ''], $list('recommendations')));
 
         $push($L['performance_recommendations'], ['', $L['c_perf'], ''],
             array_map(fn ($r) => ['', $this->text($r), ''], $list('performance_recommendations')));
+
+        $push($L['data_limitations'], ['', $L['c_description'], ''],
+            array_map(fn ($r) => ['', $this->text($r), ''], $list('data_limitations')));
 
         return $out;
     }

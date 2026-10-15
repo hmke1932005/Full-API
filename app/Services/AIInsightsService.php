@@ -32,10 +32,15 @@ class AIInsightsService
 
     /** كل مفتاح متوقّع من الواجهة — رد completeJson() بيتطبّع عليه عشان رد جزئي من الـ AI أبدًا مايكسرش العرض. */
     private const SCHEMA_KEYS = [
-        'executive_summary', 'insights', 'trends', 'correlations', 'anomalies',
+        'executive_summary', 'health_overview', 'insights', 'trends', 'correlations', 'anomalies',
         'recommendations', 'root_cause_analysis', 'kpi_analysis', 'risks',
-        'opportunities', 'performance_recommendations',
+        'opportunities', 'data_limitations',
+        // قديم: كان قسم منفصل بيكرر "recommendations" واتدمج فيها. بنحافظ على المفتاح عشان تقارير الـ history القديمة تفضل تتعرض.
+        'performance_recommendations',
     ];
+
+    /** المجالات اللي لازم health_overview يغطيها (area بالـ slug ده بالظبط، الواجهة بتترجمه). */
+    private const HEALTH_AREAS = ['users', 'projects', 'universities', 'exams', 'integrity', 'security', 'ai_usage', 'visitors', 'data_quality'];
 
     private AIClient $client;
 
@@ -46,7 +51,8 @@ class AIInsightsService
         private AnalyticsService $analytics,
         private KpiService $kpis,
         private DataQualityService $quality,
-        private DataAnalysisAcademicService $academic
+        private DataAnalysisAcademicService $academic,
+        private AIInsightsDigest $digest
     ) {
         $this->client = $client;
         $this->applySettingsOverrides($this->client, $settings);
@@ -101,43 +107,51 @@ class AIInsightsService
         $snapshot = $this->buildSnapshot();
 
         try {
-            // ملحوظة حالة: البرومبت تحت بيحدد حد أقصى "up to N items" لكل
-            // مصفوفة وبيطلب سطر واحد لكل عنصر. ده تحكّم متعمّد في الـ latency،
-            // مش تقليل جودة — النسخة الأولى كانت بتطلب تقرير مفتوح، وكان
-            // بيتخطى AI_TIMEOUT (config/ai.php) بانتظام على المزوّدين
-            // البطيئين/اللي بيفكروا. رد محدود أسرع في التوليد والبث،
-            // فوق رفع AI_TIMEOUT لهامش أمان.
             $language = app()->getLocale() === 'ar'
-                ? 'Write the ENTIRE report in Modern Standard Arabic (Fusha) — every string value in the JSON (executive_summary, insights, descriptions, issue/likely_cause, recommendations, everything) must be Arabic prose. Keep JSON keys, and the fixed enum values ("up"/"down"/"flat", "strong"/"moderate"/"weak", "low"/"medium"/"high"), in English exactly as specified — only the human-readable text you write goes in Arabic. Numbers, category names, KPI names, and university names should be copied from the digest as given, not translated.'
+                ? 'Write the ENTIRE report in Modern Standard Arabic (Fusha) — every human-readable string value must be Arabic prose. Keep JSON keys and the fixed enum values ("up"/"down"/"flat", "strong"/"moderate"/"weak", "low"/"medium"/"high", "good"/"watch"/"critical", and the health "area" slugs) in English exactly as specified. Copy numbers, category names, KPI names and university names from the digest as given, without translating them.'
                 : 'Write the entire report in English.';
 
-            $system = 'You are a senior business intelligence analyst for a university innovation & startup platform. '
-                . 'You will be given a JSON digest of real, live platform metrics (user growth, category/project growth, '
-                . 'university leaderboard, KPIs with targets/achievement/trend, exam-platform metrics under "exams_and_academic" '
-                . '(exam results, pass rate, score bands, attempt status, at-risk student counts, integrity/appeals, doctor activity), '
-                . 'and a data quality overview). '
-                . 'Analyze it honestly and specifically — reference the actual numbers, categories, KPI names, and '
-                . 'universities given to you, never generic filler. Be concise: one sentence per item, and cap every '
-                . 'array at the maximum size stated below so the report stays fast to generate. '
-                . $language . ' '
-                . 'Reply with ONLY a single JSON object with exactly these keys: '
-                . '"executive_summary" (string, 2-3 sentences), '
-                . '"insights" (array, up to 5 short strings), '
-                . '"trends" (array, up to 4 of {"label":string,"description":string,"direction":"up"|"down"|"flat"}), '
-                . '"correlations" (array, up to 3 of {"description":string,"strength":"strong"|"moderate"|"weak"}), '
-                . '"anomalies" (array, up to 3 of {"description":string,"severity":"low"|"medium"|"high"}), '
-                . '"recommendations" (array, up to 4 short actionable strings), '
-                . '"root_cause_analysis" (array, up to 3 of {"issue":string,"likely_cause":string}), '
-                . '"kpi_analysis" (array, one entry per KPI given, of {"kpi":string,"analysis":string}), '
-                . '"risks" (array, up to 3 of {"description":string,"severity":"low"|"medium"|"high"}), '
-                . '"opportunities" (array, up to 3 of {"description":string,"potential_impact":"low"|"medium"|"high"}), '
-                . '"performance_recommendations" (array, up to 4 short actionable strings). '
-                . 'If a metrics category has no data, return an empty array for it rather than inventing content.';
-
             $user = json_encode($snapshot, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+            $areas = implode('", "', self::HEALTH_AREAS);
 
-            $raw = $this->completeJson($this->client, $system, $user);
-            $result = $this->normalize($raw);
+            $rules = 'You are a senior business-intelligence analyst for a university innovation & startup platform. '
+                . 'You receive a JSON digest of REAL, live platform metrics covering: users (roles, status, activity, 2FA), user_growth, projects, universities, '
+                . 'exams_and_academic (results, pass rate, score bands, at-risk students, integrity/appeals, doctor activity), security, ai_usage, visitors, KPIs, '
+                . 'category growth and data quality. '
+                . 'ACCURACY RULES (strict): '
+                . '(1) Every claim must be backed by a number that is literally in the digest. Never invent, estimate or round a figure differently from the digest. '
+                . '(2) Never compute new percentages or differences yourself — use the *_pct / *_change_pct fields provided. If a value is null, no comparison is possible: do not state one. '
+                . '(3) A month or period flagged is_partial=true is unfinished. Never call it a drop, decline or low; compare only complete months or the 30-day windows. '
+                . '(4) Do not claim causation. Phrase causes as "possible"/"may" and only when the digest supports them. '
+                . '(5) A small base (under ~20) makes a percentage unreliable — say so or skip it. '
+                . 'NO-FILLER RULES: each fact appears in exactly ONE section of the report — never restate the same finding in another section. '
+                . 'Skip generic advice that would apply to any platform. Skip an item rather than pad: fewer, sharper items beat the maximum. '
+                . 'A section with nothing meaningful gets an empty array. One concise sentence per item. '
+                . $language . ' ';
+
+            $partA = $rules
+                . 'Reply with ONLY one JSON object with exactly these keys: '
+                . '"executive_summary" (string, 2-3 sentences: overall state + the single most important thing needing attention), '
+                . '"health_overview" (array of {"area":"' . $areas . '","status":"good"|"watch"|"critical","summary":string} — one entry per area that has data in the digest, a short statement with its key number; skip areas with no data), '
+                . '"insights" (array, up to 5 strings — notable facts NOT already covered as a risk, anomaly or trend), '
+                . '"trends" (array, up to 5 of {"label":string,"description":string,"direction":"up"|"down"|"flat"} — only real movements between comparable periods), '
+                . '"anomalies" (array, up to 4 of {"description":string,"severity":"low"|"medium"|"high"} — values that clearly break from the rest of the data).';
+
+            $partB = $rules
+                . 'Reply with ONLY one JSON object with exactly these keys: '
+                . '"correlations" (array, up to 3 of {"description":string,"strength":"strong"|"moderate"|"weak"} — only if two metrics in the digest genuinely move together; otherwise empty), '
+                . '"risks" (array, up to 4 of {"description":string,"severity":"low"|"medium"|"high"} — forward-looking threats, not restated anomalies), '
+                . '"opportunities" (array, up to 3 of {"description":string,"potential_impact":"low"|"medium"|"high"}), '
+                . '"root_cause_analysis" (array, up to 3 of {"issue":string,"likely_cause":string} — only for high/medium problems, cause stated as possible), '
+                . '"recommendations" (array, up to 6 of {"action":string,"priority":"low"|"medium"|"high","reason":string} — each tied to a specific number; order by priority; no overlap with the other sections\' wording), '
+                . '"kpi_analysis" (array, one entry per KPI in the digest of {"kpi":string,"analysis":string}; empty array if the digest has no KPIs), '
+                . '"data_limitations" (array of short strings — digest sections listed in data_gaps, null values, tiny samples or missing data that limit what can be concluded).';
+
+            // نداءين بدل واحد: كل رد أصغر وأسرع وأقل عرضة لتخطي AI_TIMEOUT، والبرومبتين بياخدوا نفس الـ digest.
+            $rawA = $this->completeJson($this->client, $partA, $user);
+            $rawB = $this->completeJson($this->client, $partB, $user);
+
+            $result = $this->normalize(array_merge($rawA, $rawB));
             $result['language'] = app()->getLocale() === 'ar' ? 'ar' : 'en'; // لغة التقرير، عشان الواجهة تعرف لو مختلفة عن لغة العرض
 
             return $this->repo->record([
@@ -177,11 +191,8 @@ class AIInsightsService
     /** digest حقيقي وحي — الحاجة الوحيدة المسموح للموديل يفكر فيها. */
     private function buildSnapshot(): array
     {
-        $overview = $this->analytics->platformOverview();
-        $userGrowth = $this->analytics->userGrowthSeries(6);
         $categoryDistribution = $this->analytics->categoryDistribution(8);
         $categoryGrowth = $this->analytics->categoryGrowthTrends(30, 8);
-        $universities = $this->analytics->universityLeaderboard(5);
 
         $kpis = array_map(fn ($k) => [
             'name'            => $k['name'],
@@ -204,22 +215,25 @@ class AIInsightsService
             'completeness' => $r['completeness']['pct'] ?? null,
         ], $qualityReports);
 
-        return [
+        $wide = $this->digest->build();
+        $wide['notes'] = 'In any monthly series that has no is_partial flag (e.g. exams_and_academic.monthly_avg), the most recent month is the current month and may be incomplete — do not treat it as a decline.';
+
+        return array_merge([
             'generated_at'          => date('c'),
-            'platform_overview'     => $overview,
-            'user_growth_6mo'       => array_map(fn ($r) => ['month' => $r['label']['en'], 'value' => $r['value']], $userGrowth),
+            // platformOverview().new_users_this_month و userGrowthSeries() اتشالوا عن عمد: بيحسبوا الشهر الحالي الناقص كأنه كامل
+            // (كان سبب "انخفاض حاد" غلط). الأرقام الصح في users / user_growth تحت.
+        ], $wide, [
             'category_distribution' => array_map(fn ($r) => ['category' => $r['label']['en'], 'value' => $r['value']], $categoryDistribution),
             'category_growth_30d'   => array_map(fn ($r) => [
                 'category' => $r['label']['en'], 'current' => $r['current'], 'previous' => $r['previous'], 'growth_pct' => $r['growth_pct'],
             ], $categoryGrowth),
-            'top_universities'      => array_map(fn ($r) => ['university' => $r['university']['en'], 'projects' => $r['projects']], $universities),
             'kpis'                  => $kpis,
-            // منصة الامتحانات (أرقام مجمّعة بس، من غير أسماء طلاب/دكاترة).
+            // منصة الامتحانات (أرقام مجمّعة بس، من غير أسماء طلاب/دكاترة). أي monthly_avg فيها: آخر شهر ممكن يكون ناقص.
             'exams_and_academic'    => $this->academic->aiDigest(),
             'data_quality_overview' => [
                 'overall_score' => $this->quality->overallScore($qualityReports),
                 'datasets'      => $qualitySummary,
             ],
-        ];
+        ]);
     }
 }
