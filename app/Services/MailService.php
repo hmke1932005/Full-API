@@ -91,11 +91,12 @@ class MailService
      * "Copy code" page on the frontend. E-mail clients can't run scripts, so the button opens a page
      * that copies the code. The code goes in the URL fragment (#), which browsers never send to a server.
      */
-    private function copyCodeUrl(string $otp): string
+    private function copyCodeUrl(string $otp, ?string $next = null): string
     {
         $base = rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/');
+        $query = $next ? '?next=' . rawurlencode($next) : '';
 
-        return "{$base}/auth/copy-code#code=" . rawurlencode($otp);
+        return "{$base}/auth/copy-code{$query}#code=" . rawurlencode($otp);
     }
 
     private function loginUrl(): string
@@ -444,9 +445,9 @@ class MailService
                 $ar ? "الرمز صالح لمدة {$minutes} دقايق ويُستخدم مرة واحدة. متشاركوش مع حد." : "The code is valid for {$minutes} minutes and works once. Never share it with anyone.",
                 $ar ? 'لو ماكنتش أنت اللي طلبت ده، تجاهل هذه الرسالة — كلمة السر مش هتتغير.' : "If you didn't request this, ignore this email — your password won't change.",
             ],
-            ['label' => $ar ? 'فتح صفحة إعادة التعيين' : 'Open the reset page', 'url' => rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/') . '/auth/reset-password?email=' . rawurlencode($toEmail)],
+            ['label' => $ar ? 'فتح صفحة إعادة التعيين' : 'Open the reset page', 'url' => rtrim((string) (config('app.frontend_url') ?: config('app.url', 'http://localhost')), '/') . '/auth/reset-password?email=' . rawurlencode($toEmail) . '#code=' . rawurlencode($otp)],
             $locale,
-            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true, 'copyUrl' => $this->copyCodeUrl($otp)]],
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true, 'copyUrl' => $this->copyCodeUrl($otp, '/auth/reset-password?email=' . rawurlencode($toEmail))]],
             'sendPasswordResetOtp',
             'reset'
         );
