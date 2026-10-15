@@ -41,6 +41,12 @@ class AIClient
         return $this->apiKey;
     }
 
+    /** موديلات محلية (Ollama) بطيئة: SubtitleService بيرفع المهلة لنسخته هو بس (مش singleton فمفيش تأثير على باقي الخدمات). */
+    public function setTimeout(int $seconds): void
+    {
+        $this->timeout = max(1, $seconds);
+    }
+
     public function isConfigured(): bool
     {
         return $this->enabled && $this->baseUrl !== '' && $this->apiKey !== '' && $this->model !== '';

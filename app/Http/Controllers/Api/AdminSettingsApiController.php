@@ -129,6 +129,10 @@ class AdminSettingsApiController extends Controller
             'has_api_key'                   => $hasKeyOverride || (($aiConfig['api_key'] ?? '') !== ''),
             'model'                         => $get('model', $aiConfig['model'] ?? ''),
             'email_personalization_enabled' => $storedPersonalization !== '' ? $storedPersonalization === '1' : (bool) ($aiConfig['email_personalization_enabled'] ?? false),
+            // تفريغ الصوت للترجمة التلقائية (سيرفر Whisper متوافق مع OpenAI) — المفتاح عمره ما بيرجع للفرونت.
+            'transcribe_base_url'           => $get('transcribe_base_url', $aiConfig['transcribe']['base_url'] ?? ''),
+            'has_transcribe_api_key'        => $get('transcribe_api_key', '') !== '' || (($aiConfig['transcribe']['api_key'] ?? '') !== ''),
+            'transcribe_model'              => $get('transcribe_model', $aiConfig['transcribe']['model'] ?? ''),
         ];
     }
 
@@ -467,10 +471,26 @@ class AdminSettingsApiController extends Controller
         $this->settings->set('ai_model', $model);
         $this->settings->set('ai_email_personalization_enabled', $emailPersonalization ? '1' : '0');
 
+        // Speech-to-text (الترجمة التلقائية للفيديو). بنكتبها بس لو الفرونت بعتها — عشان نسخة قديمة من الشاشة ماتمسحش الإعداد.
+        $sttChanged = [];
+        if ($request->has('ai_transcribe_base_url')) {
+            $sttBase = rtrim(trim((string) $request->input('ai_transcribe_base_url', '')), '/');
+            if ($sttBase !== '' && !preg_match('#^https?://[^\s]+$#i', $sttBase)) {
+                return $this->apiError('Speech-to-text Base URL must start with http:// or https://', ['ai_transcribe_base_url' => ['Invalid URL.']], 422);
+            }
+            $this->settings->set('ai_transcribe_base_url', $sttBase);
+            $this->settings->set('ai_transcribe_model', trim((string) $request->input('ai_transcribe_model', '')));
+            $sttKey = (string) $request->input('ai_transcribe_api_key', '');
+            if ($sttKey !== '') {
+                $this->settings->set('ai_transcribe_api_key', $sttKey);
+            }
+            $sttChanged = ['transcribe_base_url' => $sttBase, 'transcribe_model' => trim((string) $request->input('ai_transcribe_model', '')), 'transcribe_api_key_changed' => $sttKey !== ''];
+        }
+
         $this->auditLog->record($userId, 'admin.ai_settings_update', 'Setting', null, null, [
             'enabled' => $enabled, 'base_url' => $baseUrl, 'api_key_changed' => $apiKey !== '',
             'model' => $model, 'email_personalization_enabled' => $emailPersonalization,
-        ]);
+        ] + $sttChanged);
 
         return $this->apiSuccess($this->currentAiSettings(), 'AI settings saved successfully.');
     }

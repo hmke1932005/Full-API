@@ -31,32 +31,54 @@ class SubtitleService
 
     private const BATCH = 40; // سطور الترجمة في الطلب الواحد
 
-    public function __construct(private AIClient $client, private SettingRepository $settings)
+    private AIClient $client;
+
+    /** مزوّدين مستضافين معروف إنهم بيدعموا /audio/transcriptions — بنستخدم مزوّد الشات الأساسي للتفريغ بس لو هو واحد منهم. */
+    private const STT_CAPABLE_HOSTS = ['api.openai.com' => 'whisper-1', 'api.groq.com' => 'whisper-large-v3'];
+
+    public function __construct(private SettingRepository $settings)
     {
+        // نسخة خاصة بالخدمة دي (مش المحقونة من الـ container) عشان نرفع المهلة من غير ما نأثر على باقي الخدمات.
+        $this->client = new AIClient();
         $this->applySettingsOverrides($this->client, $this->settings);
+        $this->client->setTimeout(max(90, (int) config('ai.timeout', 30)));
     }
 
-    /** @return array{0:string,1:string} [base_url, api_key] لنداء التفريغ */
-    private function sttCredentials(): array
+    private function setting(string $key): string
     {
-        $cfg = (array) config('ai.transcribe', []);
-        $base = (string) ($cfg['base_url'] ?? '');
-        $key  = (string) ($cfg['api_key'] ?? '');
-        if ($base === '' || $key === '') {
-            // مفيش مزوّد تفريغ منفصل → نفس مزوّد الشات (لازم يكون مفعّل ومضبوط).
-            if (!$this->client->isConfigured()) {
-                return ['', ''];
-            }
-            $base = $this->client->baseUrl();
-            $key  = $this->client->apiKey();
+        return trim((string) $this->settings->get($key, 'global', null, ''));
+    }
+
+    /**
+     * مزوّد التفريغ: (1) إعدادات الأدمن (Settings → AI → Speech-to-text)، (2) متغيرات .env، (3) مزوّد الشات الأساسي
+     * لو مستضاف ومعروف (OpenAI/Groq). Ollama مفيهوش تفريغ صوت — لازم سيرفر Whisper متوافق مع OpenAI (Speaches / faster-whisper-server …).
+     * المفتاح اختياري (سيرفرات محلية كتير من غير مفتاح).
+     *
+     * @return array{base:string,key:string,model:string}|null
+     */
+    private function sttConfig(): ?array
+    {
+        $cfg   = (array) config('ai.transcribe', []);
+        $base  = rtrim($this->setting('ai_transcribe_base_url') ?: trim((string) ($cfg['base_url'] ?? '')), '/');
+        $key   = $this->setting('ai_transcribe_api_key') ?: trim((string) ($cfg['api_key'] ?? ''));
+        $model = $this->setting('ai_transcribe_model') ?: trim((string) ($cfg['model'] ?? ''));
+
+        if ($base !== '') {
+            return ['base' => $base, 'key' => $key, 'model' => $model !== '' ? $model : 'whisper-1'];
         }
-        return [$base, $key];
+
+        if ($this->client->isConfigured()) {
+            $host = strtolower((string) parse_url($this->client->baseUrl(), PHP_URL_HOST));
+            if (isset(self::STT_CAPABLE_HOSTS[$host])) {
+                return ['base' => $this->client->baseUrl(), 'key' => $this->client->apiKey(), 'model' => $model !== '' ? $model : self::STT_CAPABLE_HOSTS[$host]];
+            }
+        }
+        return null;
     }
 
     public function available(): bool
     {
-        [$base, $key] = $this->sttCredentials();
-        return $base !== '' && $key !== '';
+        return $this->sttConfig() !== null;
     }
 
     /** أقصى طول قطعة (ثواني) يقدر السيرفر يستقبله: min(إعداد المشروع، حد Whisper، حدود PHP) — WAV 16k mono = 32000 بايت/ث. */
@@ -102,8 +124,8 @@ class SubtitleService
      */
     private function transcribe(UploadedFile $audio, ?string $sourceHint): array
     {
-        [$base, $key] = $this->sttCredentials();
-        if ($base === '' || $key === '') {
+        $stt = $this->sttConfig();
+        if ($stt === null) {
             throw new \RuntimeException('Transcription provider is not configured.');
         }
         $cfg   = (array) config('ai.transcribe', []);
@@ -114,7 +136,7 @@ class SubtitleService
         }
 
         $fields = [
-            'model'           => (string) ($cfg['model'] ?? 'whisper-1'),
+            'model'           => $stt['model'],
             'response_format' => 'verbose_json',
             'temperature'     => '0',
         ];
@@ -123,11 +145,14 @@ class SubtitleService
         }
 
         try {
-            $res = Http::withToken($key)
-                ->acceptJson()
+            $req = Http::acceptJson();
+            if ($stt['key'] !== '') {
+                $req = $req->withToken($stt['key']);
+            }
+            $res = $req
                 ->timeout(max(20, (int) ($cfg['timeout'] ?? 120)))
                 ->attach('file', $handle, 'audio.wav')
-                ->post($base . '/audio/transcriptions', $fields);
+                ->post($stt['base'] . '/audio/transcriptions', $fields);
         } catch (\Throwable $e) {
             throw new \RuntimeException('Transcription request failed: ' . $e->getMessage());
         } finally {
