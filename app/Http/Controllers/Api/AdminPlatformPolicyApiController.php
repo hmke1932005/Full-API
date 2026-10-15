@@ -96,8 +96,10 @@ class AdminPlatformPolicyApiController extends Controller
         $out = [];
         foreach (PlatformPolicy::VALUES as $k => $def) {
             $out[$k] = [
-                'value'      => PlatformPolicy::value($k),
-                'default'    => PlatformPolicy::defaultValue($k),
+                // secrets are masked: the dashboard only learns that one is set
+                'value'      => !empty($def['secret']) ? PlatformPolicy::mask((string) PlatformPolicy::value($k)) : PlatformPolicy::value($k),
+                'secret'     => !empty($def['secret']),
+                'default'    => !empty($def['secret']) ? '' : PlatformPolicy::defaultValue($k),
                 'overridden' => PlatformPolicy::isValueOverridden($k),
                 'type'       => $def['type'],
                 'min'        => $def['min'],
@@ -400,6 +402,19 @@ class AdminPlatformPolicyApiController extends Controller
         $this->auditLog->record($this->adminId($request), 'platform.staff_gate_code_reset', 'Setting', null, null, ['group' => $group], $request->ip());
 
         return $this->apiSuccess($this->gatePayload(), 'Access code reset to the server default.');
+    }
+
+    /**
+     * GET /api/v1/app-config — hands the official Android app its API token at launch, so the APK does not
+     * need it baked in at build time (VITE_APP_TOKEN). Only answers requests marked X-UIP-Client: android.
+     * Trade-off: anyone who sends that header can read it — same exposure as unpacking an APK, and it still
+     * only blocks builds that never call this (old / unofficial ones); revoke the token in /admin/mobile to rotate.
+     */
+    public function appConfig(Request $request)
+    {
+        $token = $request->headers->has('X-UIP-Client') ? PlatformPolicy::appToken() : '';
+
+        return $this->apiSuccess(['app_token' => $token], 'OK')->header('Cache-Control', 'no-store');
     }
 
     /** GET /api/v1/platform/status — public, tiny, no secrets: lets the SPA hide the sign-up form and know the channel mode. */

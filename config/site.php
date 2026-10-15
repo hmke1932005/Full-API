@@ -15,6 +15,8 @@
  */
 return [
     // قفل APK بـ API token (شوف UipAppTokenMiddleware). مطفي افتراضيًا عشان نشر الكود ما يقفلش التطبيق الحالي.
+    // توكن التطبيق (اختياري): بيتحط من Admin → Platform Policy بدل .env. القيمة هنا fallback بس.
+    'app_token'              => env('APP_TOKEN', ''),
     'app_token_required'     => filter_var(env('APP_TOKEN_REQUIRED', false), FILTER_VALIDATE_BOOL),
     'app_token_block_webview' => filter_var(env('APP_TOKEN_BLOCK_WEBVIEW', false), FILTER_VALIDATE_BOOL),
 

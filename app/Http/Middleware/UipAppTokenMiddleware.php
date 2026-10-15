@@ -40,6 +40,10 @@ class UipAppTokenMiddleware
             return $next($request); // preflight — بيتعامل معاه UipCorsMiddleware
         }
 
+        if ($request->is('api/v1/app-config')) {
+            return $next($request); // this is where the app GETS its token, so it cannot require one
+        }
+
         $raw = trim((string) $request->header('X-App-Token', ''));
         $valid = $raw !== '' && $this->isValid($raw);
 

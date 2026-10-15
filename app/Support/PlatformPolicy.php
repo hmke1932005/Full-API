@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Repositories\SettingRepository;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -52,6 +53,8 @@ final class PlatformPolicy
      * Secrets (keys, DB, JWT, proxy secret…) are deliberately NOT here.
      */
     public const VALUES = [
+        // Android app API token (issued in /admin/mobile). Stored ENCRYPTED, never echoed back in full (see secret()).
+        'app_token'            => ['type' => 'string', 'min' => 0,  'max' => 200, 'secret' => true], // VITE_APP_TOKEN
         'platform_name'        => ['type' => 'string', 'min' => 1,  'max' => 60],   // APP_NAME  (e-mail header / footer)
         'session_live_seconds' => ['type' => 'int',    'min' => 30, 'max' => 1800], // SESSION_LIVE_SECONDS
         'google_client_ids'    => ['type' => 'string', 'min' => 0,  'max' => 700],  // GOOGLE_CLIENT_IDS (public IDs)
@@ -185,6 +188,7 @@ final class PlatformPolicy
             'platform_name'        => (string) config('app.name', 'UIP'),
             'session_live_seconds' => max(30, (int) config('security.single_session.live_seconds', 120)),
             'google_client_ids'    => (string) config('services.google.client_ids', ''),
+            'app_token'            => (string) config('site.app_token', ''),
             default                => '',
         };
     }
@@ -205,16 +209,35 @@ final class PlatformPolicy
         if ($stored === null) {
             return self::defaultValue($key);
         }
+        if (!empty($def['secret'])) {
+            try {
+                return Crypt::decryptString($stored);
+            } catch (\Throwable $e) {
+                return ''; // APP_KEY rotated / corrupt row → treated as "not set"
+            }
+        }
 
         return $def['type'] === 'int' ? (int) $stored : (string) $stored;
     }
 
-    /** @return array<string,string|int> */
+    /** First 4 + last 4 chars only, so the dashboard / audit log can show "a token is set" without leaking it. */
+    public static function mask(string $secret): string
+    {
+        $n = mb_strlen($secret);
+        if ($n === 0) {
+            return '';
+        }
+
+        return $n <= 12 ? str_repeat('•', $n) : mb_substr($secret, 0, 4) . str_repeat('•', 8) . mb_substr($secret, -4);
+    }
+
+    /** @return array<string,string|int> effective values; secrets are masked (use value() for the real one). */
     public static function values(): array
     {
         $out = [];
         foreach (array_keys(self::VALUES) as $k) {
-            $out[$k] = self::value($k);
+            $v = self::value($k);
+            $out[$k] = !empty(self::VALUES[$k]['secret']) ? self::mask((string) $v) : $v;
         }
 
         return $out;
@@ -250,6 +273,14 @@ final class PlatformPolicy
                 ? "{$key} must be {$def['min']}–{$def['max']} characters."
                 : "{$key} is too long (max {$def['max']})."];
         }
+        if ($key === 'app_token' && $v !== '') {
+            if (!preg_match('/^[A-Za-z0-9._~+\/=-]+$/', $v)) {
+                return [null, 'The token has characters that are not allowed.'];
+            }
+            if (!app(\App\Repositories\ApiTokenRepository::class)->findActiveByRawToken($v)) {
+                return [null, 'This is not an active token. Issue one from Mobile App Management and paste it here.'];
+            }
+        }
         if ($key === 'google_client_ids' && $v !== '') {
             $ids = array_values(array_filter(array_map('trim', explode(',', $v))));
             if (count($ids) > 5) {
@@ -271,7 +302,14 @@ final class PlatformPolicy
         if (!isset(self::VALUES[$key])) {
             throw new \InvalidArgumentException("Unknown setting: {$key}");
         }
-        self::put(self::PREFIX . $key, (string) $value);
+        $stored = !empty(self::VALUES[$key]['secret']) ? Crypt::encryptString((string) $value) : (string) $value;
+        self::put(self::PREFIX . $key, $stored);
+    }
+
+    /** The Android app token to hand to official builds: dashboard value, else VITE_APP_TOKEN-equivalent env (APP_TOKEN). */
+    public static function appToken(): string
+    {
+        return (string) self::value('app_token');
     }
 
     /** Drops the dashboard value so the .env default applies again. */
