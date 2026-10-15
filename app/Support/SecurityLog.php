@@ -31,6 +31,26 @@ class SecurityLog
             }
         }
 
+        // Durable copy in the database: hosted/ephemeral filesystems lose (or can't write) the
+        // daily files, which left the admin Security Logs page empty. Never breaks the request.
+        try {
+            $uid = isset($context['user_id']) && is_numeric($context['user_id']) ? (int) $context['user_id'] : null;
+            if ($uid !== null && !\Illuminate\Support\Facades\DB::table('users')->where('id', $uid)->exists()) {
+                $uid = null;
+            }
+            \Illuminate\Support\Facades\DB::table('security_logs')->insert([
+                'user_id'    => $uid,
+                'event_type' => mb_substr($message, 0, 80),
+                'ip_address' => isset($context['ip']) ? mb_substr((string) $context['ip'], 0, 45) : null,
+                'user_agent' => isset($context['user_agent']) ? mb_substr((string) $context['user_agent'], 0, 255) : null,
+                'severity'   => 'info',
+                'meta'       => json_encode(['message' => $message] + $context, JSON_UNESCAPED_UNICODE),
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+        } catch (\Throwable $e) {
+            // table missing / DB down — the file copy below still tries.
+        }
+
         $dir = storage_path('logs/security');
         if (!is_dir($dir)) {
             @mkdir($dir, 0775, true);

@@ -121,11 +121,18 @@ class AdminUsersApiController extends Controller
         }
 
         if ($this->users->emailExists($data['email'])) {
-            return $this->apiError('An account with this email already exists.', null, 422);
+            return $this->apiError('An account with this email already exists.', ['email' => 'An account with this email already exists.'], 422);
         }
 
         if (!Role::where('slug', $data['role'])->exists()) {
             return $this->apiError('That role does not exist.', null, 422);
+        }
+
+        if ($data['role'] === 'university') {
+            $dup = \App\Support\UniversityName::conflicts($names['name_ar'], $names['name_en'], null, \App\Support\BilingualName::localeOf($request));
+            if ($dup) {
+                return $this->apiError(reset($dup), $dup, 422);
+            }
         }
 
         $passwordHash = password_hash($data['password'], PASSWORD_BCRYPT);
@@ -173,6 +180,14 @@ class AdminUsersApiController extends Controller
         }
         $data += \App\Support\BilingualName::columns($names);
 
+        $newRoleForCheck = (string) $request->input('role', $target['role']);
+        if ($newRoleForCheck === 'university' || $target['role'] === 'university') {
+            $dup = \App\Support\UniversityName::conflicts($names['name_ar'], $names['name_en'], (int) $target['id'], \App\Support\BilingualName::localeOf($request));
+            if ($dup) {
+                return $this->apiError(reset($dup), $dup, 422);
+            }
+        }
+
         $ok = $this->users->updateProfile($target['id'], [
             'full_name' => $names['full_name'],
             'name_ar'   => $names['name_ar'],
@@ -185,6 +200,16 @@ class AdminUsersApiController extends Controller
         $newRole = (string) $request->input('role', $target['role']);
         if ($newRole !== $target['role']) {
             $this->users->changeRole($target['id'], $newRole);
+        }
+
+        // A university account's official names always follow the account's names.
+        if ($ok && $newRole === 'university') {
+            $uni = DB::table('universities')->where('user_id', $target['id'])->first();
+            if ($uni) {
+                DB::table('universities')->where('id', $uni->id)->update(['official_name_ar' => $names['name_ar'], 'official_name_en' => $names['name_en']]);
+            } else {
+                DB::table('universities')->insert(['user_id' => $target['id'], 'official_name_ar' => $names['name_ar'], 'official_name_en' => $names['name_en'], 'country' => '']);
+            }
         }
 
         if ($ok) {
@@ -347,6 +372,12 @@ class AdminUsersApiController extends Controller
         }
 
         $newRole = (string) $request->input('role', '');
+        if ($newRole === 'university' && $target['role'] !== 'university') {
+            $dup = \App\Support\UniversityName::conflicts($target['name_ar'] ?? $target['full_name'], $target['name_en'] ?? $target['full_name'], (int) $target['id'], \App\Support\BilingualName::localeOf($request));
+            if ($dup) {
+                return $this->apiError(reset($dup), $dup, 422);
+            }
+        }
         $ok = $this->users->changeRole($target['id'], $newRole);
 
         if ($ok) {

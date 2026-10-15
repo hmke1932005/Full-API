@@ -172,6 +172,13 @@ class UniversitiesApiController extends Controller
         $university = $this->universities->getOrCreate($userId, (string) ($user->full_name ?? ''));
         $before = $university->toArray();
 
+        $newAr = trim((string) $request->input('official_name_ar', $university->official_name_ar));
+        $newEn = trim((string) $request->input('official_name_en', $university->official_name_en));
+        $dup = \App\Support\UniversityName::conflicts($newAr, $newEn, $userId, \App\Support\BilingualName::localeOf($request));
+        if ($dup) {
+            return $this->apiError(reset($dup), $dup, 422);
+        }
+
         $university->fill([
             'official_name_ar' => trim((string) $request->input('official_name_ar', $university->official_name_ar)),
             'official_name_en' => trim((string) $request->input('official_name_en', $university->official_name_en)),

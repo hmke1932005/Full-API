@@ -175,11 +175,35 @@ class AdminUserAffiliationService
     public function assign(int $userId, int $universityId, ?int $facultyId, ?int $departmentId, ?int $programId, int $actorId): array
     {
         $kind = $this->lifecycle->kindOf($userId);
+        $uni = DB::table('universities')->where('id', $universityId)->whereNull('deleted_at')->first();
+
+        // An account created by an admin with the supervisor / academic-staff role has no
+        // member row yet (those tables require a university), so it is created on first link.
+        if ($kind === 'user' && $uni) {
+            $roleSlug = DB::table('user_roles as ur')->join('roles as r', 'r.id', '=', 'ur.role_id')
+                ->where('ur.user_id', $userId)->whereIn('r.slug', ['supervisor', 'academic_staff'])->value('r.slug');
+            if ($roleSlug) {
+                $u = DB::table('users')->where('id', $userId)->first();
+                if ($roleSlug === 'supervisor') {
+                    DB::table('supervisors')->insert([
+                        'university_id' => $universityId, 'user_id' => $userId, 'full_name' => $u->full_name,
+                        'name_ar' => $u->name_ar ?? $u->full_name, 'name_en' => $u->name_en ?? $u->full_name,
+                        'email' => $u->email, 'status' => 'active', 'invitation_status' => 'accepted', 'accepted_at' => now(),
+                    ]);
+                } else {
+                    DB::table('academic_staff')->insert([
+                        'user_id' => $userId, 'university_id' => $universityId, 'status' => 'active',
+                        'invitation_status' => 'accepted', 'accepted_at' => now(),
+                    ]);
+                }
+                $kind = $roleSlug;
+            }
+        }
+
         if (!in_array($kind, ['student', 'supervisor', 'academic_staff'], true)) {
             return $this->fail('Only students, supervisors and academic staff can be linked to a university from here.');
         }
 
-        $uni = DB::table('universities')->where('id', $universityId)->whereNull('deleted_at')->first();
         if (!$uni) {
             return $this->fail('That university does not exist or was deleted.');
         }

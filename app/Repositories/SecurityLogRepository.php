@@ -37,6 +37,41 @@ class SecurityLogRepository
      */
     public function readDays(int $days = 90): array
     {
+        $events = $this->readFiles($days);
+
+        // Database copy (survives redeploys). Same event may exist in both places -> de-duplicate.
+        try {
+            $rows = \Illuminate\Support\Facades\DB::table('security_logs')
+                ->where('created_at', '>=', date('Y-m-d H:i:s', strtotime("-{$days} days")))
+                ->orderByDesc('created_at')->limit(5000)->get();
+            $seen = [];
+            foreach ($events as $e) {
+                $seen[$e['time'] . '|' . $e['message'] . '|' . ($e['context']['ip'] ?? '')] = true;
+            }
+            foreach ($rows as $r) {
+                $meta = is_string($r->meta) ? (json_decode($r->meta, true) ?: []) : [];
+                $message = (string) ($meta['message'] ?? $r->event_type);
+                unset($meta['message']);
+                $meta += array_filter(['ip' => $r->ip_address, 'user_agent' => $r->user_agent, 'user_id' => $r->user_id]);
+                $key = $r->created_at . '|' . $message . '|' . ($meta['ip'] ?? '');
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $events[] = ['time' => (string) $r->created_at, 'message' => $message, 'context' => $meta];
+            }
+        } catch (\Throwable $e) {
+            // security_logs table not migrated yet — file events only.
+        }
+
+        usort($events, fn ($a, $b) => strcmp($b['time'], $a['time']));
+
+        return $events;
+    }
+
+    /** @return array<int,array{time:string,message:string,context:array}> */
+    private function readFiles(int $days): array
+    {
         $dir = storage_path('logs/security');
         if (!is_dir($dir)) {
             return [];
@@ -55,8 +90,6 @@ class SecurityLogRepository
                 }
             }
         }
-
-        usort($events, fn ($a, $b) => strcmp($b['time'], $a['time']));
 
         return $events;
     }

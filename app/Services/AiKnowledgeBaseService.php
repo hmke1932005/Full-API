@@ -33,7 +33,7 @@ class AiKnowledgeBaseService
           question banks, exams, targeting/publishing, attempts and grading, analytics.
         - supervisor -> Supervisor Portal (/supervisor/*): sees only the students/projects inside the scope
           they were assigned (faculty/department/year/group/specific project).
-        - admin -> Admin Dashboard (/admin/*): platform-wide users, roles, institutions, companies,
+        - admin -> Admin Dashboard (/admin/*): platform-wide users, roles, institutions,
           approvals, moderation, logs, messaging oversight, AI assistant settings, mobile app management.
         - security_admin / security_officer -> Security Portal (/security/*): incidents, vulnerabilities,
           alerts, sessions, logs, policies, reports.
