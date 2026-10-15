@@ -149,14 +149,25 @@ class LoginController extends Controller
         // Joker account (admin-granted, holds every role): enters from either portal and
         // starts as the role picked on the login screen (if held), else its primary role.
         $isJoker = $this->roles->isJoker((int) $user->id);
+        $viaStaffPortal = $request->input('portal') === 'staff';
         if ($isJoker) {
+            $held = $this->roles->allRolesFor((int) $user->id);
             $pick = (string) $request->input('login_as', '');
-            if ($pick !== '' && in_array($pick, $this->roles->allRolesFor((int) $user->id), true)) {
+            if ($pick !== '' && in_array($pick, $held, true)) {
                 $role = $pick;
             }
+            // The entry portal decides which portal opens: a joker signing in from the staff
+            // portal must land in a staff role (admin first), from the public page in a public
+            // role — never in the other portal's role just because it is the primary one.
+            if (!$viaStaffPortal === in_array($role, self::STAFF_ROLES, true)) {
+                $candidates = $viaStaffPortal
+                    ? array_values(array_filter(['admin', 'security_admin', 'data_analyst', 'security_officer'], fn ($r) => in_array($r, $held, true)))
+                    : array_values(array_filter(['student', 'university', 'faculty', 'academic_staff', 'supervisor'], fn ($r) => in_array($r, $held, true)));
+                if ($candidates) {
+                    $role = $candidates[0];
+                }
+            }
         }
-
-        $viaStaffPortal = $request->input('portal') === 'staff';
         if (!$isJoker && in_array($role, self::STAFF_ROLES, true) !== $viaStaffPortal) {
             SecurityLog::write('Login refused - wrong entry portal', [
                 'user_id' => $user->id, 'role' => $role, 'portal' => $viaStaffPortal ? 'staff' : 'public', 'ip' => $request->ip(),
