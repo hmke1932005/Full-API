@@ -215,7 +215,7 @@ class MessagingService
 
         // عزل الضوضاء (اختياري لكل ملف): بنعالج الملفات المؤقتة قبل الـ transaction عشان ffmpeg ما يمسكش lock على الرسالة.
         // $options['denoise'] = مصفوفة flags بنفس ترتيب attachments. الفشل = الملف الأصلي بيتبعت (fail-open) والـ client بيتبلّغ.
-        $noise = ['requested' => 0, 'applied' => 0];
+        $noise = ['requested' => 0, 'applied' => 0, 'reason' => null];
         if ($hasAttachments) {
             foreach (array_values((array) $options['attachments']) as $i => $file) {
                 if (empty($options['denoise'][$i]) || !($file instanceof UploadedFile)) {
@@ -224,6 +224,8 @@ class MessagingService
                 $noise['requested']++;
                 if ($this->denoise->denoiseUpload($file)) {
                     $noise['applied']++;
+                } else {
+                    $noise['reason'] = $this->denoise->lastReason();
                 }
             }
         }

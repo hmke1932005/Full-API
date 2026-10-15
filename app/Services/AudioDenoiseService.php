@@ -16,6 +16,14 @@ use Illuminate\Support\Facades\Log;
  */
 class AudioDenoiseService
 {
+    /** آخر سبب فشل (ffmpeg_missing | exec_disabled | unsupported_format | filter_failed | timeout | ...). */
+    private ?string $lastReason = null;
+
+    public function lastReason(): ?string
+    {
+        return $this->lastReason;
+    }
+
     /** امتداد => [codec الصوت, bitrate]. */
     private const CODECS = [
         'webm' => ['libopus', '64k'], 'weba' => ['libopus', '64k'], 'ogg' => ['libopus', '64k'], 'opus' => ['libopus', '64k'],
@@ -52,7 +60,17 @@ class AudioDenoiseService
     {
         $ext = strtolower($file->getClientOriginalExtension() ?: pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
         $in  = $file->getRealPath();
-        if (!$in || !$this->supports($ext) || !$this->available()) {
+        $this->lastReason = null;
+        if (!$in || !$this->supports($ext)) {
+            $this->lastReason = 'unsupported_format';
+            return false;
+        }
+        if (!function_exists('exec')) {
+            $this->lastReason = 'exec_disabled';
+            return false;
+        }
+        if (!$this->available()) {
+            $this->lastReason = 'ffmpeg_missing';
             return false;
         }
 
@@ -63,7 +81,15 @@ class AudioDenoiseService
         @unlink($out);
         $out .= '.' . $ext;
 
-        $ok = $this->run($in, $out, $ext);
+        $ok = $this->run($in, $out, $ext, true);
+        if (!$ok && $this->modelPath() !== null) {
+            // arnndn ممكن يكون مش متضمّن في build الـ ffmpeg أو الموديل مش شغال → نجرب فلتر afftdn العادي قبل ما نستسلم.
+            @unlink($out);
+            $ok = $this->run($in, $out, $ext, false);
+        }
+        if (!$ok && $this->lastReason === null) {
+            $this->lastReason = 'filter_failed';
+        }
         if ($ok) {
             // copy() مش rename(): مسار الـ tmp ممكن يكون على filesystem تاني.
             $ok = @copy($out, $in);
@@ -72,10 +98,10 @@ class AudioDenoiseService
         return $ok;
     }
 
-    private function run(string $in, string $out, string $ext): bool
+    private function run(string $in, string $out, string $ext, bool $useModel = true): bool
     {
         [$codec, $bitrate] = self::CODECS[$ext];
-        $model = $this->modelPath();
+        $model = $useModel ? $this->modelPath() : null;
 
         $filter = $model
             ? 'highpass=f=70,arnndn=m=' . basename($model) . ':mix=1'
@@ -119,6 +145,7 @@ class AudioDenoiseService
         if ($status['running']) {
             proc_terminate($proc, 9);
             proc_close($proc);
+            $this->lastReason = 'timeout';
             Log::warning('Noise reduction timed out', ['file' => basename($in)]);
             @unlink($log);
             return false;
