@@ -77,6 +77,37 @@ class ResetPasswordController extends Controller
         return response()->json(['success' => true, 'redirect' => '/auth/login']);
     }
 
+    /**
+     * POST /api/v1/auth/reset-password/verify — { email, otp }
+     * يتأكد إن الرمز صح من غير ما يحرقه (الغلط بيتعدّ ضمن الـ 5 محاولات). الصفحة بعدها تفتح خانة كلمة السر،
+     * والتغيير الفعلي بيرجع يفحص الرمز تاني في submit().
+     */
+    public function verify(Request $request)
+    {
+        $ar = $request->header('X-Locale', 'en') === 'ar';
+        $validator = Validator::make($request->all(), [
+            'email' => 'required|email',
+            'otp'   => 'required|string',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['success' => false, 'message' => $validator->errors()->first()], 422);
+        }
+
+        $otp = app(OtpService::class);
+        $user = User::whereRaw('LOWER(email) = ?', [strtolower((string) $request->input('email'))])->first();
+        if (!$user) {
+            return response()->json(['success' => false, 'message' => OtpService::errorMessage(OtpService::INVALID, $ar), 'code' => 'otp_invalid'], 422);
+        }
+
+        $result = $otp->check(ForgotPasswordController::OTP_PURPOSE, (int) $user->id, (string) $request->input('otp'));
+        if ($result !== OtpService::OK) {
+            SecurityLog::write('Password reset OTP rejected', ['user_id' => $user->id, 'ip' => $request->ip(), 'result' => $result]);
+            return response()->json(['success' => false, 'message' => OtpService::errorMessage($result, $ar), 'code' => 'otp_' . $result], $result === OtpService::LOCKED ? 429 : 422);
+        }
+
+        return response()->json(['success' => true]);
+    }
+
     /** POST /api/v1/auth/reset-password — { email, otp, password, password_confirmation } */
     private function submitWithOtp(Request $request)
     {

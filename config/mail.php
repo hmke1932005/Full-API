@@ -132,5 +132,7 @@ return [
     'block_disposable' => env('MAIL_BLOCK_DISPOSABLE', true),
     'blocked_domains'  => env('MAIL_BLOCKED_DOMAINS', ''),
     'allowed_domains'  => env('MAIL_ALLOWED_DOMAINS', ''),
+    // Community-maintained list of disposable domains, downloaded by `mail:update-disposable-domains`.
+    'disposable_list_url' => env('MAIL_DISPOSABLE_LIST_URL', 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf'),
 
 ];

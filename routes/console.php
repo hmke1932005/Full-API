@@ -48,3 +48,6 @@ Schedule::command('exams:notify-upcoming')->everyFiveMinutes()->withoutOverlappi
 // ومحتاجة نفس cron السيرفر اللي فوق (schedule:run كل دقيقة) أو عملية `php artisan schedule:work` دايمة.
 Schedule::command('notifications:send-emails')->everyMinute()->withoutOverlapping();
 Schedule::command('projects:send-deadline-reminders')->hourly()->withoutOverlapping();
+
+// Keep the disposable-email blocklist fresh (new temp-mail domains appear all the time).
+Schedule::command('mail:update-disposable-domains')->weekly()->withoutOverlapping();

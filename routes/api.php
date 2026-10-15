@@ -158,6 +158,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/logout', [LogoutController::class, 'handle']);
         Route::post('/forgot-password', [ForgotPasswordController::class, 'submit'])->middleware('throttle:10,1');
         Route::post('/reset-password', [ResetPasswordController::class, 'submit'])->middleware('throttle:10,1');
+        Route::post('/reset-password/verify', [ResetPasswordController::class, 'verify'])->middleware('throttle:10,1');
         Route::post('/verify-email', [VerifyEmailController::class, 'submit'])->middleware('throttle:10,1');
         Route::get('/verify-email', [VerifyEmailController::class, 'handle']); // legacy links only
         Route::post('/resend-verification', [\App\Http\Controllers\Api\Auth\ResendVerificationController::class, 'submit'])->middleware('throttle:5,1');

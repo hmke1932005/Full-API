@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Cache;
  *  2. The domain has no MX and no A/AAAA record => nobody can ever read mail sent there.
  *     (Skipped automatically when DNS itself looks unreachable, so an outage never locks everyone out.)
  *
+ *  3. The domain is on the community list downloaded weekly into the cache by `mail:update-disposable-domains`.
+ *
  * config('mail.allowed_domains') / MAIL_ALLOWED_DOMAINS always wins (escape hatch for a false positive).
  * MAIL_BLOCK_DISPOSABLE=false switches both checks off (local / automated testing only).
  */
@@ -106,8 +108,14 @@ final class DisposableEmail
         'dcemail.com', 'doiea.com', 'dodgit.com', 'dodgit.org', 'dontreg.com', 'dotmsg.com',
         'drdrb.com', 'drdrb.net', 'dump-email.info', 'dumpandjunk.com', 'dumpmail.de', 'dumpyemail.com',
         'e4ward.com', 'easytrashmail.com', 'einmalmail.de', 'einrot.de', 'eintagsmail.de', 'vomoto.com',
-        'wegwerfemail.net',
+        'wegwerfemail.net', 'ensproxy.com',
     ];
+
+    /** Cache key of the downloaded community list (php artisan mail:update-disposable-domains). */
+    public const REMOTE_CACHE_KEY = 'disposable_email:remote_set';
+
+    /** @var array<string,true>|null */
+    private static ?array $remoteSet = null;
 
     /** @var array<string,true>|null */
     private static ?array $blockedSet = null;
@@ -152,11 +160,12 @@ final class DisposableEmail
             return false;
         }
         self::$blockedSet ??= array_fill_keys(self::BLOCKED, true);
+        self::$remoteSet ??= (array) Cache::get(self::REMOTE_CACHE_KEY, []);
         $extra = self::csv(config('mail.blocked_domains', ''));
         $parts = explode('.', $domain);
         for ($i = 0, $n = count($parts); $i < $n - 1; $i++) {
             $candidate = implode('.', array_slice($parts, $i));
-            if (isset(self::$blockedSet[$candidate]) || in_array($candidate, $extra, true)) {
+            if (isset(self::$blockedSet[$candidate]) || isset(self::$remoteSet[$candidate]) || in_array($candidate, $extra, true)) {
                 return true;
             }
         }
