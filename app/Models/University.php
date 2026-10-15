@@ -29,7 +29,9 @@ class University extends Model
             $u->name_key_ar = $keys['name_key_ar'];
             $u->name_key_en = $keys['name_key_en'];
         });
-        static::trashed(function (University $u) {
+        // Soft delete goes through a raw query (no `saving`), so free the keys on `deleted`.
+        // (`trashed` is not a model event — it is an instance method, hence the old crash.)
+        static::deleted(function (University $u) {
             \Illuminate\Support\Facades\DB::table('universities')->where('id', $u->id)
                 ->update(['name_key_ar' => null, 'name_key_en' => null]);
         });
