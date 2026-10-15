@@ -143,6 +143,7 @@ Route::prefix('v1')->group(function () {
 
     // Negotiates the per-client response-encryption key (UipResponseEncryptionMiddleware).
     Route::post('/secure/handshake', [\App\Http\Controllers\Api\SecureHandshakeController::class, 'submit'])->middleware('throttle:60,1');
+    Route::get('/secure/selftest', [\App\Http\Controllers\Api\SecureHandshakeController::class, 'selftest'])->middleware('throttle:20,1');
 
     Route::prefix('auth')->group(function () {
         // بدون Middleware — يطابق القديم بالظبط

@@ -130,4 +130,31 @@ class ResponseCryptoService
 
         return self::b64uEncode($iv . $ct . $tag);
     }
+
+    /** Server-side health check of everything the handshake needs (booleans only, no secrets). */
+    public function selfTest(): array
+    {
+        $r = ['openssl' => extension_loaded('openssl'), 'hkdf' => function_exists('hash_hkdf'), 'ec_keygen' => false, 'derive' => false, 'cache' => false];
+        try {
+            $opts = ['curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC];
+            $a = openssl_pkey_new($opts);
+            $b = openssl_pkey_new($opts);
+            $r['ec_keygen'] = (bool) ($a && $b);
+            if ($r['ec_keygen']) {
+                $pubB = openssl_pkey_get_public(openssl_pkey_get_details($b)['key']);
+                $r['derive'] = $pubB && openssl_pkey_derive($a, $pubB, 32) !== false;
+            }
+        } catch (\Throwable $e) {
+            // stays false
+        }
+        try {
+            Cache::put('resp_enc_selftest', '1', 30);
+            $r['cache'] = Cache::get('resp_enc_selftest') === '1';
+        } catch (\Throwable $e) {
+            // stays false
+        }
+        $r['ok'] = $r['openssl'] && $r['hkdf'] && $r['ec_keygen'] && $r['derive'] && $r['cache'];
+
+        return $r;
+    }
 }

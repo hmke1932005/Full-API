@@ -6,18 +6,40 @@ use App\Services\ResponseCryptoService;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\InputBag;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Encrypts every JSON API response body for clients that negotiated a key
  * (header X-Enc-Kid, see SecureHandshakeController). Files, streams and empty
- * bodies are left alone. With RESPONSE_ENC_ENFORCE=true a request without a
- * valid key is refused before it reaches any controller.
+ * bodies are left alone.
+ *
+ * RESPONSE_ENC_ENFORCE=true: a write request (POST/PUT/PATCH/DELETE) without a valid key is refused
+ * before any controller runs; a GET/HEAD without a key still runs, but if its answer is JSON it is
+ * withheld (428) — so images, downloads and other non-fetch loads keep working.
  */
 class UipResponseEncryptionMiddleware
 {
     public function __construct(private ResponseCryptoService $crypto)
     {
+    }
+
+    private function reject(string $code, int $status = 428)
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $code === 'enc_bad_request' ? 'Invalid or expired secure request.' : 'Secure channel required.',
+            'data'    => null,
+            'errors'  => ['code' => $code],
+            'meta'    => (object) [],
+        ], $status)->header('Cache-Control', 'no-store');
+    }
+
+    private function isFileLike($response): bool
+    {
+        return $response instanceof StreamedResponse || $response instanceof BinaryFileResponse
+            || in_array($response->getStatusCode(), [204, 205, 304], true)
+            || !str_contains((string) $response->headers->get('Content-Type', ''), 'json');
     }
 
     public function handle(Request $request, Closure $next)
@@ -34,48 +56,44 @@ class UipResponseEncryptionMiddleware
         $kid  = (string) $request->header('X-Enc-Kid', '');
         $keys = $kid !== '' ? $this->crypto->keysFor($kid) : null;
         $key  = $keys['resp'] ?? null;
+        $enforce = (bool) config('secure_transport.enforce');
+        $isRead  = in_array($request->method(), ['GET', 'HEAD'], true);
 
         if ($key === null) {
-            if ($kid !== '' || config('secure_transport.enforce')) {
-                // Rejected before any controller ran, so the client can safely retry after a new handshake.
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Secure channel required.',
-                    'data'    => null,
-                    'errors'  => ['code' => $kid !== '' ? 'enc_key_expired' : 'enc_required'],
-                    'meta'    => (object) [],
-                ], 428)->header('Cache-Control', 'no-store');
+            if ($kid !== '') {
+                return $this->reject('enc_key_expired'); // client re-handshakes and retries
             }
-            return $next($request);
+            if (!$enforce) {
+                return $next($request);
+            }
+            if (!$isRead) {
+                return $this->reject('enc_required');
+            }
+            // Keyless read under enforcement: let it run, but never hand out a plain JSON body.
+            $response = $next($request);
+
+            return $this->isFileLike($response) ? $response : $this->reject('enc_required');
         }
 
         // Encrypted request body (JSON envelope) -> decrypt and expose it as the normal JSON input.
-        if (!in_array($request->method(), ['GET', 'HEAD'], true) && $request->isJson()) {
+        if (!$isRead && $request->isJson()) {
             $raw = (string) $request->getContent();
             $env = $raw !== '' ? json_decode($raw, true) : null;
             if (is_array($env) && ($env['enc'] ?? null) === 'v1' && isset($env['d']) && ($env['kid'] ?? '') === $kid) {
                 $body = $this->crypto->decryptRequest((string) $env['d'], $keys['req'], $kid, $request->method(), '/' . ltrim($request->path(), '/'));
                 if ($body === null) {
-                    return response()->json([
-                        'success' => false, 'message' => 'Invalid or expired secure request.', 'data' => null,
-                        'errors' => ['code' => 'enc_bad_request'], 'meta' => (object) [],
-                    ], 400)->header('Cache-Control', 'no-store');
+                    return $this->reject('enc_bad_request', 400);
                 }
-                $request->setJson(new \Symfony\Component\HttpFoundation\InputBag($body));
+                $request->setJson(new InputBag($body));
                 $request->attributes->set('uip_enc_request', true);
             } elseif ($raw !== '' && config('secure_transport.enforce_requests')) {
-                return response()->json([
-                    'success' => false, 'message' => 'Encrypted request body required.', 'data' => null,
-                    'errors' => ['code' => 'enc_required'], 'meta' => (object) [],
-                ], 428)->header('Cache-Control', 'no-store');
+                return $this->reject('enc_required');
             }
         }
 
         $response = $next($request);
 
-        if ($response instanceof StreamedResponse || $response instanceof BinaryFileResponse
-            || in_array($response->getStatusCode(), [204, 205, 304], true)
-            || !str_contains((string) $response->headers->get('Content-Type', ''), 'json')) {
+        if ($this->isFileLike($response)) {
             return $response;
         }
 
