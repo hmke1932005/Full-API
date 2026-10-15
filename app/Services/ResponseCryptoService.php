@@ -50,7 +50,7 @@ class ResponseCryptoService
         }
         $serverPub = "\x04" . str_pad($ec['x'], 32, "\0", STR_PAD_LEFT) . str_pad($ec['y'], 32, "\0", STR_PAD_LEFT);
 
-        $shared = openssl_pkey_derive($server, $clientKey, 32);
+        $shared = openssl_pkey_derive($clientKey, $server, 32);
         if ($shared === false) {
             return null;
         }
@@ -142,7 +142,7 @@ class ResponseCryptoService
             $r['ec_keygen'] = (bool) ($a && $b);
             if ($r['ec_keygen']) {
                 $pubB = openssl_pkey_get_public(openssl_pkey_get_details($b)['key']);
-                $r['derive'] = $pubB && openssl_pkey_derive($a, $pubB, 32) !== false;
+                $r['derive'] = $pubB && openssl_pkey_derive($pubB, $a, 32) !== false;
             }
         } catch (\Throwable $e) {
             // stays false
