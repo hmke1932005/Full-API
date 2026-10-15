@@ -141,6 +141,9 @@ Route::prefix('v1')->group(function () {
     // عشان يعرض صفحة الحظر بدل ما يفتح المنصة.
     Route::get('/device-status', [\App\Http\Controllers\Api\DeviceStatusController::class, 'show']);
 
+    // Negotiates the per-client response-encryption key (UipResponseEncryptionMiddleware).
+    Route::post('/secure/handshake', [\App\Http\Controllers\Api\SecureHandshakeController::class, 'submit'])->middleware('throttle:60,1');
+
     Route::prefix('auth')->group(function () {
         // بدون Middleware — يطابق القديم بالظبط
         Route::post('/login', [LoginController::class, 'submit']);

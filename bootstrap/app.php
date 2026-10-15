@@ -77,6 +77,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // خلف Vercel، بتوقيع HMAC) قبل ما الـ rate limit وغيره يقراه.
         $middleware->api(prepend: [
             \App\Http\Middleware\UipTrustedClientIpMiddleware::class,
+            \App\Http\Middleware\UipResponseEncryptionMiddleware::class,
             \App\Http\Middleware\UipSecurityHeadersMiddleware::class,
             \App\Http\Middleware\UipCorsMiddleware::class,
             \App\Http\Middleware\UipRateLimitMiddleware::class,
