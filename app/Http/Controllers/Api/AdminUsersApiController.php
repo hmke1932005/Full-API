@@ -88,6 +88,7 @@ class AdminUsersApiController extends Controller
         }
 
         $target['additional_roles'] = $this->users->additionalRoleSlugs($target['id']);
+        $target['is_joker'] = (bool) DB::table('users')->where('id', $target['id'])->value('is_joker');
         $target['affiliation'] = app(AdminUserAffiliationService::class)->describe((int) $target['id']);
 
         return $this->apiSuccess($target, 'User retrieved successfully.');
@@ -96,6 +97,7 @@ class AdminUsersApiController extends Controller
     /**
      * POST /api/v1/admin/users — generic "create account" used across
      * Users/Universities/Team pages on the web, preset by role.
+     * Optional `is_joker: true` makes the account a joker (all roles + role switcher).
      */
     public function store(Request $request)
     {
@@ -103,59 +105,194 @@ class AdminUsersApiController extends Controller
             return $err;
         }
 
-        $data = $request->validate([
+        $request->validate([
             'email'     => 'required|email',
             'password'  => 'required|string',
             'role'      => 'required',
         ]);
 
-        try {
-            app(\App\Services\PasswordPolicyService::class)->assertValid($data['password']);
-        } catch (\InvalidArgumentException $e) {
-            return $this->apiError($e->getMessage(), null, 422);
+        $res = $this->createAccount($request, $request->all());
+        if (!$res['ok']) {
+            return $this->apiError($res['message'], $res['errors'] ?? null, 422);
         }
 
-        $names = \App\Support\BilingualName::fromRequest($request);
-        if (!$names['ok']) {
-            return $this->apiError('Please provide the name in both Arabic and English.', $names['errors'], 422);
+        return $this->apiSuccess($res['user']->toArray(), 'Account created successfully.', 201);
+    }
+
+    /**
+     * POST /api/v1/admin/users/bulk — create many accounts in one request.
+     * Body: { users: [ {name_ar, name_en, email, phone?, password, role, is_joker?}, ... ] } (max 200).
+     * Each row is independent: one bad row never blocks the others. Returns a per-row result.
+     */
+    public function bulkStore(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
         }
 
-        if ($this->users->emailExists($data['email'])) {
-            return $this->apiError('An account with this email already exists.', ['email' => 'An account with this email already exists.'], 422);
-        }
+        $request->validate([
+            'users'   => 'required|array|min:1|max:200',
+            'users.*' => 'array',
+        ]);
 
-        if (!Role::where('slug', $data['role'])->exists()) {
-            return $this->apiError('That role does not exist.', null, 422);
-        }
+        $results = [];
+        $created = 0;
+        $seen = [];
+        foreach ($request->input('users') as $i => $row) {
+            $email = strtolower(trim((string) ($row['email'] ?? '')));
+            $line  = $i + 1;
 
-        if ($data['role'] === 'university') {
-            $dup = \App\Support\UniversityName::conflicts($names['name_ar'], $names['name_en'], null, \App\Support\BilingualName::localeOf($request));
-            if ($dup) {
-                return $this->apiError(reset($dup), $dup, 422);
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $results[] = ['row' => $line, 'email' => $email, 'ok' => false, 'message' => 'Invalid or missing email.'];
+                continue;
+            }
+            if (isset($seen[$email])) {
+                $results[] = ['row' => $line, 'email' => $email, 'ok' => false, 'message' => 'Duplicate email inside this list.'];
+                continue;
+            }
+            $seen[$email] = true;
+
+            if (empty($row['password']) || empty($row['role'])) {
+                $results[] = ['row' => $line, 'email' => $email, 'ok' => false, 'message' => 'Password and role are required.'];
+                continue;
+            }
+
+            try {
+                $res = $this->createAccount($request, array_merge($row, ['email' => $email]));
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Bulk user create failed: ' . $e->getMessage());
+                $res = ['ok' => false, 'message' => 'Unexpected error while creating this account.'];
+            }
+
+            if ($res['ok']) {
+                $created++;
+                $results[] = ['row' => $line, 'email' => $email, 'ok' => true, 'uuid' => $res['user']->uuid];
+            } else {
+                $results[] = ['row' => $line, 'email' => $email, 'ok' => false, 'message' => $res['message']];
             }
         }
 
-        $passwordHash = password_hash($data['password'], PASSWORD_BCRYPT);
+        $this->auditLog->record($request->attributes->get('uip_user_id'), 'user.bulk_create', 'User', null, null, [
+            'requested' => count($results), 'created' => $created,
+        ]);
+
+        return $this->apiSuccess(
+            ['created' => $created, 'failed' => count($results) - $created, 'results' => $results],
+            "{$created} account(s) created.",
+            $created > 0 ? 201 : 422
+        );
+    }
+
+    /**
+     * Shared creation logic for store() and bulkStore().
+     * @return array{ok:bool, user?:\App\Models\User, message?:string, errors?:mixed}
+     */
+    private function createAccount(Request $request, array $in): array
+    {
+        $email = trim((string) ($in['email'] ?? ''));
+        $role  = (string) ($in['role'] ?? '');
+
+        try {
+            app(\App\Services\PasswordPolicyService::class)->assertValid((string) ($in['password'] ?? ''));
+        } catch (\InvalidArgumentException $e) {
+            return ['ok' => false, 'message' => $e->getMessage()];
+        }
+
+        $names = \App\Support\BilingualName::resolve($in['name_ar'] ?? null, $in['name_en'] ?? null, \App\Support\BilingualName::localeOf($request));
+        if (!$names['ok']) {
+            return ['ok' => false, 'message' => 'Please provide the name in both Arabic and English.', 'errors' => $names['errors']];
+        }
+
+        if ($this->users->emailExists($email)) {
+            return ['ok' => false, 'message' => 'An account with this email already exists.', 'errors' => ['email' => 'An account with this email already exists.']];
+        }
+
+        if (!Role::where('slug', $role)->exists()) {
+            return ['ok' => false, 'message' => 'That role does not exist.'];
+        }
+
+        if ($role === 'university') {
+            $dup = \App\Support\UniversityName::conflicts($names['name_ar'], $names['name_en'], null, \App\Support\BilingualName::localeOf($request));
+            if ($dup) {
+                return ['ok' => false, 'message' => (string) reset($dup), 'errors' => $dup];
+            }
+        }
+
+        $passwordHash = password_hash((string) $in['password'], PASSWORD_BCRYPT);
 
         $user = $this->users->createWithRole([
             'full_name'          => $names['full_name'],
             'name_ar'            => $names['name_ar'],
             'name_en'            => $names['name_en'],
-            'email'              => $data['email'],
-            'phone'              => $request->input('phone') ?: null,
+            'email'              => $email,
+            'phone'              => ($in['phone'] ?? null) ?: null,
             'password_hash'      => $passwordHash,
             'preferred_language' => 'ar',
             'status'             => 'active',
             'email_verified_at'  => now(),
-        ], $data['role']);
+        ], $role);
 
         app(\App\Services\PasswordPolicyService::class)->recordPasswordChange($user->id, $passwordHash);
 
         $this->auditLog->record($request->attributes->get('uip_user_id'), 'user.create', 'User', $user->id, null, [
-            'email' => $user->email, 'role' => $data['role'],
+            'email' => $user->email, 'role' => $role,
         ]);
 
-        return $this->apiSuccess($user->toArray(), 'Account created successfully.', 201);
+        if (filter_var($in['is_joker'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $this->makeJoker($request, (int) $user->id, true);
+        }
+
+        return ['ok' => true, 'user' => $user];
+    }
+
+    /** PUT /api/v1/admin/users/{id}/joker — body { enabled: bool }. */
+    public function setJoker(Request $request, $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $target = $this->users->findWithRoleByUuid((string) $id);
+        if (!$target) {
+            return $this->apiError('User not found.', null, 404);
+        }
+
+        $enabled = filter_var($request->input('enabled', true), FILTER_VALIDATE_BOOLEAN);
+        $this->makeJoker($request, (int) $target['id'], $enabled);
+
+        return $this->apiSuccess(['is_joker' => $enabled], $enabled ? 'Joker access enabled.' : 'Joker access removed.');
+    }
+
+    /**
+     * Joker on: grant every role in config (keeps the primary role first) and set the flag.
+     * Joker off: clear the flag and drop the extra roles again (primary stays).
+     */
+    private function makeJoker(Request $request, int $userId, bool $enabled): void
+    {
+        $actor = $request->attributes->get('uip_user_id');
+        $roleSvc = app(\App\Services\RoleService::class);
+
+        if ($enabled) {
+            foreach (Role::pluck('slug') as $slug) {
+                $this->users->grantAdditionalRole($userId, (string) $slug);
+            }
+            // Profile rows the role-specific pages expect.
+            if (!DB::table('students')->where('user_id', $userId)->exists()) {
+                DB::table('students')->insert(['user_id' => $userId]);
+            }
+            DB::table('users')->where('id', $userId)->update(['is_joker' => 1]);
+        } else {
+            $primary = $roleSvc->primaryRoleFor($userId);
+            DB::table('users')->where('id', $userId)->update(['is_joker' => 0]);
+            foreach ($roleSvc->allRolesFor($userId) as $slug) {
+                if ($slug !== $primary) {
+                    $this->users->revokeAdditionalRole($userId, $slug);
+                }
+            }
+            DB::table('user_sessions')->where('user_id', $userId)->update(['active_role' => null]);
+        }
+
+        $this->auditLog->record($actor, $enabled ? 'user.joker_enable' : 'user.joker_disable', 'User', $userId, null, null);
     }
 
     /** PATCH /api/v1/admin/users/{id} — profile fields + optional role change. */

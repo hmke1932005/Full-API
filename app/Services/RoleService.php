@@ -51,4 +51,37 @@ class RoleService
 
         return $slug ?? 'student';
     }
+
+    /** True for a "joker" account (holds every role, may switch between them). */
+    public function isJoker(int $userId): bool
+    {
+        return (bool) DB::table('users')->where('id', $userId)->value('is_joker');
+    }
+
+    /** Every role slug the user holds (primary first). */
+    public function allRolesFor(int $userId): array
+    {
+        return DB::table('roles')
+            ->join('user_roles', 'user_roles.role_id', '=', 'roles.id')
+            ->where('user_roles.user_id', $userId)
+            ->orderBy('user_roles.assigned_at', 'asc')
+            ->pluck('roles.slug')
+            ->all();
+    }
+
+    /**
+     * Role a session acts as. Normal accounts: always the primary role (unchanged
+     * behaviour). Joker accounts: the role last chosen on this session if the user
+     * still holds it, otherwise the primary role.
+     */
+    public function effectiveRoleFor(int $userId, ?int $sessionId = null): string
+    {
+        $primary = $this->primaryRoleFor($userId);
+        if (!$sessionId || !$this->isJoker($userId)) {
+            return $primary;
+        }
+        $active = (string) DB::table('user_sessions')->where('id', $sessionId)->where('user_id', $userId)->value('active_role');
+
+        return ($active !== '' && in_array($active, $this->allRolesFor($userId), true)) ? $active : $primary;
+    }
 }

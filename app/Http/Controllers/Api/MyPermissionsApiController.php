@@ -23,8 +23,13 @@ class MyPermissionsApiController extends Controller
         $role   = (string) $request->attributes->get('uip_role');
         $isAdmin = $role === 'admin';
 
+        $roles = app(\App\Services\RoleService::class);
+        $joker = $roles->isJoker($userId);
+
         return $this->apiSuccess([
             'role'        => $role,
+            'is_joker'    => $joker,
+            'available_roles' => $joker ? $roles->allRolesFor($userId) : [],
             'is_admin'    => $isAdmin,
             'permissions' => $isAdmin
                 ? $this->permissions->allSlugs()

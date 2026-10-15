@@ -171,6 +171,8 @@ Route::prefix('v1')->group(function () {
         // محتاج Bearer token — يطابق AuthMiddleware القديمة (الجزء الخاص بالـ API بس)
         Route::middleware('uip.auth')->group(function () {
             Route::get('/permissions', [\App\Http\Controllers\Api\MyPermissionsApiController::class, 'show']);
+            // Joker accounts only (controller enforces it): act as another role they hold.
+            Route::post('/switch-role', [\App\Http\Controllers\Api\Auth\SwitchRoleController::class, 'submit'])->middleware('throttle:30,1');
             // سياسة MFA Requirements — تفعيل 2FA الإجباري (مفتوحة حتى للحساب المقيّد).
             Route::get('/mfa/status', [\App\Http\Controllers\Api\Auth\MfaEnrollmentController::class, 'status']);
             Route::post('/mfa/setup', [\App\Http\Controllers\Api\Auth\MfaEnrollmentController::class, 'setup'])->middleware('throttle:20,1');
@@ -930,6 +932,7 @@ Route::prefix('v1')->group(function () {
     Route::prefix('admin/users')->middleware(['uip.auth', 'uip.admin'])->group(function () {
         Route::get('/', [AdminUsersApiController::class, 'index']);
         Route::post('/', [AdminUsersApiController::class, 'store']);
+        Route::post('/bulk', [AdminUsersApiController::class, 'bulkStore'])->middleware('throttle:10,1');
         // static قبل /{id} عشان مايتبلعش كـ uuid
         Route::get('/affiliation-options', [AdminUsersApiController::class, 'affiliationOptions']);
         Route::get('/{id}', [AdminUsersApiController::class, 'show']);
@@ -940,6 +943,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/activate', [AdminUsersApiController::class, 'activate']);
         Route::patch('/{id}/role', [AdminUsersApiController::class, 'changeRole']);
         Route::post('/{id}/roles', [AdminUsersApiController::class, 'assignRole']);
+        Route::put('/{id}/joker', [AdminUsersApiController::class, 'setJoker']);
         Route::delete('/{id}/roles/{role}', [AdminUsersApiController::class, 'revokeRole']);
         Route::post('/{id}/block-ip', [AdminUsersApiController::class, 'blockIp']);
         Route::put('/{id}/affiliation', [AdminUsersApiController::class, 'updateAffiliation']);

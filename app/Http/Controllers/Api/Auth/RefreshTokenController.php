@@ -106,7 +106,7 @@ class RefreshTokenController extends Controller
             return AuthCookies::clear($this->apiError('Your session expired due to inactivity. Please log in again.', null, 401), $request);
         }
 
-        $role = $this->roles->primaryRoleFor($row->user_id);
+        $role = $this->roles->effectiveRoleFor((int) $row->user_id, $session ? (int) $session->id : null);
 
         // Device Restrictions Policy (وضع by_role) — جلسة حساب دوره ممنوع على نوع الجهاز ده ماتتجددش.
         if (!$this->deviceRestriction->isAllowed($request->userAgent(), $role)) {

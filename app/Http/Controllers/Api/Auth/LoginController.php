@@ -146,8 +146,18 @@ class LoginController extends Controller
 
         $role = $this->roles->primaryRoleFor($user->id);
 
+        // Joker account (admin-granted, holds every role): enters from either portal and
+        // starts as the role picked on the login screen (if held), else its primary role.
+        $isJoker = $this->roles->isJoker((int) $user->id);
+        if ($isJoker) {
+            $pick = (string) $request->input('login_as', '');
+            if ($pick !== '' && in_array($pick, $this->roles->allRolesFor((int) $user->id), true)) {
+                $role = $pick;
+            }
+        }
+
         $viaStaffPortal = $request->input('portal') === 'staff';
-        if (in_array($role, self::STAFF_ROLES, true) !== $viaStaffPortal) {
+        if (!$isJoker && in_array($role, self::STAFF_ROLES, true) !== $viaStaffPortal) {
             SecurityLog::write('Login refused - wrong entry portal', [
                 'user_id' => $user->id, 'role' => $role, 'portal' => $viaStaffPortal ? 'staff' : 'public', 'ip' => $request->ip(),
             ]);
@@ -157,7 +167,7 @@ class LoginController extends Controller
             ], 422);
         }
 
-        if (!$viaStaffPortal) {
+        if (!$viaStaffPortal && !$isJoker) {
             $loginAs = (string) $request->input('login_as', '');
             if (!isset(self::PUBLIC_ROLE_LABELS[$loginAs])) {
                 return response()->json([
@@ -287,6 +297,14 @@ class LoginController extends Controller
         ]);
 
         $tokens = UipJwtService::issueTokenPair($user->id, $role);
+
+        // Joker: remember which role this fresh session started as (see RoleService::effectiveRoleFor).
+        if ($this->roles->isJoker((int) $user->id)) {
+            $sid = \Illuminate\Support\Facades\DB::table('user_sessions')->where('user_id', $user->id)->max('id');
+            if ($sid) {
+                \Illuminate\Support\Facades\DB::table('user_sessions')->where('id', $sid)->update(['active_role' => $role]);
+            }
+        }
 
         SecurityLog::write('Successful login', ['user_id' => $user->id, 'ip' => $request->ip()]);
 
