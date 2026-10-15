@@ -34,6 +34,11 @@ class UniversityRepository
             return $university;
         }
 
+        // The fallback name must never duplicate an existing university.
+        if ($fallbackName !== '' && \App\Support\UniversityName::conflicts($fallbackName, $fallbackName, (int) $userId)) {
+            $fallbackName .= ' (' . $userId . ')';
+        }
+
         return University::create([
             'user_id'          => $userId,
             'official_name_ar' => $fallbackName,
@@ -319,6 +324,12 @@ class UniversityRepository
         $university = University::withTrashed()->find($id);
         if (!$university || !$university->trashed()) {
             return ['ok' => false, 'error' => 'University not found in the trash.', 'students_restored' => 0];
+        }
+
+        // الاسم اتاخد من جامعة تانية بعد الحذف => مينفعش يتكرر، الاسترجاع مرفوض.
+        $dup = \App\Support\UniversityName::conflicts($university->official_name_ar, $university->official_name_en, $university->user_id ? (int) $university->user_id : null);
+        if ($dup) {
+            return ['ok' => false, 'error' => 'Another university already uses this name: ' . reset($dup), 'students_restored' => 0];
         }
 
         // لو الإيميل اتأخد من حساب تاني بعد الحذف، منرجّعش بتعارض.

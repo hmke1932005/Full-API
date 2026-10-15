@@ -343,9 +343,9 @@ class AdminUsersApiController extends Controller
         if ($ok && $newRole === 'university') {
             $uni = DB::table('universities')->where('user_id', $target['id'])->first();
             if ($uni) {
-                DB::table('universities')->where('id', $uni->id)->update(['official_name_ar' => $names['name_ar'], 'official_name_en' => $names['name_en']]);
+                DB::table('universities')->where('id', $uni->id)->update(['official_name_ar' => $names['name_ar'], 'official_name_en' => $names['name_en']] + \App\Support\UniversityName::keys($names['name_ar'], $names['name_en']));
             } else {
-                DB::table('universities')->insert(['user_id' => $target['id'], 'official_name_ar' => $names['name_ar'], 'official_name_en' => $names['name_en'], 'country' => '']);
+                DB::table('universities')->insert(['user_id' => $target['id'], 'official_name_ar' => $names['name_ar'], 'official_name_en' => $names['name_en'], 'country' => ''] + \App\Support\UniversityName::keys($names['name_ar'], $names['name_en']));
             }
         }
 

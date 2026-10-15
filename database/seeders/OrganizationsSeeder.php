@@ -49,6 +49,10 @@ SELECT u.id, 'جامعة UIP التجريبية', 'UIP Demo University', 'Egypt'
 FROM users u WHERE u.email = 'university@uip.demo'
 ON DUPLICATE KEY UPDATE official_name_en = VALUES(official_name_en), is_public = VALUES(is_public);
 SQL,
+            // Unique-name keys (see UniversityName) for the row inserted above.
+            "UPDATE universities SET name_key_ar = '" . \App\Support\UniversityName::normalize('جامعة UIP التجريبية')
+                . "', name_key_en = '" . \App\Support\UniversityName::normalize('UIP Demo University')
+                . "' WHERE official_name_en = 'UIP Demo University' AND deleted_at IS NULL",
 
         ];
     }

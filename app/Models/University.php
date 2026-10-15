@@ -16,6 +16,29 @@ class University extends Model
 
     protected $table = 'universities';
 
+    /**
+     * Keep the normalised-name keys (backed by DB unique indexes) in sync with the names.
+     * A soft-deleted university has NULL keys so its name is free to be used again.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (University $u) {
+            $keys = $u->trashed()
+                ? ['name_key_ar' => null, 'name_key_en' => null]
+                : \App\Support\UniversityName::keys($u->official_name_ar, $u->official_name_en);
+            $u->name_key_ar = $keys['name_key_ar'];
+            $u->name_key_en = $keys['name_key_en'];
+        });
+        static::trashed(function (University $u) {
+            \Illuminate\Support\Facades\DB::table('universities')->where('id', $u->id)
+                ->update(['name_key_ar' => null, 'name_key_en' => null]);
+        });
+        static::restored(function (University $u) {
+            \Illuminate\Support\Facades\DB::table('universities')->where('id', $u->id)
+                ->update(\App\Support\UniversityName::keys($u->official_name_ar, $u->official_name_en));
+        });
+    }
+
     protected $fillable = [
         'user_id', 'official_name_ar', 'official_name_en', 'slug', 'country', 'city',
         'website', 'logo_path', 'verification_status', 'verified_at', 'verified_by',

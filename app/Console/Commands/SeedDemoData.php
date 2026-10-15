@@ -262,12 +262,19 @@ class SeedDemoData extends Command
 
         for ($u = 1; $u <= $uniCount; $u++) {
             [$uniAr, $uniEn] = $this->uniNames[($u - 1) % count($this->uniNames)];
+            // University names are unique (pool wrap-around or an earlier demo batch): number the repeats.
+            [$baseAr, $baseEn, $n] = [$uniAr, $uniEn, 1];
+            while (\App\Support\UniversityName::conflicts($uniAr, $uniEn)) {
+                $n++;
+                [$uniAr, $uniEn] = ["$baseAr $n", "$baseEn $n"];
+            }
             $userId = $this->createUsers([["university{$u}.{$this->tag}@uip.demo", $uniAr]], 'university')[0];
 
             $universityId = DB::table('universities')->insertGetId([
                 'user_id' => $userId,
                 'official_name_ar' => $uniAr,
                 'official_name_en' => $uniEn,
+            ] + \App\Support\UniversityName::keys($uniAr, $uniEn) + [
                 'country' => 'Egypt',
                 'city' => $this->cities[($u - 1) % count($this->cities)],
                 'website' => "https://demo-{$this->tag}-{$u}.example.com",

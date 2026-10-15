@@ -27,6 +27,19 @@ final class UniversityName
     }
 
     /**
+     * The two columns the DB unique indexes sit on (null when a name normalises to nothing,
+     * and for soft-deleted universities, so a deleted name can be reused).
+     *
+     * @return array{name_key_ar:?string,name_key_en:?string}
+     */
+    public static function keys($nameAr, $nameEn): array
+    {
+        $ar = self::normalize($nameAr);
+        $en = self::normalize($nameEn);
+        return ['name_key_ar' => $ar !== '' ? $ar : null, 'name_key_en' => $en !== '' ? $en : null];
+    }
+
+    /**
      * @param int|null $ignoreUserId   the account being edited (its own row never conflicts)
      * @return array<string,string>    field => message (empty when the names are free)
      */

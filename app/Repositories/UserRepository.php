@@ -49,10 +49,14 @@ class UserRepository
             // University accounts: official names mirror the account's Arabic/English names.
             if ($roleSlug === 'university' && !empty($userData['name_ar']) && !empty($userData['name_en'])
                 && !DB::table('universities')->where('user_id', $user->id)->exists()) {
+                $dup = \App\Support\UniversityName::conflicts($userData['name_ar'], $userData['name_en'], (int) $user->id);
+                if ($dup) {
+                    throw new \RuntimeException((string) reset($dup));
+                }
                 DB::table('universities')->insert([
                     'user_id' => $user->id, 'official_name_ar' => $userData['name_ar'],
                     'official_name_en' => $userData['name_en'], 'country' => '',
-                ]);
+                ] + \App\Support\UniversityName::keys($userData['name_ar'], $userData['name_en']));
             }
 
             return $user;
