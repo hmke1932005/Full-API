@@ -97,7 +97,7 @@ class UserSessionService
     /** المدة (ثواني) اللي الجلسة بتفضل "حية" بعد آخر نبضة. */
     public function liveSeconds(): int
     {
-        return max(30, (int) config('security.single_session.live_seconds', 120));
+        return max(30, (int) \App\Support\PlatformPolicy::value('session_live_seconds'));
     }
 
     /** أحدث جلسة حية (نبضتها وصلت مؤخرًا) للمستخدم، أو null. */

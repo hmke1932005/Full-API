@@ -91,7 +91,7 @@ class UipResponseEncryptionMiddleware
         }
 
         $key  = $keys['resp'] ?? null;
-        $enforce = (bool) config('secure_transport.enforce');
+        $enforce = PlatformPolicy::responseEncEnforced();
         $isRead  = in_array($request->method(), ['GET', 'HEAD'], true);
 
         if ($key === null) {
@@ -121,7 +121,7 @@ class UipResponseEncryptionMiddleware
                 }
                 $request->setJson(new InputBag($body));
                 $request->attributes->set('uip_enc_request', true);
-            } elseif ($raw !== '' && config('secure_transport.enforce_requests')) {
+            } elseif ($raw !== '' && PlatformPolicy::requestEncEnforced()) {
                 return $this->reject('enc_required');
             }
         }

@@ -880,6 +880,7 @@ Route::prefix('v1')->group(function () {
     Route::prefix('admin/platform-policy')->middleware(['uip.auth', 'uip.admin'])->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'show']);
         Route::patch('/flags', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'updateFlags']);
+        Route::put('/values', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'updateValues'])->middleware('throttle:20,1');
         Route::post('/rules', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'addRules']);
         Route::delete('/rules', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'removeRule']);
         Route::post('/test', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'test']);

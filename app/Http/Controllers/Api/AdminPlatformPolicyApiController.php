@@ -77,16 +77,35 @@ class AdminPlatformPolicyApiController extends Controller
                 PlatformPolicy::LIST_BLOCK => PlatformPolicy::rules(PlatformPolicy::LIST_BLOCK),
                 PlatformPolicy::LIST_ALLOW => PlatformPolicy::rules(PlatformPolicy::LIST_ALLOW),
             ],
+            'values'     => $this->valuesPayload(),
             'limits'     => ['max_rules' => PlatformPolicy::MAX_RULES, 'max_values_per_request' => self::MAX_VALUES_PER_REQUEST],
             // Hard switches in .env that sit above the dashboard: when false the dashboard cannot turn the feature on.
             'server'     => [
                 'email_checks_master'  => DisposableEmail::enabled(),            // MAIL_BLOCK_DISPOSABLE
                 'encryption_master'    => (bool) config('secure_transport.enabled', true), // RESPONSE_ENC_ENABLED
-                'encryption_enforced'  => (bool) config('secure_transport.enforce', false), // RESPONSE_ENC_ENFORCE
+                'encryption_enforced'  => PlatformPolicy::responseEncEnforced(), // RESPONSE_ENC_ENFORCE (or the dashboard value)
                 'encryption_selftest'  => $selfTest,
                 'encryption_effective' => PlatformPolicy::encryptionOn(),
             ],
         ];
+    }
+
+    /** @return array<string,array{value:string|int,default:string|int,overridden:bool,type:string,min:int,max:int}> */
+    private function valuesPayload(): array
+    {
+        $out = [];
+        foreach (PlatformPolicy::VALUES as $k => $def) {
+            $out[$k] = [
+                'value'      => PlatformPolicy::value($k),
+                'default'    => PlatformPolicy::defaultValue($k),
+                'overridden' => PlatformPolicy::isValueOverridden($k),
+                'type'       => $def['type'],
+                'min'        => $def['min'],
+                'max'        => $def['max'],
+            ];
+        }
+
+        return $out;
     }
 
     /** GET /api/v1/admin/platform-policy */
@@ -146,6 +165,61 @@ class AdminPlatformPolicyApiController extends Controller
         }
 
         return $this->apiSuccess($this->snapshot(), $changed ? 'Platform policy saved.' : 'Nothing changed.');
+    }
+
+    /**
+     * PUT /api/v1/admin/platform-policy/values — { values: { platform_name: "UIP", session_live_seconds: 90, google_client_ids: null } }
+     * A null value resets that setting to its .env default.
+     */
+    public function updateValues(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $input = $request->input('values');
+        if (!is_array($input) || $input === []) {
+            return $this->apiError('No settings were sent.', null, 422);
+        }
+        $unknown = array_diff(array_keys($input), array_keys(PlatformPolicy::VALUES));
+        if ($unknown) {
+            return $this->apiError('Unknown setting: ' . implode(', ', array_map('strval', $unknown)), ['values' => array_values($unknown)], 422);
+        }
+
+        // Validate everything first so a bad field never leaves a half-saved form.
+        $clean = [];
+        foreach ($input as $key => $raw) {
+            if ($raw === null) {
+                $clean[$key] = null;
+                continue;
+            }
+            [$value, $error] = PlatformPolicy::normalizeValue($key, $raw);
+            if ($error !== null) {
+                return $this->apiError($error, ['values' => [$key]], 422);
+            }
+            $clean[$key] = $value;
+        }
+
+        $before = PlatformPolicy::values();
+        foreach ($clean as $key => $value) {
+            $value === null ? PlatformPolicy::resetValue($key) : PlatformPolicy::setValue($key, $value);
+        }
+        $after = PlatformPolicy::values();
+        $changed = array_filter($after, fn ($v, $k) => array_key_exists($k, $clean) && $before[$k] !== $v, ARRAY_FILTER_USE_BOTH);
+
+        if ($changed) {
+            $this->auditLog->record(
+                $this->adminId($request),
+                'platform.policy_values_update',
+                'Setting',
+                null,
+                array_intersect_key($before, $changed),
+                $changed,
+                $request->ip()
+            );
+        }
+
+        return $this->apiSuccess($this->snapshot(), $changed ? 'Platform settings saved.' : 'Nothing changed.');
     }
 
     /** POST /api/v1/admin/platform-policy/rules */

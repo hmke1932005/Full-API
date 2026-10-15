@@ -20,7 +20,7 @@ class GoogleIdTokenVerifier
     /** @return string[] */
     public function clientIds(): array
     {
-        $raw = (string) config('services.google.client_ids', '');
+        $raw = (string) \App\Support\PlatformPolicy::value('google_client_ids');
         return array_values(array_filter(array_map('trim', explode(',', $raw))));
     }
 

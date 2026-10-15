@@ -154,7 +154,7 @@ class GenericMail extends Mailable
     public function content(): Content
     {
         $ar      = $this->mailLocale === 'ar';
-        $appName = (string) config('app.name', 'UIP');
+        $appName = (string) \App\Support\PlatformPolicy::value('platform_name');
 
         return new Content(
             view: 'emails.generic',

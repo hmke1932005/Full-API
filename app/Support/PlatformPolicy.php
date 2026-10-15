@@ -41,6 +41,19 @@ final class PlatformPolicy
         'email_dns_check'        => true,  // domain must have MX / A record (sign-up only)
         'registration_enabled'   => true,  // public sign-up (form + Google)
         'response_encryption'    => true,  // AES-GCM envelope on JSON responses
+        'response_enc_enforce'   => false, // clients without a session key are refused (default = RESPONSE_ENC_ENFORCE)
+        'request_enc_enforce'    => false, // plain JSON request bodies are refused   (default = REQUEST_ENC_ENFORCE)
+    ];
+
+    /**
+     * Typed values the admin can edit instead of touching .env. `default` is read from config (.env) when
+     * the admin never saved one, and "reset" simply deletes the row so the .env value applies again.
+     * Secrets (keys, DB, JWT, proxy secret…) are deliberately NOT here.
+     */
+    public const VALUES = [
+        'platform_name'        => ['type' => 'string', 'min' => 1,  'max' => 60],   // APP_NAME  (e-mail header / footer)
+        'session_live_seconds' => ['type' => 'int',    'min' => 30, 'max' => 1800], // SESSION_LIVE_SECONDS
+        'google_client_ids'    => ['type' => 'string', 'min' => 0,  'max' => 700],  // GOOGLE_CLIENT_IDS (public IDs)
     ];
 
     /** @var array<string,string|null>|null */
@@ -92,6 +105,8 @@ final class PlatformPolicy
         return match ($flag) {
             'plus_addressing_check'  => (bool) config('mail.block_plus_addressing', true),
             'suspicious_gmail_check' => (bool) config('mail.block_suspicious_gmail', true),
+            'response_enc_enforce'   => (bool) config('secure_transport.enforce', false),
+            'request_enc_enforce'    => (bool) config('secure_transport.enforce_requests', false),
             default                  => self::FLAGS[$flag] ?? false,
         };
     }
@@ -147,6 +162,125 @@ final class PlatformPolicy
         return $locale === 'ar'
             ? 'التسجيل الجديد مغلق حاليًا. تواصل مع إدارة المنصة.'
             : 'New registrations are currently closed. Please contact the platform administrators.';
+    }
+
+    /** Response enforcement actually applied (dashboard value, else .env). Only meaningful while encryption is on. */
+    public static function responseEncEnforced(): bool
+    {
+        return self::flag('response_enc_enforce');
+    }
+
+    public static function requestEncEnforced(): bool
+    {
+        return self::flag('request_enc_enforce');
+    }
+
+    // ───────────────────────── editable values ─────────────────────────
+
+    /** The .env / config value used while the admin has not saved one. */
+    public static function defaultValue(string $key): string|int
+    {
+        return match ($key) {
+            'platform_name'        => (string) config('app.name', 'UIP'),
+            'session_live_seconds' => max(30, (int) config('security.single_session.live_seconds', 120)),
+            'google_client_ids'    => (string) config('services.google.client_ids', ''),
+            default                => '',
+        };
+    }
+
+    public static function isValueOverridden(string $key): bool
+    {
+        return array_key_exists(self::PREFIX . $key, self::all());
+    }
+
+    /** Effective value: what the dashboard saved, otherwise the .env default. */
+    public static function value(string $key): string|int
+    {
+        $def = self::VALUES[$key] ?? null;
+        if ($def === null) {
+            return '';
+        }
+        $stored = self::all()[self::PREFIX . $key] ?? null;
+        if ($stored === null) {
+            return self::defaultValue($key);
+        }
+
+        return $def['type'] === 'int' ? (int) $stored : (string) $stored;
+    }
+
+    /** @return array<string,string|int> */
+    public static function values(): array
+    {
+        $out = [];
+        foreach (array_keys(self::VALUES) as $k) {
+            $out[$k] = self::value($k);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Validates what the admin typed. Returns [value, null] or [null, error message].
+     * @return array{0:string|int|null,1:?string}
+     */
+    public static function normalizeValue(string $key, $raw): array
+    {
+        $def = self::VALUES[$key] ?? null;
+        if ($def === null) {
+            return [null, "Unknown setting: {$key}"];
+        }
+        if ($def['type'] === 'int') {
+            if (!is_numeric($raw) || (string) (int) $raw !== trim((string) $raw)) {
+                return [null, "{$key} must be a whole number."];
+            }
+            $n = (int) $raw;
+            if ($n < $def['min'] || $n > $def['max']) {
+                return [null, "{$key} must be between {$def['min']} and {$def['max']}."];
+            }
+
+            return [$n, null];
+        }
+        $v = trim((string) $raw);
+        if (preg_match('/[\x00-\x1F\x7F<>]/u', $v)) {
+            return [null, "{$key} contains characters that are not allowed."];
+        }
+        if (mb_strlen($v) < $def['min'] || mb_strlen($v) > $def['max']) {
+            return [null, $def['min'] > 0
+                ? "{$key} must be {$def['min']}–{$def['max']} characters."
+                : "{$key} is too long (max {$def['max']})."];
+        }
+        if ($key === 'google_client_ids' && $v !== '') {
+            $ids = array_values(array_filter(array_map('trim', explode(',', $v))));
+            if (count($ids) > 5) {
+                return [null, 'At most 5 Google client IDs.'];
+            }
+            foreach ($ids as $id) {
+                if (!preg_match('/^[A-Za-z0-9._-]+\.apps\.googleusercontent\.com$/', $id)) {
+                    return [null, "\"{$id}\" is not a valid Google client ID (…apps.googleusercontent.com)."];
+                }
+            }
+            $v = implode(',', $ids);
+        }
+
+        return [$v, null];
+    }
+
+    public static function setValue(string $key, string|int $value): void
+    {
+        if (!isset(self::VALUES[$key])) {
+            throw new \InvalidArgumentException("Unknown setting: {$key}");
+        }
+        self::put(self::PREFIX . $key, (string) $value);
+    }
+
+    /** Drops the dashboard value so the .env default applies again. */
+    public static function resetValue(string $key): void
+    {
+        if (!isset(self::VALUES[$key])) {
+            throw new \InvalidArgumentException("Unknown setting: {$key}");
+        }
+        DB::table('settings')->where('scope', 'global')->whereNull('user_id')->where('key', self::PREFIX . $key)->delete();
+        self::flush();
     }
 
     // ───────────────────────── e-mail rules ─────────────────────────
