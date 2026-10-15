@@ -40,6 +40,9 @@ class AuthCookies
     public const CSRF_HEADER    = 'X-CSRF-Token';
     public const COOKIE_PATH    = '/api/v1/auth';
 
+    /** بصمة المتصفح (HttpOnly، سنة، بتتجدد): مش credential — بس بتعرّف إن اللي بيدخل هو نفس المتصفح بتاع الجلسة الحية. */
+    public const DEVICE_COOKIE  = 'uip_did';
+
     // ---- القراءة ---------------------------------------------------------
 
     public static function refreshFromCookie(Request $request): string
@@ -47,6 +50,28 @@ class AuthCookies
         // نقرا الكوكي الخام (الـ api group مفيهوش EncryptCookies).
         $value = $request->cookies->get(self::REFRESH_COOKIE);
         return is_string($value) ? $value : '';
+    }
+
+    /**
+     * معرّف المتصفح. $create=true بيطلّع واحد جديد لو مفيش (وبيفتكره على الـ request عشان
+     * attach() يحطه في الكوكي في نفس الرد). $create=false بيرجّع '' لو مفيش كوكي صالح.
+     */
+    public static function deviceId(Request $request, bool $create = false): string
+    {
+        $value = $request->cookies->get(self::DEVICE_COOKIE);
+        if (is_string($value) && preg_match('/^[a-f0-9]{48}$/', $value) === 1) {
+            return $value;
+        }
+        $minted = $request->attributes->get('uip_device_id');
+        if (is_string($minted) && $minted !== '') {
+            return $minted;
+        }
+        if (!$create) {
+            return '';
+        }
+        $id = bin2hex(random_bytes(24));
+        $request->attributes->set('uip_device_id', $id);
+        return $id;
     }
 
     public static function allowBodyRefresh(): bool
@@ -142,6 +167,8 @@ class AuthCookies
 
         $response->headers->setCookie(self::makeCookie(self::REFRESH_COOKIE, $raw, $expires, self::COOKIE_PATH, true, $request));
         $response->headers->setCookie(self::makeCookie(self::CSRF_COOKIE, self::csrfFor($raw), $expires, '/', false, $request));
+        // بصمة المتصفح: بتفضل بعد الـ logout (clear() مبيلمسهاش) وبتتجدد مع كل إصدار توكن.
+        $response->headers->setCookie(self::makeCookie(self::DEVICE_COOKIE, self::deviceId($request, true), time() + 31536000, self::COOKIE_PATH, true, $request));
 
         if (!self::exposeRefreshInBody()) {
             unset($payload->data->refresh_token);

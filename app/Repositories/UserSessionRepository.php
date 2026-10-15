@@ -32,7 +32,12 @@ class UserSessionRepository
             ->orderByDesc('s.last_activity_at')
             ->limit(max(1, $limit))
             ->get()
-            ->map(fn ($r) => (array) $r)->all();
+            // device_hash بصمة داخلية للتحقق من "نفس المتصفح" — مبتتعرضش في بورتال الأمان.
+            ->map(function ($r) {
+                $row = (array) $r;
+                unset($row['device_hash']);
+                return $row;
+            })->all();
     }
 
     public function countActive(): int

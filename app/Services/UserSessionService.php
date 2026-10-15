@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\RefreshToken;
+use App\Support\AuthCookies;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * تسجيل الجلسات الحقيقية في `user_sessions` — كانت مش بتتكتب خالص، فصفحة
@@ -53,7 +55,7 @@ class UserSessionService
             Log::warning('Single-session cleanup failed: ' . $e->getMessage());
         }
 
-        $id = (int) DB::table('user_sessions')->insertGetId([
+        $row = [
             'user_id'          => $userId,
             'session_token'    => hash('sha256', $rawRefresh),
             'ip_address'       => $ip,
@@ -64,7 +66,12 @@ class UserSessionService
             'last_activity_at' => now(),
             'created_at'       => now(),
             'expires_at'       => now()->addSeconds($refreshTtlSeconds),
-        ]);
+        ];
+        // بصمة المتصفح (لو الـ migration اتنفّذت): بتتحط في الرد كوكي uip_did عن طريق AuthCookies::attach.
+        if ($request && $this->hasDeviceColumn()) {
+            $row['device_hash'] = hash('sha256', AuthCookies::deviceId($request, true));
+        }
+        $id = (int) DB::table('user_sessions')->insertGetId($row);
 
         try {
             $email = (string) DB::table('users')->where('id', $userId)->value('email');
@@ -92,6 +99,31 @@ class UserSessionService
             // نفضل على الافتراضي
         }
         return true;
+    }
+
+    /** هل الطلب الحالي جاي من نفس المتصفح اللي فتح الجلسة $live؟ (بصمة كوكي uip_did). */
+    private function isSameDevice(object $live): bool
+    {
+        $request = request();
+        if (!$request || empty($live->device_hash)) {
+            return false;
+        }
+        $id = AuthCookies::deviceId($request, false);
+        return $id !== '' && hash_equals((string) $live->device_hash, hash('sha256', $id));
+    }
+
+    /** الـ migration بتاعة device_hash ممكن تتأخر عن الكود: من غيرها الـ login لازم يفضل شغال. */
+    private function hasDeviceColumn(): bool
+    {
+        static $has = null;
+        if ($has === null) {
+            try {
+                $has = Schema::hasColumn('user_sessions', 'device_hash');
+            } catch (\Throwable) {
+                $has = false;
+            }
+        }
+        return $has;
     }
 
     /** المدة (ثواني) اللي الجلسة بتفضل "حية" بعد آخر نبضة. */
@@ -125,6 +157,11 @@ class UserSessionService
         }
         $live = $this->liveSessionFor($userId);
         if (!$live) {
+            return null;
+        }
+        // نفس المتصفح اللي فتح الجلسة الحية (رجع من نوم/قطع شبكة/اتمسح دخوله محليًا والسيرفر لسه شايف
+        // جلسته حية): ده مش "جهاز تاني" — ندخله، وstart() بيقفل جلسته القديمة.
+        if ($this->isSameDevice($live)) {
             return null;
         }
         $device = trim((string) ($live->device_label ?? ''));
