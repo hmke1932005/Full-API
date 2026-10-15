@@ -30,6 +30,17 @@ class AIClient
         $this->timeout = (int) ($config['timeout'] ?? 12);
     }
 
+    /** الـ base URL / المفتاح الفعّالين (بعد overrides الأدمن) — بتستخدمهم SubtitleService لنداء /audio/transcriptions. */
+    public function baseUrl(): string
+    {
+        return $this->baseUrl;
+    }
+
+    public function apiKey(): string
+    {
+        return $this->apiKey;
+    }
+
     public function isConfigured(): bool
     {
         return $this->enabled && $this->baseUrl !== '' && $this->apiKey !== '' && $this->model !== '';

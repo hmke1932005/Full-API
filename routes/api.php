@@ -214,6 +214,12 @@ Route::prefix('v1')->group(function () {
     // القديمة بقت uip.auth؛ CSRFMiddleware القديمة (على POST/DELETE) مش
     // منقولة عمدًا — الـ API ده Bearer-JWT بس، مفيش cookies يتحمى منها CSRF
     // أصلًا (نفس القرار اللي اتاخد في كل موديول Auth ببند 1).
+    // ترجمة الفيديو التلقائية (تفريغ Whisper + ترجمة) — مشغّل الفيديو بيبعت قطع صوت قصيرة. throttle: قطعة كل ~4 دقايق فيديو.
+    Route::prefix('subtitles/auto')->middleware(['uip.auth', 'throttle:40,1'])->group(function () {
+        Route::get('/status', [\App\Http\Controllers\Api\SubtitlesApiController::class, 'status']);
+        Route::post('/', [\App\Http\Controllers\Api\SubtitlesApiController::class, 'generate']);
+    });
+
     Route::prefix('files')->middleware('uip.auth')->group(function () {
         Route::get('/', [FilesApiController::class, 'index']);
         Route::post('/', [FilesApiController::class, 'store']);

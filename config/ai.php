@@ -20,6 +20,18 @@ return [
     // زوّد AI_TIMEOUT في .env حسب المزوّد بتاعك لو احتجت.
     'timeout'  => (int) env('AI_TIMEOUT', 30),
 
+    // ترجمة الفيديو التلقائية (VideoPlayer ← POST /api/v1/subtitles/auto): تفريغ الصوت بـ Whisper ثم ترجمة النص.
+    // بيستخدم نفس AI_BASE_URL / AI_API_KEY لو سيبت base_url/api_key فاضيين. لو مزوّد الشات عندك مش بيدعم
+    // /audio/transcriptions (Ollama مثلاً) حط مزوّد تاني هنا (مثلاً Groq: https://api.groq.com/openai/v1 + whisper-large-v3).
+    'transcribe' => [
+        'model'             => env('AI_TRANSCRIBE_MODEL', 'whisper-1'),
+        'base_url'          => rtrim((string) env('AI_TRANSCRIBE_BASE_URL', ''), '/'),
+        'api_key'           => env('AI_TRANSCRIBE_API_KEY', ''),
+        'timeout'           => (int) env('AI_TRANSCRIBE_TIMEOUT', 120),
+        'max_upload_kb'     => (int) env('AI_TRANSCRIBE_MAX_KB', 24000), // حد Whisper = 25MB
+        'max_chunk_seconds' => (int) env('AI_TRANSCRIBE_CHUNK_SECONDS', 240),
+    ],
+
     // مفتاح على مستوى الميزة: حتى لو enabled فوق = true، تخصيص الإيميلات
     // فاضل مقفول لحد ما ده يتفعّل صراحة.
     'email_personalization_enabled' => (bool) env('AI_EMAIL_PERSONALIZATION_ENABLED', false),
