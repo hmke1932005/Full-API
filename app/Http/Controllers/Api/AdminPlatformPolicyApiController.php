@@ -8,6 +8,7 @@ use App\Services\AuditLogService;
 use App\Services\ResponseCryptoService;
 use App\Support\DisposableEmail;
 use App\Support\PlatformPolicy;
+use App\Support\StaffGate;
 use Illuminate\Http\Request;
 
 /**
@@ -251,6 +252,80 @@ class AdminPlatformPolicyApiController extends Controller
             'rule'    => $verdict['rule'],
             'message' => $verdict['message'],
         ], $verdict['ok'] ? 'This address would be accepted.' : 'This address would be refused.');
+    }
+
+    // ───────────── staff access codes ─────────────
+
+    private function gatePayload(): array
+    {
+        return ['enabled' => StaffGate::enabled(), 'groups' => StaffGate::overview(), 'code_min' => StaffGate::CODE_MIN, 'code_max' => StaffGate::CODE_MAX];
+    }
+
+    /** The acting admin must type their own password again before a staff code changes. */
+    private function passwordOk(Request $request): bool
+    {
+        $me = User::find($this->adminId($request));
+        $pw = (string) $request->input('password', '');
+
+        return $me && $pw !== '' && password_verify($pw, (string) $me->password_hash);
+    }
+
+    /** GET /api/v1/admin/platform-policy/staff-gate — which groups use a dashboard code (the codes themselves are never readable). */
+    public function staffGate(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        return $this->apiSuccess($this->gatePayload(), 'Staff access codes retrieved successfully.');
+    }
+
+    /** PUT /api/v1/admin/platform-policy/staff-gate/{group} — { code, password } */
+    public function setStaffGateCode(Request $request, string $group)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        if (!$this->passwordOk($request)) {
+            return $this->apiError('Your password is incorrect.', ['password' => 'invalid'], 422);
+        }
+
+        $error = StaffGate::setCode($group, trim((string) $request->input('code', '')), $this->adminId($request));
+        if ($error === 'invalid_group') {
+            return $this->apiError('Unknown group.', null, 404);
+        }
+        if ($error === 'invalid_code') {
+            return $this->apiError('The code must be ' . StaffGate::CODE_MIN . '–' . StaffGate::CODE_MAX . ' letters or digits.', ['code' => 'invalid'], 422);
+        }
+        if ($error === 'code_in_use') {
+            return $this->apiError('That code is already used by another group. Pick a different one.', ['code' => 'in_use'], 422);
+        }
+
+        // Never log the code itself.
+        $this->auditLog->record($this->adminId($request), 'platform.staff_gate_code_change', 'Setting', null, null, ['group' => $group], $request->ip());
+
+        return $this->apiSuccess($this->gatePayload(), 'Access code saved. Open sessions of that group must enter the new code.');
+    }
+
+    /** DELETE /api/v1/admin/platform-policy/staff-gate/{group} — { password }: back to the server (.env) code */
+    public function resetStaffGateCode(Request $request, string $group)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        if (!$this->passwordOk($request)) {
+            return $this->apiError('Your password is incorrect.', ['password' => 'invalid'], 422);
+        }
+        if (!isset(config('staff_gate.groups', [])[$group])) {
+            return $this->apiError('Unknown group.', null, 404);
+        }
+        if (!StaffGate::resetCode($group, $this->adminId($request))) {
+            return $this->apiError('This group already uses the server code.', null, 422);
+        }
+
+        $this->auditLog->record($this->adminId($request), 'platform.staff_gate_code_reset', 'Setting', null, null, ['group' => $group], $request->ip());
+
+        return $this->apiSuccess($this->gatePayload(), 'Access code reset to the server default.');
     }
 
     /** GET /api/v1/platform/status — public, tiny, no secrets: lets the SPA hide the sign-up form and know the channel mode. */
