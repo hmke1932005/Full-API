@@ -70,6 +70,7 @@ class FileUploadService
         }
 
         $this->assertContentMatchesExtension($file->getRealPath(), $extension);
+        $this->assertPdfHasNoActiveContent($file->getRealPath(), $extension, $file->getClientOriginalName());
         $this->scanForMalware($file->getRealPath(), $file->getClientOriginalName(), $category);
 
         $basePath = (string) config("upload.paths.{$category}", 'uploads/' . $category);
@@ -281,6 +282,24 @@ class FileUploadService
                 throw new \RuntimeException('The security scan could not be completed. Please try again or contact an administrator.');
             }
         }
+    }
+
+    /**
+     * PDF فيه JavaScript / تشغيل برامج / ملفات مضمّنة بيتشغّل جوه الـ viewer بتاع المتصفح على نفس الأوريجن (XSS)،
+     * فبيتم رفضه. upload.pdf_active_content = reject (الافتراضي) | allow.
+     */
+    private function assertPdfHasNoActiveContent(string $tmpPath, string $extension, string $originalName): void
+    {
+        if ($extension !== 'pdf' || config('upload.pdf_active_content', 'reject') === 'allow') {
+            return;
+        }
+        $findings = \App\Support\PdfActiveContentScanner::findings($tmpPath);
+        if ($findings === []) {
+            return;
+        }
+        SecurityLog::write("PDF with active content rejected: {$originalName}", ['file' => $originalName, 'findings' => implode(',', $findings)]);
+
+        throw new \RuntimeException('This PDF contains scripts or active content (' . implode(', ', array_slice($findings, 0, 3)) . ') and was rejected for security reasons.');
     }
 
     /** @return array{enabled:bool, binary:string, available:bool, required:bool} */

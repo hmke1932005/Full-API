@@ -19,6 +19,8 @@ return [
     // Logger::security() warning so admins see the gap in Security Logs);
     // set UPLOAD_AV_REQUIRED=true in production once ClamAV is provisioned
     // to fail closed instead.
+    // PDF فيه JavaScript/Launch/ملفات مضمّنة بيتشغّل على نفس الأوريجن => reject (الافتراضي) | allow.
+    'pdf_active_content' => env('UPLOAD_PDF_ACTIVE_CONTENT', 'reject'),
     'antivirus' => [
         'enabled'  => (bool) env('UPLOAD_AV_ENABLED', true),
         'binary'   => env('UPLOAD_AV_BINARY', 'clamscan'),
