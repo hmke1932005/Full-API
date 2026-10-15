@@ -177,6 +177,28 @@ final class DisposableEmail
         return self::enabled() && self::isDisposableDomain(self::domainOf($email));
     }
 
+    /**
+     * Gmail "temp mail" services hand out real @gmail.com addresses whose local part is padded with
+     * dots / digit groups (Gmail ignores dots), e.g. frederickfie.lds.99.2.53@gmail.com. The domain is
+     * legitimate so no domain blocklist can catch them; real people almost never have such an address.
+     * Flags a Gmail/Googlemail address whose name (before any +tag) has 4+ dots or 2+ all-digit groups.
+     */
+    public static function isSuspiciousGmail($email): bool
+    {
+        if (!(bool) config('mail.block_suspicious_gmail', true)) {
+            return false;
+        }
+        $email = mb_strtolower(trim((string) $email));
+        if (!in_array(self::domainOf($email), ['gmail.com', 'googlemail.com'], true)) {
+            return false;
+        }
+        $local = substr($email, 0, (int) strrpos($email, '@'));
+        $local = explode('+', $local, 2)[0];
+        $groups = explode('.', $local);
+        $numeric = count(array_filter($groups, fn ($g) => $g !== '' && ctype_digit($g)));
+        return (count($groups) - 1) >= 4 || $numeric >= 2;
+    }
+
     /** Can the domain receive mail? (MX, or A/AAAA as the implicit-MX fallback). Cached. */
     public static function domainCanReceiveMail(string $domain): bool
     {
@@ -216,6 +238,11 @@ final class DisposableEmail
             return $ar
                 ? 'لا يُسمح بالبريد الإلكتروني المؤقت. استخدم بريدًا إلكترونيًا حقيقيًا.'
                 : 'Temporary / disposable email addresses are not allowed. Please use a real email address.';
+        }
+        if (self::isSuspiciousGmail($email) && !self::inSet($domain, self::csv(config('mail.allowed_domains', '')))) {
+            return $ar
+                ? 'هذا البريد الإلكتروني يبدو مؤقتًا (بريد جيميل عشوائي). استخدم بريدك الحقيقي.'
+                : 'This looks like a temporary Gmail address. Please use your real email address.';
         }
         if ($checkDns && !self::domainCanReceiveMail($domain)) {
             return $ar

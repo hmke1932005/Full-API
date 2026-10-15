@@ -131,6 +131,8 @@ return [
     */
     'block_disposable' => env('MAIL_BLOCK_DISPOSABLE', true),
     'blocked_domains'  => env('MAIL_BLOCKED_DOMAINS', ''),
+    // Rejects Gmail temp-mail style addresses (4+ dots or 2+ numeric groups in the name, e.g. a.b.c.99.2.53@gmail.com).
+    'block_suspicious_gmail' => env('MAIL_BLOCK_SUSPICIOUS_GMAIL', true),
     'allowed_domains'  => env('MAIL_ALLOWED_DOMAINS', ''),
     // Community-maintained list of disposable domains, downloaded by `mail:update-disposable-domains`.
     'disposable_list_url' => env('MAIL_DISPOSABLE_LIST_URL', 'https://raw.githubusercontent.com/disposable-email-domains/disposable-email-domains/main/disposable_email_blocklist.conf'),
