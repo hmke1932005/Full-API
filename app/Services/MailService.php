@@ -390,6 +390,57 @@ class MailService
         );
     }
 
+    /** رمز OTP لتأكيد الإيميل بعد التسجيل — الحساب مبيشتغلش قبل إدخاله. */
+    public function sendEmailVerificationOtp(string $toEmail, string $fullName, string $otp, int $minutes, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+
+        return $this->deliver(
+            $toEmail,
+            $ar ? 'رمز تأكيد بريدك الإلكتروني' : 'Your email confirmation code',
+            $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
+            [
+                $ar
+                    ? 'شكرًا لتسجيلك. اكتب الرمز التالي في صفحة التأكيد لإثبات أن هذا البريد بريدك وتفعيل حسابك.'
+                    : 'Thanks for signing up. Enter the code below on the confirmation page to prove this email is yours and activate your account.',
+                $ar ? "الرمز صالح لمدة {$minutes} دقايق ويُستخدم مرة واحدة. متشاركوش مع حد." : "The code is valid for {$minutes} minutes and works once. Never share it with anyone.",
+                $ar
+                    ? 'لو ماكنتش أنت اللي سجّل بهذا البريد، تجاهل هذه الرسالة وماحدش هيقدر يستخدم الحساب.'
+                    : "If you didn't sign up with this email, ignore this message — the account can't be used without this code.",
+            ],
+            null,
+            $locale,
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp]],
+            'sendEmailVerificationOtp',
+            'info'
+        );
+    }
+
+    /** رمز OTP لإعادة تعيين كلمة السر. */
+    public function sendPasswordResetOtp(string $toEmail, string $fullName, string $otp, int $minutes, ?string $ip, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+        $from = $ip ? ($ar ? " (من IP: {$ip})" : " (from IP: {$ip})") : '';
+
+        return $this->deliver(
+            $toEmail,
+            $ar ? 'رمز إعادة تعيين كلمة السر' : 'Your password reset code',
+            $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
+            [
+                $ar
+                    ? "وصلنا طلب لإعادة تعيين كلمة السر الخاصة بحسابك{$from}. اكتب الرمز التالي في صفحة إعادة التعيين ثم اختر كلمة سر جديدة."
+                    : "We received a request to reset your password{$from}. Enter the code below on the reset page, then choose a new password.",
+                $ar ? "الرمز صالح لمدة {$minutes} دقايق ويُستخدم مرة واحدة. متشاركوش مع حد." : "The code is valid for {$minutes} minutes and works once. Never share it with anyone.",
+                $ar ? 'لو ماكنتش أنت اللي طلبت ده، تجاهل هذه الرسالة — كلمة السر مش هتتغير.' : "If you didn't request this, ignore this email — your password won't change.",
+            ],
+            null,
+            $locale,
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp]],
+            'sendPasswordResetOtp',
+            'reset'
+        );
+    }
+
     /** إيميل إعادة تعيين كلمة السر — بيرجّع نتيجة الإرسال الفعلية. */
     /** لينك تأكيد الإيميل بعد التسجيل — الحساب مبيشتغلش قبل الضغط عليه. */
     public function sendEmailVerification(string $toEmail, string $fullName, string $verifyUrl, string $locale = 'ar'): bool

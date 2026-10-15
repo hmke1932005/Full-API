@@ -84,7 +84,7 @@ class ActivateWithoutEmailController extends Controller
             if ($this->verification->issueAndSend($user)) {
                 return response()->json([
                     'success' => true,
-                    'message' => $msg('بعتنا لك رسالة التأكيد على بريدك. شوف الوارد والرسائل غير المرغوبة.', 'We sent the confirmation email. Check your inbox and spam.'),
+                    'message' => $msg('بعتنا لك رمز التأكيد على بريدك. شوف الوارد والرسائل غير المرغوبة.', 'We sent the confirmation code. Check your inbox and spam.'),
                     'data'    => ['activated' => false, 'email_sent' => true],
                 ]);
             }

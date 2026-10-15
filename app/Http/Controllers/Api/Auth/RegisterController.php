@@ -234,7 +234,7 @@ class RegisterController extends Controller
             return $user;
         });
 
-        // الحساب pending: مبيدخلش لحد ما صاحب الإيميل يضغط لينك التأكيد (أو الأدمن يفعّله).
+        // الحساب pending: مبيدخلش لحد ما صاحب الإيميل يكتب رمز التأكيد (أو الأدمن يفعّله).
         $emailSent = $this->verification->issueAndSend($user);
 
         SecurityLog::write('User registered', ['user_id' => $user->id, 'email' => $user->email, 'role' => $data['role'], 'reclaimed' => (bool) $reclaimable]);
@@ -243,8 +243,8 @@ class RegisterController extends Controller
         return response()->json([
             'success' => true,
             'message' => $ar
-                ? 'تم إنشاء الحساب. بعتنالك رسالة على بريدك — اضغط على رابط التأكيد عشان تقدر تدخل.'
-                : 'Account created. We emailed you a confirmation link — confirm your email to sign in.',
+                ? 'تم إنشاء الحساب. بعتنالك رمز تأكيد على بريدك — اكتبه عشان تفعّل حسابك وتقدر تدخل.'
+                : 'Account created. We emailed you a confirmation code — enter it to activate your account.',
             'data'    => ['user_id' => $user->id, 'requires_verification' => true, 'email_sent' => $emailSent, 'email' => $user->email],
             'errors'  => null,
             'meta'    => (object) [],

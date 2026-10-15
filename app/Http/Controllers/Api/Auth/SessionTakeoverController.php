@@ -146,6 +146,7 @@ class SessionTakeoverController extends Controller
         RefreshToken::where('user_id', $user->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
         $this->trustedDevice->revokeAllForUser((int) $user->id);
         DB::table('password_reset_tokens')->where('user_id', $user->id)->whereNull('used_at')->update(['used_at' => now()]);
+        app(\App\Services\OtpService::class)->forget(ForgotPasswordController::OTP_PURPOSE, (int) $user->id);
 
         SecurityLog::write('Account reclaimed via session takeover OTP', ['user_id' => $user->id, 'ip' => $request->ip()]);
         $this->alerts->raise(

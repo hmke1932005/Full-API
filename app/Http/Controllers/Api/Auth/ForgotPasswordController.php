@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Services\MailService;
+use App\Services\OtpService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
@@ -14,11 +14,14 @@ use Illuminate\Support\Facades\Validator;
  * يطابق ForgotPasswordController::submit() + AuthService::createPasswordResetToken() القديمين.
  * ⚠️ عن قصد الرد دايمًا بنجاح بغض النظر هل الإيميل موجود ولا لأ (منع user enumeration).
  *
- * بيبعت إيميل إعادة التعيين فعليًا عبر MailService::sendPasswordReset()،
+ * بيبعت رمز OTP (6 أرقام) على الإيميل عبر MailService::sendPasswordResetOtp()، والصفحة بتاخد الرمز + كلمة السر الجديدة،
  * وأي فشل في الإرسال بيتسجل في الـ log بس (الرد للمستخدم ثابت).
  */
 class ForgotPasswordController extends Controller
 {
+    public const OTP_PURPOSE = 'password_reset';
+    public const RESEND_AFTER = OtpService::RESEND_AFTER_SECONDS;
+
     public function __construct(private MailService $mail)
     {
     }
@@ -38,32 +41,30 @@ class ForgotPasswordController extends Controller
         $user = User::where('email', $email)->first();
 
         if ($user) {
-            $plainToken = bin2hex(random_bytes(32));
+            $otp = app(OtpService::class);
+            // مفيش إرسال أسرع من مرة كل 60 ثانية لنفس الحساب (والرد بيفضل ثابت).
+            if ($otp->secondsUntilResend(self::OTP_PURPOSE, (int) $user->id) === 0) {
+                $code = $otp->issue(self::OTP_PURPOSE, (int) $user->id);
 
-            DB::table('password_reset_tokens')->insert([
-                'user_id'    => $user->id,
-                'token_hash' => hash('sha256', $plainToken),
-                'expires_at' => now()->addHour(),
-                'created_at' => now(),
-            ]);
+                $sent = $this->mail->sendPasswordResetOtp(
+                    (string) $user->email,
+                    (string) ($user->full_name ?? ''),
+                    $code,
+                    OtpService::TTL_MINUTES,
+                    $request->ip(),
+                    (string) ($user->preferred_language ?? 'ar')
+                );
 
-            $resetUrl = \App\Support\PasswordResetLink::for((int) $user->id, $plainToken);
-
-            $sent = $this->mail->sendPasswordReset(
-                (string) $user->email,
-                (string) ($user->full_name ?? ''),
-                $resetUrl,
-                (string) ($user->preferred_language ?? 'ar')
-            );
-
-            if (!$sent) {
-                Log::error('Password reset email failed', ['email' => $email, 'error' => $this->mail->getLastError()]);
+                if (!$sent) {
+                    $otp->forget(self::OTP_PURPOSE, (int) $user->id);
+                    Log::error('Password reset email failed', ['email' => $email, 'error' => $this->mail->getLastError()]);
+                }
             }
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'If an account with that email exists, a reset link has been sent.',
+            'message' => 'If an account with that email exists, a reset code has been sent.',
         ]);
     }
 }

@@ -156,9 +156,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/google/restore', [\App\Http\Controllers\Api\Auth\GoogleAuthController::class, 'restoreDeleted'])->middleware('throttle:10,1');
         Route::post('/refresh-token', [RefreshTokenController::class, 'submit']);
         Route::post('/logout', [LogoutController::class, 'handle']);
-        Route::post('/forgot-password', [ForgotPasswordController::class, 'submit']);
-        Route::post('/reset-password', [ResetPasswordController::class, 'submit']);
-        Route::get('/verify-email', [VerifyEmailController::class, 'handle']);
+        Route::post('/forgot-password', [ForgotPasswordController::class, 'submit'])->middleware('throttle:10,1');
+        Route::post('/reset-password', [ResetPasswordController::class, 'submit'])->middleware('throttle:10,1');
+        Route::post('/verify-email', [VerifyEmailController::class, 'submit'])->middleware('throttle:10,1');
+        Route::get('/verify-email', [VerifyEmailController::class, 'handle']); // legacy links only
         Route::post('/resend-verification', [\App\Http\Controllers\Api\Auth\ResendVerificationController::class, 'submit'])->middleware('throttle:5,1');
         // تفعيل طوارئ لما لينك التأكيد مش بيوصل (متحكّم فيه بـ EMAIL_ACTIVATION_FALLBACK).
         Route::post('/activate-without-email', [\App\Http\Controllers\Api\Auth\ActivateWithoutEmailController::class, 'submit'])->middleware('throttle:10,1');
