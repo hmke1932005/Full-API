@@ -80,6 +80,8 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\UipResponseEncryptionMiddleware::class,
             \App\Http\Middleware\UipSecurityHeadersMiddleware::class,
             \App\Http\Middleware\UipCorsMiddleware::class,
+            // قفل APK بـ API token (مطفي افتراضيًا — APP_TOKEN_REQUIRED). بعد Cors عشان رد 403 يطلع بهيدرز CORS.
+            \App\Http\Middleware\UipAppTokenMiddleware::class,
             \App\Http\Middleware\UipRateLimitMiddleware::class,
             \App\Http\Middleware\UipLocaleMiddleware::class,
             // Device Restrictions Policy على كل الـ API (register / forgot-password / public…)

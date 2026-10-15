@@ -14,6 +14,10 @@
  * سطر "Contact support" يختفي تمامًا بدل ما يعرض حاجة وهمية.
  */
 return [
+    // قفل APK بـ API token (شوف UipAppTokenMiddleware). مطفي افتراضيًا عشان نشر الكود ما يقفلش التطبيق الحالي.
+    'app_token_required'     => filter_var(env('APP_TOKEN_REQUIRED', false), FILTER_VALIDATE_BOOL),
+    'app_token_block_webview' => filter_var(env('APP_TOKEN_BLOCK_WEBVIEW', false), FILTER_VALIDATE_BOOL),
+
     'support_email' => env('APP_SUPPORT_EMAIL', env('MAIL_REPLY_TO', env('MAIL_FROM_ADDRESS', ''))),
 
     // حسابات UIP الرسمية على السوشيال ميديا، لو الجهة المشغّلة للنسخة دي

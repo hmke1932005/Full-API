@@ -37,7 +37,7 @@ class UipCorsMiddleware
     {
         $response->headers->set('Access-Control-Allow-Origin', $this->resolveAllowedOrigin($request));
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-        $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Exam-Session, X-Device-Id, X-Enc-Kid');
+        $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Exam-Session, X-Device-Id, X-Enc-Kid, X-App-Token, X-UIP-Client');
         $response->headers->set('Vary', 'Origin');
 
         // الكوكي HttpOnly محتاج Allow-Credentials لو الـ API على origin تاني (SameSite=None).
