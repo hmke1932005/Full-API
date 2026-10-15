@@ -202,7 +202,10 @@ final class DisposableEmail
      * blocklist can catch:
      *  - plus-addressing on ANY domain (name+tag@outlook.com): unlimited aliases of one inbox;
      *  - Gmail/Googlemail "temp mail" addresses padded with dots / digit groups, e.g.
-     *    frederickfie.lds.99.2.53@gmail.com (4+ dots or 2+ all-digit groups; Gmail ignores dots).
+     *    frederickfie.lds.99.2.53@gmail.com or cuynhsoets.o.et.1245@gmail.com (Gmail ignores dots,
+     *    so generators sprinkle them into one real inbox to mint endless "different" addresses):
+     *      4+ dots, 2+ all-digit groups, or 3+ dots with 2+ tiny (1-2 letter) fragments.
+     *    A normal four-part name (mohamed.ahmed.ali.hassan) or name.initial.year still passes.
      */
     public static function isSuspiciousMailbox($email): bool
     {
@@ -218,8 +221,13 @@ final class DisposableEmail
         if ((bool) config('mail.block_suspicious_gmail', true)
             && in_array(self::domainOf($email), ['gmail.com', 'googlemail.com'], true)) {
             $groups = explode('.', $local);
+            $dots = count($groups) - 1;
             $numeric = count(array_filter($groups, fn ($g) => $g !== '' && ctype_digit($g)));
-            return (count($groups) - 1) >= 4 || $numeric >= 2;
+            // tiny fragments: 1-2 characters that are not digits (the "o" and "et" in a.o.et.1245)
+            $tiny = count(array_filter($groups, fn ($g) => $g !== '' && mb_strlen($g) <= 2 && !ctype_digit($g)));
+            // empty groups = leading / trailing / doubled dots: never a real Gmail address
+            $empty = count(array_filter($groups, fn ($g) => $g === ''));
+            return $empty > 0 || $dots >= 4 || $numeric >= 2 || ($dots >= 3 && $tiny >= 2);
         }
         return false;
     }
@@ -247,9 +255,11 @@ final class DisposableEmail
     }
 
     /**
+     * @param bool $skipPattern skip only the "looks generated" pattern check (+tag / dot padding) for an address
+     *                          whose inbox ownership is already proven (Google sign-in); domain blocklist still applies.
      * @return string|null a user-facing message when the address must be refused, null when it is fine.
      */
-    public static function problem($email, string $locale = 'en', bool $checkDns = true): ?string
+    public static function problem($email, string $locale = 'en', bool $checkDns = true, bool $skipPattern = false): ?string
     {
         if (!self::enabled()) {
             return null;
@@ -264,7 +274,7 @@ final class DisposableEmail
                 ? 'لا يُسمح بالبريد الإلكتروني المؤقت. استخدم بريدًا إلكترونيًا حقيقيًا.'
                 : 'Temporary / disposable email addresses are not allowed. Please use a real email address.';
         }
-        if (self::isSuspiciousMailbox($email) && !self::inSet($domain, self::csv(config('mail.allowed_domains', '')))) {
+        if (!$skipPattern && self::isSuspiciousMailbox($email) && !self::inSet($domain, self::csv(config('mail.allowed_domains', '')))) {
             return $ar
                 ? 'هذا البريد الإلكتروني يبدو مؤقتًا أو مستعارًا (عنوان فيه + أو شكل عشوائي). استخدم بريدك الحقيقي الأساسي.'
                 : 'This looks like a temporary or alias address (contains "+" or a random pattern). Please use your real, primary email address.';

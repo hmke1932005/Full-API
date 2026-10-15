@@ -29,7 +29,9 @@ class User extends Authenticatable
             if ($email === '') {
                 return;
             }
-            static::assertRealEmail($user, $email);
+            // Google sign-in creates the user already verified (inbox ownership proven by Google): a real
+            // address like a.b.c.d.e@gmail.com must not trip the "generated address" pattern check.
+            static::assertRealEmail($user, $email, $user->email_verified_at !== null);
             \App\Support\DeletedEmail::release($email);
         });
         // Backstop for "real e-mail only": a changed address is re-checked even if a controller forgot to.
@@ -44,10 +46,10 @@ class User extends Authenticatable
     }
 
     /** Throws a 422-style ValidationException for temporary / disposable addresses (blocklist only, no DNS). */
-    protected static function assertRealEmail(User $user, string $email): void
+    protected static function assertRealEmail(User $user, string $email, bool $inboxVerified = false): void
     {
         $locale = ($user->preferred_language ?? 'en') === 'ar' ? 'ar' : 'en';
-        if ($why = \App\Support\DisposableEmail::problem($email, $locale, false)) {
+        if ($why = \App\Support\DisposableEmail::problem($email, $locale, false, $inboxVerified)) {
             throw \Illuminate\Validation\ValidationException::withMessages(['email' => [$why]]);
         }
     }
