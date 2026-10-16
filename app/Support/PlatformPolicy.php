@@ -45,6 +45,7 @@ final class PlatformPolicy
         'response_enc_enforce'   => false, // clients without a session key are refused (default = RESPONSE_ENC_ENFORCE)
         'request_enc_enforce'    => false, // plain JSON request bodies are refused   (default = REQUEST_ENC_ENFORCE)
         'persistent_login'       => true,  // Facebook-style: sessions never expire from inactivity; only an explicit sign-out / revoke / device-limit eviction ends them
+        'animations_enabled'     => true,  // platform-wide UI motion (ambient backdrop, pill/chip + page-enter animations); OFF = a calm, static UI for every user
         'messaging_restricted'   => false, // ON = students may only start chats with their project group / own institution; OFF = anyone can message anyone
     ];
 

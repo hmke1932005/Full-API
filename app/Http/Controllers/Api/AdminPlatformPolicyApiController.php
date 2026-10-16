@@ -19,7 +19,7 @@ use Illuminate\Http\Request;
  *   POST   /api/v1/admin/platform-policy/rules      { list: block|allow, values: "a, b\nc" | [..], note? }
  *   DELETE /api/v1/admin/platform-policy/rules      { list, value }
  *   POST   /api/v1/admin/platform-policy/test       { email }  -> would this address be refused, and why
- *   GET    /api/v1/platform/status                  (public) { registration_enabled, response_encryption }
+ *   GET    /api/v1/platform/status                  (public) { registration_enabled, response_encryption, animations_enabled }
  *
  * Everything lives in the `settings` table (see App\Support\PlatformPolicy). Every change is audit-logged.
  * RBAC: uip.auth + uip.admin on the route group, plus the same uip_role === 'admin' guard as the other admin controllers.
@@ -557,6 +557,7 @@ class AdminPlatformPolicyApiController extends Controller
         return $this->apiSuccess([
             'registration_enabled' => PlatformPolicy::registrationOpen(),
             'response_encryption'  => PlatformPolicy::encryptionOn(),
+            'animations_enabled'   => PlatformPolicy::flag('animations_enabled'),
         ], 'OK')->header('Cache-Control', 'no-store');
     }
 }
