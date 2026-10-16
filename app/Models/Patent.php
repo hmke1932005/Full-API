@@ -13,6 +13,9 @@ class Patent extends Model
 {
     protected $table = 'patents';
 
+    // جدول patents فيه created_at بس (migration 032) — مفيش updated_at، فمنقولش لـ Eloquent يكتبه.
+    public const UPDATED_AT = null;
+
     protected $fillable = [
         'submitted_by', 'project_id', 'title', 'application_number', 'status', 'filed_at',
     ];
