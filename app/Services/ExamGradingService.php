@@ -620,7 +620,7 @@ class ExamGradingService
                     'graded_at'      => $grade->graded_at,
                 ] : null,
                 // Round 6 — grading guidance + AI diagnostic, instructor-only (never sent to students).
-                'model_answer'     => $isAiGradable ? $question->model_answer : null,
+                'model_answer'     => $isAiGradable ? ($question->model_answer ?: $question->ai_model_answer) : null,
                 'grading_instructions' => $isAiGradable ? $question->grading_instructions : null,
                 'ai_grading_enabled'   => $isAiGradable ? (bool) $question->ai_grading_enabled : false,
                 'rubric'           => $isAiGradable ? $this->rubricSummary($question) : null,

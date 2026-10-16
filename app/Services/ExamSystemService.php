@@ -197,10 +197,6 @@ class ExamSystemService
         ]));
         $question->fill($fillable);
 
-        if (in_array($question->type, Question::AI_GRADABLE_TYPES, true) && $question->ai_grading_enabled) {
-            $this->assertAiGradingConfigured($question->model_answer, $question->grading_instructions);
-        }
-
         $question->save();
 
         if ($question->type === 'mcq' && isset($data['options'])) {
@@ -273,18 +269,6 @@ class ExamSystemService
 
         if ($type === 'true_false' && isset($data['correct_answer']) && !in_array($data['correct_answer'], ['true', 'false'], true)) {
             throw new \InvalidArgumentException("A true/false question's correct_answer must be 'true' or 'false'.");
-        }
-
-        if (in_array($type, Question::AI_GRADABLE_TYPES, true) && !empty($data['ai_grading_enabled'])) {
-            $this->assertAiGradingConfigured($data['model_answer'] ?? null, $data['grading_instructions'] ?? null);
-        }
-    }
-
-    /** Phase 18/20 — AI grading needs at least a model answer or grading instructions to work from; never let the AI grade "blind". @throws \InvalidArgumentException */
-    private function assertAiGradingConfigured(?string $modelAnswer, ?string $gradingInstructions): void
-    {
-        if (empty(trim((string) $modelAnswer)) && empty(trim((string) $gradingInstructions))) {
-            throw new \InvalidArgumentException('Enabling AI grading requires at least a model answer or grading instructions.');
         }
     }
 

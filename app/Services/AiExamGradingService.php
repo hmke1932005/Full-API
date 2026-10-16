@@ -39,14 +39,46 @@ class AiExamGradingService
     }
 
     /**
+     * الـ AI بيكتب إجابة نموذجية مختصرة ودقيقة للسؤال (للمدرس يراجعها أو
+     * يعتمد عليها التصحيح التلقائي لو المدرس مدخلش إجابة).
+     *
+     * @throws \RuntimeException لو الـ AI مش مُعد أو النداء/فك الرد فشل
+     */
+    public function generateModelAnswer(string $prompt, float $maxMarks = 0, ?string $type = null): string
+    {
+        $system = 'You are an expert university instructor. Write the ideal model answer for the exam question you '
+            . 'are given: accurate, complete but concise, covering the key points a full-marks answer must contain. '
+            . 'Write the answer in the SAME language as the question. Scale the length to the marks '
+            . '(more marks = more points), without padding. '
+            . 'Respond as JSON: {"model_answer": string}.';
+
+        $user = 'Question: ' . $prompt
+            . ($type ? "\nQuestion type: " . $type : '')
+            . ($maxMarks > 0 ? "\nMaximum marks: " . $maxMarks : '');
+
+        $data = $this->completeJson($this->client, $system, $user);
+        $answer = trim((string) ($data['model_answer'] ?? ''));
+        if ($answer === '') {
+            throw new \RuntimeException('AI returned an empty model answer.');
+        }
+        return mb_substr($answer, 0, 10000);
+    }
+
+    /**
      * @param \App\Models\ExamRubricCriterion[] $rubricCriteria
      * @return array{marks_awarded:float,confidence:float,feedback:string,strengths:string[],missing_concepts:string[],reasoning_summary:string}
      * @throws \RuntimeException لو الـ AI مش مُعد أو النداء/فك الرد فشل
      */
     public function grade(Question $question, string $studentAnswer, float $maxMarks, array $rubricCriteria = []): array
     {
-        $system = 'You are an impartial, consistent university exam grader. Evaluate the student answer strictly '
-            . 'against the model answer, accepted answers, keywords, expected concepts, grading instructions, and '
+        // لو المدرس مدخلش إجابة نموذجية ولا تعليمات، الـ AI يكتب الإجابة بنفسه (ويتخزن للمرات الجاية).
+        $this->ensureReferenceAnswer($question, $maxMarks);
+
+        $system = 'You are an impartial, consistent university exam grader. Judge the student answer by its MEANING, '
+            . 'not its wording: a correct answer phrased differently, in different order, or in another language '
+            . '(Arabic/English) than the model answer must get full credit; never require word-for-word matching. '
+            . 'Mark proportionally: full marks if all key points are covered correctly, about half if roughly half '
+            . 'are, and 0 if the answer is empty, irrelevant, or wrong. Evaluate the student answer against the model answer, accepted answers, keywords, expected concepts, grading instructions, and '
             . 'rubric supplied to you (whichever are present) — do not use outside knowledge to invent additional '
             . 'requirements the instructor did not specify. Award partial credit where the answer is partially '
             . 'correct. IMPORTANT: never reveal step-by-step reasoning or internal chain-of-thought — '
@@ -76,6 +108,16 @@ class AiExamGradingService
         ];
     }
 
+    private function ensureReferenceAnswer(Question $question, float $maxMarks): void
+    {
+        if (!empty(trim((string) $question->model_answer)) || !empty(trim((string) $question->ai_model_answer))
+            || !empty(trim((string) $question->grading_instructions))) {
+            return;
+        }
+        $question->ai_model_answer = $this->generateModelAnswer((string) $question->prompt, $maxMarks, $question->type);
+        $question->save();
+    }
+
     /** @param \App\Models\ExamRubricCriterion[] $rubricCriteria */
     private function buildUserPrompt(Question $question, string $studentAnswer, float $maxMarks, array $rubricCriteria): string
     {
@@ -83,8 +125,9 @@ class AiExamGradingService
         $lines[] = 'Question: ' . $question->prompt;
         $lines[] = 'Maximum marks: ' . $maxMarks;
 
-        if (!empty($question->model_answer)) {
-            $lines[] = 'Model answer: ' . $question->model_answer;
+        $reference = !empty($question->model_answer) ? $question->model_answer : ($question->ai_model_answer ?? null);
+        if (!empty($reference)) {
+            $lines[] = 'Model answer: ' . $reference;
         }
         if (!empty($question->accepted_answers)) {
             $lines[] = 'Accepted answers: ' . implode(', ', (array) $question->accepted_answers);

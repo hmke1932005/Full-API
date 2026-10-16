@@ -29,7 +29,7 @@ class Question extends Model
     protected $fillable = [
         'question_bank_id', 'type', 'prompt', 'image_path', 'marks', 'difficulty', 'topic', 'tags',
         'correct_answer', 'accepted_answers', 'case_sensitive',
-        'model_answer', 'expected_concepts', 'keywords', 'grading_instructions', 'ai_grading_enabled',
+        'model_answer', 'ai_model_answer', 'expected_concepts', 'keywords', 'grading_instructions', 'ai_grading_enabled',
         'explanation', 'status', 'created_by_academic_staff_id',
     ];
 

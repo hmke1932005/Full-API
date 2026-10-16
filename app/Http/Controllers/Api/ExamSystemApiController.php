@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Repositories\AcademicStaffRepository;
+use App\Services\AiExamGradingService;
 use App\Services\AiQuestionParsingService;
 use App\Services\AuditLogService;
 use App\Services\ExamSystemService;
@@ -30,7 +31,8 @@ class ExamSystemApiController extends Controller
         private ExamSystemService $examSystem,
         private AcademicStaffRepository $staffRepo,
         private AuditLogService $auditLog,
-        private AiQuestionParsingService $aiParser
+        private AiQuestionParsingService $aiParser,
+        private AiExamGradingService $aiGrading
     ) {
     }
 
@@ -337,6 +339,30 @@ class ExamSystemApiController extends Controller
         }
 
         return $this->apiSuccess(['questions' => $questions], 'Questions revised successfully.');
+    }
+
+    /** الـ AI يكتب إجابة نموذجية لسؤال مقالي (مسودة يراجعها المدرس في الفورم؛ مش بتتحفظ هنا). */
+    public function generateModelAnswer(Request $request)
+    {
+        if ($err = $this->requireAcademicStaff($request)) {
+            return $err;
+        }
+        $validator = Validator::make($request->all(), [
+            'prompt' => 'required|string|max:5000',
+            'marks'  => 'nullable|numeric|min:0',
+            'type'   => 'nullable|in:short_answer,essay',
+        ]);
+        if ($validator->fails()) {
+            return $this->apiError($validator->errors()->first(), $validator->errors()->toArray(), 422);
+        }
+        try {
+            $answer = $this->aiGrading->generateModelAnswer(
+                (string) $request->input('prompt'), (float) $request->input('marks', 0), $request->input('type')
+            );
+        } catch (\Throwable $e) {
+            return $this->apiError('AI could not generate a model answer right now.', null, 503);
+        }
+        return $this->apiSuccess(['model_answer' => $answer]);
     }
 
     public function updateQuestion(Request $request, $id)
