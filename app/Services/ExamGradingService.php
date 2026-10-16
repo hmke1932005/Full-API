@@ -132,6 +132,67 @@ class ExamGradingService
         return $count;
     }
 
+    /**
+     * "Auto Grade" الكامل: الأسئلة الموضوعية + تصحيح الـ AI للأسئلة
+     * المقالية/القصيرة فورًا (synchronous — من غير queue worker) عشان الدرجة
+     * تظهر في نفس الطلب. بيتخطى أي سؤال المدرس صححه يدويًا.
+     *
+     * @return array{objective:int,ai_graded:int,ai_failed:int,ai_skipped_disabled:int,ai_skipped_empty:int,ai_skipped_instructor:int,errors:string[]}
+     */
+    public function autoGradeAttemptFull(ExamAttempt $attempt): array
+    {
+        $summary = [
+            'objective' => $this->autoGradeAttempt($attempt),
+            'ai_graded' => 0, 'ai_failed' => 0,
+            'ai_skipped_disabled' => 0, 'ai_skipped_empty' => 0, 'ai_skipped_instructor' => 0,
+            'errors' => [],
+        ];
+
+        $pivotRows = $this->attempts->questionsForAttempt($attempt->id);
+        $answers = $this->attempts->answersForAttempt($attempt->id);
+
+        foreach ($pivotRows as $pivot) {
+            $question = $pivot->question;
+            if (!in_array($question->type, ['short_answer', 'essay'], true)) {
+                continue;
+            }
+            $existing = $this->grades->findForQuestion($attempt->id, $pivot->id);
+            if ($existing && $existing->source === 'instructor') {
+                $summary['ai_skipped_instructor']++;
+                continue;
+            }
+            if (!$question->ai_grading_enabled) {
+                $summary['ai_skipped_disabled']++;
+                continue;
+            }
+            $answer = $answers[$pivot->id] ?? null;
+            if (!$answer || trim((string) $answer->answer_text) === '') {
+                $summary['ai_skipped_empty']++;
+                continue;
+            }
+
+            $grade = $this->grades->upsert($attempt->id, $pivot->id, [
+                'exam_answer_id' => $answer->id,
+                'max_marks'      => (float) ($pivot->marks_override ?? $question->marks),
+            ]);
+            $this->runAiGrading($grade->id);
+
+            $ai = $this->aiGradings->findForGrade($grade->id);
+            if ($ai && $ai->status === 'completed') {
+                $summary['ai_graded']++;
+            } else {
+                $summary['ai_failed']++;
+                if ($ai && $ai->error_message) {
+                    $summary['errors'][] = $ai->error_message;
+                }
+            }
+        }
+
+        $attempt->refresh();
+        $summary['errors'] = array_values(array_unique($summary['errors']));
+        return $summary;
+    }
+
     private function gradeAutomatic(ExamAttempt $attempt, $pivot, $question, $answer, float $maxMarks): ExamGrade
     {
         $isCorrect = $this->evaluateObjectiveAnswer($question, $answer);
@@ -209,6 +270,7 @@ class ExamGradingService
         }
 
         $previousScore = $existing?->marks_awarded !== null ? (float) $existing->marks_awarded : null;
+        $previousFeedback = $existing?->feedback;
         $answer = $this->attempts->findAnswer($attempt->id, $examQuestionId);
 
         $grade = $this->grades->upsert($attempt->id, $examQuestionId, [
@@ -229,6 +291,8 @@ class ExamGradingService
             'changed_by_academic_staff_id' => $staff->id,
             'reason'         => $reason,
             'changed_at'     => now(),
+            'previous_feedback' => $previousFeedback,
+            'new_feedback'   => $feedback,
         ]);
 
         $this->recomputeAttemptTotals($attempt);
@@ -357,6 +421,7 @@ class ExamGradingService
         }
 
         $previousScore = $grade->marks_awarded !== null ? (float) $grade->marks_awarded : null;
+        $previousFeedback = $grade->feedback;
 
         $grade = $this->grades->upsert($attempt->id, $grade->exam_question_id, [
             'exam_answer_id' => $answer->id,
@@ -376,6 +441,8 @@ class ExamGradingService
             'changed_by_academic_staff_id' => null,
             'reason'         => 'AI grading',
             'changed_at'     => now(),
+            'previous_feedback' => $previousFeedback,
+            'new_feedback'   => $result['feedback'],
         ]);
 
         $this->aiGradings->upsertForGrade($grade->id, [
@@ -423,6 +490,8 @@ class ExamGradingService
             'changed_by_academic_staff_id' => $staff->id,
             'reason'         => 'AI grade accepted as-is by instructor.',
             'changed_at'     => now(),
+            'previous_feedback' => $grade->feedback,
+            'new_feedback'   => $grade->feedback,
         ]);
 
         $this->recomputeAttemptTotals($attempt);
@@ -447,7 +516,7 @@ class ExamGradingService
      * entry is never destroyed, only ever appended to).
      * @throws \InvalidArgumentException
      */
-    public function regradeQuestionWithAi(ExamAttempt $attempt, $examQuestionId, $staff = null): ExamGrade
+    public function regradeQuestionWithAi(ExamAttempt $attempt, $examQuestionId, $staff = null, bool $sync = false): ExamGrade
     {
         // Round 7 — attempt-scoped.
         $pivot = $this->attempts->pivotForAttempt($attempt->id, $examQuestionId);
@@ -470,7 +539,12 @@ class ExamGradingService
             'max_marks'      => $maxMarks,
         ]);
 
-        $this->maybeDispatchAiGrading($question, $answer, $grade);
+        if ($sync) {
+            // تشغيل فوري (من غير queue worker) عشان الدرجة تظهر في نفس الطلب.
+            $this->runAiGrading($grade->id);
+        } else {
+            $this->maybeDispatchAiGrading($question, $answer, $grade);
+        }
 
         // Phase 42 — "Exam Regraded". staff اختياري (nullable) عشان مسار
         // regradeQuestionWithAi() اللي بيتنادى من مسارات مش-مستخدم-مباشر

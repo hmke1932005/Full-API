@@ -19,6 +19,7 @@ class ExamGradeHistory extends Model
     protected $fillable = [
         'exam_grade_id', 'previous_score', 'new_score', 'source',
         'changed_by_academic_staff_id', 'reason', 'changed_at',
+        'previous_feedback', 'new_feedback',
     ];
 
     protected $casts = [

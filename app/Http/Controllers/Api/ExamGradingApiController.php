@@ -523,6 +523,8 @@ class ExamGradingApiController extends Controller
             'source'          => $h->source,
             'reason'          => $h->reason,
             'changed_at'      => $h->changed_at,
+            'previous_feedback' => $h->previous_feedback,
+            'new_feedback'    => $h->new_feedback,
         ], $this->grading->historyFor($grade));
 
         return $this->apiSuccess($history, 'Grade history retrieved successfully.');
@@ -551,10 +553,11 @@ class ExamGradingApiController extends Controller
             return $this->apiError('This attempt has not been submitted yet.', null, 422);
         }
 
-        $count = $this->grading->autoGradeAttempt($attempt);
+        @set_time_limit(0);
+        $summary = $this->grading->autoGradeAttemptFull($attempt);
 
-        return $this->apiSuccess([
-            'regraded_count' => $count,
+        return $this->apiSuccess($summary + [
+            'regraded_count' => $summary['objective'],
             'attempt_status' => $attempt->refresh()->status,
         ], 'Automatic grading re-run.');
     }
@@ -623,7 +626,7 @@ class ExamGradingApiController extends Controller
         }
 
         try {
-            $grade = $this->grading->regradeQuestionWithAi($attempt, $examQuestionId, $staff);
+            $grade = $this->grading->regradeQuestionWithAi($attempt, $examQuestionId, $staff, true);
         } catch (\InvalidArgumentException $e) {
             return $this->apiError($e->getMessage(), null, 422);
         }
@@ -633,7 +636,7 @@ class ExamGradingApiController extends Controller
             'marks_awarded'  => $grade->marks_awarded !== null ? (float) $grade->marks_awarded : null,
             'max_marks'      => (float) $grade->max_marks,
             'source'         => $grade->source,
-        ], 'AI regrade queued.');
+        ], 'AI regrade completed.');
     }
 
     // -----------------------------------------------------------------
