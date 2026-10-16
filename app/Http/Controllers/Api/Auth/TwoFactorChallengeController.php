@@ -63,7 +63,7 @@ class TwoFactorChallengeController extends Controller
         }
 
         $locale = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
-        if ($block = app(\App\Services\UserSessionService::class)->loginBlock((int) $user->id, $locale)) {
+        if ($block = app(\App\Services\UserSessionService::class)->loginBlock((int) $user->id, $locale, (string) ($claims['role'] ?? $this->roles->primaryRoleFor($user->id)))) {
             return response()->json(['success' => false, 'message' => $block[0], 'data' => $block[1], 'errors' => null, 'meta' => (object) []], 409);
         }
 

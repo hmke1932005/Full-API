@@ -68,4 +68,46 @@ class PlatformPolicyTest extends TestCase
         PlatformPolicy::setFlag('response_encryption', false);
         $this->assertFalse(PlatformPolicy::encryptionOn());
     }
+
+    #[Test]
+    public function device_limits_default_to_one_and_can_be_set_per_role(): void
+    {
+        $this->assertSame(1, PlatformPolicy::deviceLimitFor('student'));
+        $this->assertSame('replace_oldest', PlatformPolicy::deviceMode());
+
+        [$cfg, $err] = PlatformPolicy::normalizeDevices(['default' => 1, 'roles' => ['student' => 2, 'admin' => 5, 'university' => 0], 'mode' => 'block']);
+        $this->assertNull($err);
+        PlatformPolicy::setDevices($cfg);
+        PlatformPolicy::flush();
+
+        $this->assertSame(2, PlatformPolicy::deviceLimitFor('student'));
+        $this->assertSame(5, PlatformPolicy::deviceLimitFor('admin'));
+        $this->assertSame(0, PlatformPolicy::deviceLimitFor('university'), '0 = unlimited');
+        $this->assertSame(1, PlatformPolicy::deviceLimitFor('supervisor'), 'unlisted role uses the default');
+        $this->assertSame('block', PlatformPolicy::deviceMode());
+
+        PlatformPolicy::resetDevices();
+        $this->assertSame(1, PlatformPolicy::deviceLimitFor('student'));
+    }
+
+    #[Test]
+    public function device_limits_reject_bad_input(): void
+    {
+        foreach ([['default' => -1], ['default' => 'x'], ['default' => 1.5], ['roles' => ['bad role' => 1]], ['mode' => 'nope']] as $bad) {
+            [$cfg, $err] = PlatformPolicy::normalizeDevices($bad);
+            $this->assertNull($cfg);
+            $this->assertNotNull($err);
+        }
+    }
+
+    #[Test]
+    public function persistent_login_is_on_by_default_and_disables_idle_timeout(): void
+    {
+        $this->assertTrue(PlatformPolicy::flag('persistent_login'));
+        $this->assertSame(0, app(\App\Services\SessionPolicyService::class)->idleTimeoutSeconds());
+        $this->assertGreaterThanOrEqual(31536000, \App\Services\UipJwtService::refreshTtl());
+
+        PlatformPolicy::setFlag('persistent_login', false);
+        $this->assertSame((int) env('JWT_REFRESH_TTL', 1209600), \App\Services\UipJwtService::refreshTtl());
+    }
 }

@@ -200,6 +200,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/two-factor/cancel', [TwoFactorChallengeController::class, 'cancel'])->middleware('throttle:20,1');
 
         // "الحساب مفتوح في مكان تاني وده مش أنا": OTP على الإيميل ← كلمة سر جديدة ← طرد الجلسات التانية.
+        Route::post('/session-takeover/release', [\App\Http\Controllers\Api\Auth\SessionTakeoverController::class, 'release'])->middleware('throttle:20,1');
         Route::post('/session-takeover/send', [\App\Http\Controllers\Api\Auth\SessionTakeoverController::class, 'send'])->middleware('throttle:6,1');
         Route::post('/session-takeover/verify', [\App\Http\Controllers\Api\Auth\SessionTakeoverController::class, 'verify'])->middleware('throttle:12,1');
     });
@@ -889,6 +890,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'show']);
         Route::patch('/flags', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'updateFlags']);
         Route::put('/values', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'updateValues'])->middleware('throttle:20,1');
+        Route::put('/devices', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'updateDevices'])->middleware('throttle:30,1');
+        Route::delete('/devices', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'resetDevices'])->middleware('throttle:30,1');
         Route::post('/rules', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'addRules']);
         Route::delete('/rules', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'removeRule']);
         Route::post('/test', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'test']);

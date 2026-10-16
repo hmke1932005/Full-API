@@ -60,6 +60,16 @@ class RefreshTokenController extends Controller
             ->where('expires_at', '>', now())
             ->first();
 
+        // تسامح مع ضياع الرد: التوكن اتبدّل من أقل من دقيقة (العميل مستلمش الجديد، موبايل/شبكة قطعت) —
+        // مش سرقة. بنكمّل على نفس الجلسة بدل ما نقفل كل جلسات الحساب ونطرد صاحبه من "دخوله الدائم".
+        $graceSession = null;
+        if (!$row) {
+            $graceSession = $this->sessions->findByPrevHash($hash);
+            if ($graceSession) {
+                $row = RefreshToken::where('token_hash', $hash)->first();
+            }
+        }
+
         if (!$row) {
             // Reuse detection: لو التوكن ده كان صادر فعلاً بس اتلغى قبل كده
             // (rotated أو logout)، ده دليل إنه ممكن يكون سُرق — نلغي كل
@@ -90,7 +100,7 @@ class RefreshTokenController extends Controller
 
         // الجلسة اللي الـ refresh token ده تبعها: لو اتلغت من بورتال الأمان
         // نرفض الـ refresh فالمستخدم يتطرد فعلًا.
-        $session = $this->sessions->findByRefreshHash($hash);
+        $session = $graceSession ?: $this->sessions->findByRefreshHash($hash);
         if ($session && !$session->is_active) {
             $row->revoked_at = now();
             $row->save();

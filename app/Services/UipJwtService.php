@@ -203,10 +203,28 @@ class UipJwtService
      * راجع نقاش الباگ ده). لسه اختياريين (null لو المستخدم اتمسح بين
      * إصدار التوكن القديم واستخدامه) عشان decode() القديم يفضل متوافق.
      */
+    /**
+     * عمر الـ refresh token (ثواني). مع "الدخول الدائم" (الافتراضي) بيبقى سنة، وبيتجدد مع كل استخدام (rotation)،
+     * فالمستخدم عمره ما بيتسجّل خروجه إلا بنفسه. لو الأدمن قفله بيرجع JWT_REFRESH_TTL (14 يوم افتراضيًا).
+     */
+    public static function refreshTtl(): int
+    {
+        $base = (int) env('JWT_REFRESH_TTL', 1209600);
+        try {
+            if (\App\Support\PlatformPolicy::flag('persistent_login')) {
+                return max($base, (int) config('security.persistent_refresh_ttl', 31536000));
+            }
+        } catch (\Throwable $e) {
+            // الإعدادات مش متاحة: نفضل على القيمة العادية
+        }
+
+        return $base;
+    }
+
     public static function issueTokenPair(int $userId, string $role, ?int $sessionId = null): array
     {
         $accessTtl  = (int) env('JWT_ACCESS_TTL', 900);
-        $refreshTtl = (int) env('JWT_REFRESH_TTL', 1209600);
+        $refreshTtl = self::refreshTtl();
 
         $user = \App\Models\User::find($userId);
 
@@ -220,7 +238,7 @@ class UipJwtService
             if ($sessionId) {
                 $sessions->rotate($sessionId, $rawRefresh, $refreshTtl);
             } else {
-                $sessionId = $sessions->start($userId, $rawRefresh, $refreshTtl);
+                $sessionId = $sessions->start($userId, $rawRefresh, $refreshTtl, $role);
             }
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error('Session tracking failed: ' . $e->getMessage());

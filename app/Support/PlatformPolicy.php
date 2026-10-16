@@ -44,6 +44,7 @@ final class PlatformPolicy
         'response_encryption'    => true,  // AES-GCM envelope on JSON responses
         'response_enc_enforce'   => false, // clients without a session key are refused (default = RESPONSE_ENC_ENFORCE)
         'request_enc_enforce'    => false, // plain JSON request bodies are refused   (default = REQUEST_ENC_ENFORCE)
+        'persistent_login'       => true,  // Facebook-style: sessions never expire from inactivity; only an explicit sign-out / revoke / device-limit eviction ends them
         'messaging_restricted'   => false, // ON = students may only start chats with their project group / own institution; OFF = anyone can message anyone
     ];
 
@@ -319,6 +320,145 @@ final class PlatformPolicy
             throw new \InvalidArgumentException("Unknown setting: {$key}");
         }
         DB::table('settings')->where('scope', 'global')->whereNull('user_id')->where('key', self::PREFIX . $key)->delete();
+        self::flush();
+    }
+
+    // ───────────────────────── devices per account ─────────────────────────
+
+    public const DEVICES_KEY = 'policy_devices';
+    /** What happens when a sign-in would exceed the limit: sign the oldest device out, or refuse the new sign-in. */
+    public const DEVICE_MODES = ['replace_oldest', 'block'];
+    /** Upper bound the dashboard accepts for one role. 0 always means "no limit". */
+    public const DEVICE_LIMIT_MAX = 1000000;
+
+    /** Limit used for a role the admin never configured (the old "one session per account" behaviour unless .env turned it off). 0 = unlimited. */
+    public static function defaultDeviceLimit(): int
+    {
+        return (bool) config('security.single_session.enabled', true) ? 1 : 0;
+    }
+
+    /**
+     * @return array{default:int,roles:array<string,int>,mode:string}
+     *   default = limit for roles not listed; roles = per-role overrides; 0 = unlimited.
+     */
+    public static function deviceConfig(): array
+    {
+        $cfg = ['default' => self::defaultDeviceLimit(), 'roles' => [], 'mode' => 'replace_oldest'];
+        $raw = self::all()[self::DEVICES_KEY] ?? null;
+        $decoded = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($decoded)) {
+            return $cfg;
+        }
+        if (isset($decoded['default']) && is_numeric($decoded['default'])) {
+            $cfg['default'] = max(0, min(self::DEVICE_LIMIT_MAX, (int) $decoded['default']));
+        }
+        if (is_array($decoded['roles'] ?? null)) {
+            foreach ($decoded['roles'] as $slug => $n) {
+                if (is_string($slug) && $slug !== '' && is_numeric($n)) {
+                    $cfg['roles'][$slug] = max(0, min(self::DEVICE_LIMIT_MAX, (int) $n));
+                }
+            }
+        }
+        if (in_array($decoded['mode'] ?? null, self::DEVICE_MODES, true)) {
+            $cfg['mode'] = $decoded['mode'];
+        }
+
+        return $cfg;
+    }
+
+    public static function devicesOverridden(): bool
+    {
+        return array_key_exists(self::DEVICES_KEY, self::all());
+    }
+
+    /** Devices a role may be signed in on at the same time. 0 = unlimited. */
+    public static function deviceLimitFor(?string $role): int
+    {
+        $cfg = self::deviceConfig();
+
+        return ($role !== null && array_key_exists($role, $cfg['roles'])) ? $cfg['roles'][$role] : $cfg['default'];
+    }
+
+    public static function deviceMode(): string
+    {
+        return self::deviceConfig()['mode'];
+    }
+
+    /**
+     * Validates what the dashboard sent: { default?: int, roles?: { slug: int }, mode?: string }.
+     * Missing parts keep their current value. Returns [config, null] or [null, error].
+     * @return array{0:?array{default:int,roles:array<string,int>,mode:string},1:?string}
+     */
+    public static function normalizeDevices($input): array
+    {
+        if (!is_array($input)) {
+            return [null, 'Send the device limits as an object.'];
+        }
+        $cfg = self::deviceConfig();
+
+        $check = static function ($raw, string $label): array {
+            if (is_string($raw)) {
+                $raw = trim($raw);
+            }
+            if (is_bool($raw) || $raw === '' || $raw === null || !is_numeric($raw) || (float) $raw != (int) $raw) {
+                return [null, "{$label} must be a whole number (0 = unlimited)."];
+            }
+            $n = (int) $raw;
+            if ($n < 0 || $n > self::DEVICE_LIMIT_MAX) {
+                return [null, "{$label} must be between 0 (unlimited) and " . self::DEVICE_LIMIT_MAX . '.'];
+            }
+
+            return [$n, null];
+        };
+
+        if (array_key_exists('default', $input)) {
+            [$n, $err] = $check($input['default'], 'The default limit');
+            if ($err) {
+                return [null, $err];
+            }
+            $cfg['default'] = $n;
+        }
+        if (array_key_exists('roles', $input)) {
+            if (!is_array($input['roles'])) {
+                return [null, 'Roles must be an object of role => limit.'];
+            }
+            $roles = [];
+            foreach ($input['roles'] as $slug => $raw) {
+                $slug = (string) $slug;
+                if (!preg_match('/^[a-z0-9_.-]{1,50}$/i', $slug)) {
+                    return [null, "\"{$slug}\" is not a valid role."];
+                }
+                [$n, $err] = $check($raw, "The limit for {$slug}");
+                if ($err) {
+                    return [null, $err];
+                }
+                $roles[$slug] = $n;
+            }
+            $cfg['roles'] = $roles;
+        }
+        if (array_key_exists('mode', $input)) {
+            if (!in_array($input['mode'], self::DEVICE_MODES, true)) {
+                return [null, 'The mode must be "replace_oldest" or "block".'];
+            }
+            $cfg['mode'] = $input['mode'];
+        }
+
+        return [$cfg, null];
+    }
+
+    public static function setDevices(array $cfg): void
+    {
+        self::put(self::DEVICES_KEY, json_encode([
+            'default' => (int) $cfg['default'],
+            'roles'   => (object) $cfg['roles'],
+            'mode'    => (string) $cfg['mode'],
+        ], JSON_UNESCAPED_UNICODE));
+    }
+
+    /** Back to the server default (one device per account, newest sign-in wins). */
+    public static function resetDevices(): void
+    {
+        DB::table('settings')->where('scope', 'global')->whereNull('user_id')->where('key', self::DEVICES_KEY)->delete();
         self::flush();
     }
 

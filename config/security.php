@@ -31,10 +31,13 @@ return [
     // بيوقّع الـ IP الحقيقي للمستخدم، شوف UipTrustedClientIpMiddleware.
     'proxy_secret' => (string) env('UIP_PROXY_SECRET', ''),
 
-    // جلسة واحدة نشطة لكل حساب: لو الحساب مفتوح (جلسة حية) في متصفح/جهاز، أي دخول
-    // جديد بيترفض لحد ما الأول يتقفل أو يعمل logout. "حية" = وصلها نبضة (heartbeat) في
-    // آخر live_seconds ثانية. الفرونت بيبعت نبضة كل 20 ثانية، وبيحرر الجلسة أول ما
-    // آخر تبويب يتقفل. SINGLE_SESSION_ENFORCED=false بيعطّل الميزة كلها.
+    // دخول دائم (زي فيسبوك): عمر الـ refresh token لما "Persistent sign-in" شغّال في Admin > Platform Policy.
+    // بيتجدد مع كل استخدام. المتصفحات بتقص الكوكي عند ~400 يوم، فالسنة هي الحد العملي.
+    'persistent_refresh_ttl' => (int) env('PERSISTENT_REFRESH_TTL', 31536000),
+
+    // حد الأجهزة الافتراضي لأي دور الأدمن مظبطش له رقم من Admin > Platform Policy > Devices per account:
+    // enabled=true => جهاز واحد لكل حساب، enabled=false (SINGLE_SESSION_ENFORCED=false) => بلا حد.
+    // الأدمن بيغيّر الرقم لكل دور من الداشبورد من غير deploy.
     'single_session' => [
         'enabled'      => filter_var(env('SINGLE_SESSION_ENFORCED', true), FILTER_VALIDATE_BOOLEAN),
         'live_seconds' => (int) env('SESSION_LIVE_SECONDS', 120),

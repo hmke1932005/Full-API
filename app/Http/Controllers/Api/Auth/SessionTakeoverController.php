@@ -47,6 +47,28 @@ class SessionTakeoverController extends Controller
     ) {
     }
 
+    /**
+     * POST /api/v1/auth/session-takeover/release — { takeover_token, session_id }
+     * وضع "منع الدخول الجديد": صاحب الحساب (كلمة السر اتكتبت صح = takeover_token) يسجّل خروج من
+     * جهاز معيّن من القائمة اللي رجعت في رد الدخول، وبعدها يجرّب يدخل تاني. بيقفل الجلسة دي بس.
+     */
+    public function release(Request $request)
+    {
+        $user = $this->userFromToken($request);
+        if (!$user) {
+            return $this->apiError($this->t($request, 'انتهت صلاحية الطلب. حاول تسجّل الدخول من جديد.', 'This request expired. Please try signing in again.'), null, 401);
+        }
+        $sid = (int) $request->input('session_id', 0);
+        $owned = $sid > 0 && DB::table('user_sessions')->where('id', $sid)->where('user_id', $user->id)->where('is_active', 1)->exists();
+        if (!$owned) {
+            return $this->apiError($this->t($request, 'الجهاز ده مش موجود أو اتسجّل منه خروج بالفعل.', 'That device was not found or is already signed out.'), null, 404);
+        }
+        $this->sessions->end($sid, 'released_at_login', (int) $user->id);
+        SecurityLog::write('Device signed out from the device-limit screen', ['user_id' => $user->id, 'session_id' => $sid, 'ip' => $request->ip()]);
+
+        return $this->apiSuccess(['devices_left' => count($this->sessions->activeDevices((int) $user->id))], 'Device signed out.');
+    }
+
     /** POST /api/v1/auth/session-takeover/send */
     public function send(Request $request)
     {

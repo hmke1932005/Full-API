@@ -78,6 +78,7 @@ class AdminPlatformPolicyApiController extends Controller
                 PlatformPolicy::LIST_ALLOW => PlatformPolicy::rules(PlatformPolicy::LIST_ALLOW),
             ],
             'values'     => $this->valuesPayload(),
+            'devices'    => $this->devicesPayload(),
             'limits'     => ['max_rules' => PlatformPolicy::MAX_RULES, 'max_values_per_request' => self::MAX_VALUES_PER_REQUEST],
             // Hard switches in .env that sit above the dashboard: when false the dashboard cannot turn the feature on.
             'server'     => [
@@ -88,6 +89,88 @@ class AdminPlatformPolicyApiController extends Controller
                 'encryption_effective' => PlatformPolicy::encryptionOn(),
             ],
         ];
+    }
+
+    /**
+     * Devices-per-account settings + every role the admin can configure (system and custom), each with the limit that
+     * actually applies to it right now (its own number, or the default when none was set). 0 = unlimited.
+     * @return array<string,mixed>
+     */
+    private function devicesPayload(): array
+    {
+        $cfg = PlatformPolicy::deviceConfig();
+        $roles = [];
+        try {
+            $roles = \Illuminate\Support\Facades\DB::table('roles')->orderBy('is_system', 'desc')->orderBy('id')->get(['slug', 'name_ar', 'name_en'])
+                ->map(fn ($r) => [
+                    'slug'       => $r->slug,
+                    'name_ar'    => $r->name_ar,
+                    'name_en'    => $r->name_en,
+                    'limit'      => PlatformPolicy::deviceLimitFor($r->slug),
+                    'overridden' => array_key_exists($r->slug, $cfg['roles']),
+                ])->all();
+        } catch (\Throwable $e) {
+            // roles table unavailable: the page still shows the default + mode
+        }
+
+        return [
+            'default'     => $cfg['default'],
+            'mode'        => $cfg['mode'],
+            'modes'       => PlatformPolicy::DEVICE_MODES,
+            'roles'       => $roles,
+            'overridden'  => PlatformPolicy::devicesOverridden(),
+            'server_default' => PlatformPolicy::defaultDeviceLimit(),
+            'max'         => PlatformPolicy::DEVICE_LIMIT_MAX,
+        ];
+    }
+
+    /**
+     * PUT /api/v1/admin/platform-policy/devices — { default?: int, mode?: replace_oldest|block, roles?: { slug: int } }
+     * 0 means unlimited. Missing keys keep their current value; "roles" replaces the whole per-role map.
+     * Devices already signed in are not touched — the new limit applies from the next sign-in on.
+     */
+    public function updateDevices(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        [$cfg, $error] = PlatformPolicy::normalizeDevices($request->all());
+        if ($error !== null) {
+            return $this->apiError($error, ['devices' => 'invalid'], 422);
+        }
+        // Only roles that exist can get a limit (a typo must not silently create a dead rule).
+        try {
+            $known = \Illuminate\Support\Facades\DB::table('roles')->pluck('slug')->all();
+            $unknown = array_values(array_diff(array_keys($cfg['roles']), $known));
+            if ($known && $unknown) {
+                return $this->apiError('Unknown role: ' . implode(', ', $unknown), ['roles' => $unknown], 422);
+            }
+        } catch (\Throwable $e) {
+            // can't verify: accept
+        }
+
+        $before = PlatformPolicy::deviceConfig();
+        PlatformPolicy::setDevices($cfg);
+        $after = PlatformPolicy::deviceConfig();
+        if ($before !== $after) {
+            $this->auditLog->record($this->adminId($request), 'platform.policy_devices_update', 'Setting', null, $before, $after, $request->ip());
+        }
+
+        return $this->apiSuccess($this->snapshot(), $before !== $after ? 'Device limits saved.' : 'Nothing changed.');
+    }
+
+    /** DELETE /api/v1/admin/platform-policy/devices — back to the server default (one device per account). */
+    public function resetDevices(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        $before = PlatformPolicy::deviceConfig();
+        PlatformPolicy::resetDevices();
+        $this->auditLog->record($this->adminId($request), 'platform.policy_devices_reset', 'Setting', null, $before, PlatformPolicy::deviceConfig(), $request->ip());
+
+        return $this->apiSuccess($this->snapshot(), 'Device limits reset to the server default.');
     }
 
     /** @return array<string,array{value:string|int,default:string|int,overridden:bool,type:string,min:int,max:int}> */

@@ -36,6 +36,10 @@ class SessionPolicyService
     public function idleTimeoutSeconds(): int
     {
         try {
+            // دخول دائم (Admin > Platform Policy): مفيش قفل بسبب الخمول — الجلسة بتفضل لحد تسجيل خروج صريح.
+            if (\App\Support\PlatformPolicy::flag('persistent_login')) {
+                return 0;
+            }
             return (int) Cache::remember(self::IDLE_CACHE_KEY, 60, function () {
                 $minutes = (int) ($this->getPolicy()['timeout_minutes'] ?? 0);
                 return $minutes > 0 ? $minutes * 60 : 0;

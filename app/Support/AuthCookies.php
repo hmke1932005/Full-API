@@ -162,7 +162,7 @@ class AuthCookies
             return $response;
         }
 
-        $ttl = (int) env('JWT_REFRESH_TTL', 1209600);
+        $ttl = \App\Services\UipJwtService::refreshTtl();
         $expires = time() + $ttl;
 
         $response->headers->setCookie(self::makeCookie(self::REFRESH_COOKIE, $raw, $expires, self::COOKIE_PATH, true, $request));

@@ -297,6 +297,14 @@ use the Bcrypt algorithm."** السبب: القديم بيستخدم دوال PH
 
 ---
 
+## الدخول الدائم + حد الأجهزة لكل دور (Admin → Platform Policy)
+
+- **الدخول الدائم** (`persistent_login`، شغّال افتراضيًا): مفيش قفل بسبب الخمول، وقفل المتصفح/التبويب مبيسجّلش خروج (`POST /session/release` بقى بلا أثر). الـ refresh token والكوكي عمرهم سنة (`PERSISTENT_REFRESH_TTL`) وبيتجددوا مع كل استخدام. الخروج بيحصل بس بـ logout صريح، أو إلغاء الجهاز (`DELETE /auth/sessions/{id}` أو بورتال الأمان)، أو لما حد الأجهزة يطرد أقدم جهاز، أو لو الحساب اتوقف/اتحذف. لو الأدمن قفل الخيار بيرجع `JWT_REFRESH_TTL` (14 يوم) ومهلة الخمول.
+- تسامح مع ضياع رد الـ refresh: التوكن القديم بيتقبّل 60 ثانية بعد تبديله (migration `prev_token_hash`/`rotated_at`) بدل ما يتعامل كسرقة ويقفل كل الجلسات.
+- **حد الأجهزة**: `GET /admin/platform-policy` بيرجّع `data.devices` = `{ default, mode, roles:[{slug,name_ar,name_en,limit,overridden}], max, overridden }`. `PUT /admin/platform-policy/devices` بـ `{ default?, mode?: replace_oldest|block, roles?: { slug: int } }` (الرقم `0` = بلا حد، الحد الأقصى 1,000,000). `DELETE` على نفس المسار بيرجّع الافتراضي (جهاز واحد لكل حساب، أو بلا حد لو `SINGLE_SESSION_ENFORCED=false`). الجهاز = بصمة المتصفح (`uip_did`)، ونفس الجهاز مبيتحسبش مرتين. الحد بيتطبّق على أول تسجيل دخول جديد.
+  - `replace_oldest` (الافتراضي): الجهاز الأقدم نشاطًا بيتسجّل منه خروج والجديد بيدخل.
+  - `block`: الدخول بيرجّع `409` بـ `data.code = account_in_use` + `data.reason = device_limit` + `data.devices[]` + `takeover_token`؛ صاحب الحساب يقدر يسجّل خروج جهاز عن طريق `POST /auth/session-takeover/release { takeover_token, session_id }` وبعدها يجرّب تاني.
+
 ## قاعدة البيانات ذات الصلة
 
 **جدول `users`** (أهم الأعمدة): `id, uuid, full_name, email, phone, password_hash, avatar_path, preferred_language(ar/en), theme_preference(light/dark), status(active/pending/suspended/banned), email_verified_at, last_login_at, last_login_ip, two_factor_enabled, two_factor_secret, two_factor_confirmed_at, two_factor_recovery_codes(JSON), failed_login_attempts, locked_until, lock_permanent, lock_reason, locked_at, mfa_grace_started_at, remember_token, created_at, updated_at, deleted_at`
