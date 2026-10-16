@@ -161,10 +161,9 @@ class ExamGradingService
                 $summary['ai_skipped_instructor']++;
                 continue;
             }
-            if (!$question->ai_grading_enabled) {
-                $summary['ai_skipped_disabled']++;
-                continue;
-            }
+            // الضغط الصريح على "إعادة التصحيح التلقائي" بيصحح بالـ AI حتى لو
+            // خيار ai_grading_enabled مش متفعّل على السؤال (الخيار ده بيتحكم
+            // بس في التصحيح التلقائي وقت التسليم).
             $answer = $answers[$pivot->id] ?? null;
             if (!$answer || trim((string) $answer->answer_text) === '') {
                 $summary['ai_skipped_empty']++;
@@ -524,7 +523,7 @@ class ExamGradingService
             throw new \InvalidArgumentException('Question not found in this attempt.');
         }
         $question = $pivot->question;
-        if (!in_array($question->type, ['short_answer', 'essay'], true) || !$question->ai_grading_enabled) {
+        if (!in_array($question->type, ['short_answer', 'essay'], true) || (!$sync && !$question->ai_grading_enabled)) {
             throw new \InvalidArgumentException('AI grading is not enabled for this question.');
         }
 
