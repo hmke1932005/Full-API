@@ -110,4 +110,29 @@ class PlatformPolicyTest extends TestCase
         PlatformPolicy::setFlag('persistent_login', false);
         $this->assertSame((int) env('JWT_REFRESH_TTL', 1209600), \App\Services\UipJwtService::refreshTtl());
     }
+
+    #[Test]
+    public function otp_limits_follow_the_dashboard_value_then_fall_back_to_env(): void
+    {
+        config(['security.otp' => ['max_wrong' => 5, 'block_minutes' => 10, 'max_sends' => 5, 'send_window_minutes' => 60]]);
+        PlatformPolicy::flush();
+        $this->assertSame(5, \App\Support\OtpGuard::maxWrong());
+        $this->assertSame(10, \App\Support\OtpGuard::blockMinutes());
+
+        [$n, $err] = PlatformPolicy::normalizeValue('otp_max_wrong', '3');
+        $this->assertNull($err);
+        PlatformPolicy::setValue('otp_max_wrong', $n);
+        PlatformPolicy::setValue('otp_block_minutes', 30);
+        $this->assertSame(3, \App\Support\OtpGuard::maxWrong());
+        $this->assertSame(30, \App\Support\OtpGuard::blockMinutes());
+
+        foreach (['0', '21', 'abc', '2.5'] as $bad) {
+            $this->assertNotNull(PlatformPolicy::normalizeValue('otp_max_wrong', $bad)[1], $bad);
+        }
+
+        PlatformPolicy::resetValue('otp_max_wrong');
+        PlatformPolicy::resetValue('otp_block_minutes');
+        $this->assertSame(5, \App\Support\OtpGuard::maxWrong());
+        $this->assertSame(10, \App\Support\OtpGuard::blockMinutes());
+    }
 }

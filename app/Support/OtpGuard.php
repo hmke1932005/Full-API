@@ -14,28 +14,30 @@ use Illuminate\Support\Facades\Cache;
  *  - أثناء الحظر: مفيش إرسال رمز جديد ومفيش فحص (حتى لو الرمز صح).
  *  - نجاح التحقق بيصفّر عدّاد الأخطاء.
  *
- * كله في الـ cache، والإعدادات من config('security.otp') (env: OTP_MAX_WRONG, OTP_BLOCK_MINUTES, OTP_MAX_SENDS, OTP_SEND_WINDOW_MINUTES).
+ * كله في الـ cache. الأرقام بيضبطها الأدمن من Admin > Platform Policy > OTP protection (PlatformPolicy::value('otp_*'))،
+ * ولو الأدمن ما حفظش رقم بتفضل القيمة الافتراضية من config('security.otp') (env: OTP_MAX_WRONG, OTP_BLOCK_MINUTES, OTP_MAX_SENDS, OTP_SEND_WINDOW_MINUTES).
+ * التغيير بيسري على الحظر/العدّادات الجديدة؛ اللي اتفعّل قبله بيكمّل بمدته الأصلية.
  */
 final class OtpGuard
 {
     public static function maxWrong(): int
     {
-        return max(1, (int) config('security.otp.max_wrong', 5));
+        return max(1, (int) PlatformPolicy::value('otp_max_wrong'));
     }
 
     public static function blockMinutes(): int
     {
-        return max(1, (int) config('security.otp.block_minutes', 10));
+        return max(1, (int) PlatformPolicy::value('otp_block_minutes'));
     }
 
     private static function maxSends(): int
     {
-        return max(1, (int) config('security.otp.max_sends', 5));
+        return max(1, (int) PlatformPolicy::value('otp_max_sends'));
     }
 
     private static function sendWindow(): int
     {
-        return max(1, (int) config('security.otp.send_window_minutes', 60)) * 60;
+        return max(1, (int) PlatformPolicy::value('otp_send_window_minutes')) * 60;
     }
 
     private static function k(string $kind, string $scope): string

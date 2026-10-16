@@ -59,6 +59,11 @@ final class PlatformPolicy
         'platform_name'        => ['type' => 'string', 'min' => 1,  'max' => 60],   // APP_NAME  (e-mail header / footer)
         'session_live_seconds' => ['type' => 'int',    'min' => 30, 'max' => 1800], // SESSION_LIVE_SECONDS
         'google_client_ids'    => ['type' => 'string', 'min' => 0,  'max' => 700],  // GOOGLE_CLIENT_IDS (public IDs)
+        // حماية رموز OTP (OtpGuard): غلطات متراكمة => حظر، وحد إرسال في النافذة.
+        'otp_max_wrong'           => ['type' => 'int', 'min' => 1, 'max' => 20],   // OTP_MAX_WRONG
+        'otp_block_minutes'       => ['type' => 'int', 'min' => 1, 'max' => 1440], // OTP_BLOCK_MINUTES
+        'otp_max_sends'           => ['type' => 'int', 'min' => 1, 'max' => 50],   // OTP_MAX_SENDS
+        'otp_send_window_minutes' => ['type' => 'int', 'min' => 1, 'max' => 1440], // OTP_SEND_WINDOW_MINUTES
     ];
 
     /** @var array<string,string|null>|null */
@@ -190,6 +195,10 @@ final class PlatformPolicy
             'session_live_seconds' => max(30, (int) config('security.single_session.live_seconds', 120)),
             'google_client_ids'    => (string) config('services.google.client_ids', ''),
             'app_token'            => (string) config('site.app_token', ''),
+            'otp_max_wrong'           => max(1, (int) config('security.otp.max_wrong', 5)),
+            'otp_block_minutes'       => max(1, (int) config('security.otp.block_minutes', 10)),
+            'otp_max_sends'           => max(1, (int) config('security.otp.max_sends', 5)),
+            'otp_send_window_minutes' => max(1, (int) config('security.otp.send_window_minutes', 60)),
             default                => '',
         };
     }

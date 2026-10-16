@@ -33,6 +33,7 @@ return [
 
     // رموز OTP (تأكيد الإيميل، نسيان كلمة السر، استرجاع الحساب، "مش أنا"): حد على الحساب كله مش على الرمز الواحد.
     // max_wrong غلطة => حظر block_minutes دقيقة. أكتر من max_sends رمز في send_window_minutes دقيقة => نفس الحظر.
+    // دي القيم الافتراضية؛ الأدمن يقدر يغيّرها من Admin > Platform Policy > OTP protection من غير .env (Reset بيرجّعها لهنا).
     'otp' => [
         'max_wrong'           => (int) env('OTP_MAX_WRONG', 5),
         'block_minutes'       => (int) env('OTP_BLOCK_MINUTES', 10),
