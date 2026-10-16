@@ -57,7 +57,7 @@ class DataAnalysisExamsService
 
     public function filters(): array
     {
-        $universities = DB::table('universities')->select('id', 'official_name_en', 'official_name_ar')->orderBy('official_name_en')->get()
+        $universities = \App\Models\University::applyListable(DB::table('universities'))->select('id', 'official_name_en', 'official_name_ar')->orderBy('official_name_en')->get()
             ->map(fn ($r) => ['id' => (int) $r->id, 'name' => $this->bi($r->official_name_en, $r->official_name_ar)])->all();
 
         $faculties = DB::table('faculties')->select('id', 'university_id', 'name_en', 'name_ar')->orderBy('name_en')->get()

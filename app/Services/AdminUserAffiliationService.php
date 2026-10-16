@@ -133,10 +133,7 @@ class AdminUserAffiliationService
     /** كل الجامعات الشغالة + هيكلها (كليات/أقسام/برامج) للقوائم المنسدلة. */
     public function options(): array
     {
-        $unis = DB::table('universities')->whereNull('deleted_at')
-            ->where(function ($w) {
-                $w->whereNull('user_id')->orWhereIn('user_id', DB::table('users')->whereNull('deleted_at')->select('id'));
-            })
+        $unis = \App\Models\University::applyListable(DB::table('universities'))
             ->orderBy('official_name_en')
             ->get(['id', 'official_name_en', 'official_name_ar', 'verification_status']);
 

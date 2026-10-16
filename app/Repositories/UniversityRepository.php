@@ -34,6 +34,16 @@ class UniversityRepository
             return $university;
         }
 
+        // مينفعش نعمل صف جامعة لحساب مش جامعة (أدمن/طالب/...) ولا لحساب محذوف/محظور —
+        // ده كان بيخلي اسم المستخدم يظهر كجامعة في القوايم حتى بعد الحذف.
+        $account = DB::table('users')->where('id', $userId)->first(['id', 'status', 'deleted_at']);
+        $isUniversityRole = $account && DB::table('user_roles as ur')->join('roles as r', 'r.id', '=', 'ur.role_id')
+            ->where('ur.user_id', $userId)->where('r.slug', 'university')->exists();
+        if (!$account || $account->deleted_at !== null || $account->status === 'banned' || !$isUniversityRole
+            || University::withTrashed()->where('user_id', $userId)->exists()) {
+            throw (new \Illuminate\Database\Eloquent\ModelNotFoundException())->setModel(University::class, [$userId]);
+        }
+
         // The fallback name must never duplicate an existing university.
         if ($fallbackName !== '' && \App\Support\UniversityName::conflicts($fallbackName, $fallbackName, (int) $userId)) {
             $fallbackName .= ' (' . $userId . ')';
@@ -50,7 +60,7 @@ class UniversityRepository
     /** كل الجامعات، مرتبة بالاسم — القايمة اللي فورم طلب شراكة الشركة (بند 6) بيعرضها. @return University[] */
     public function allForRegistration(): array
     {
-        return University::orderBy('official_name_en')->get()->all();
+        return University::applyListable(University::query())->orderBy('official_name_en')->get()->all();
     }
 
     public function find($id): ?University

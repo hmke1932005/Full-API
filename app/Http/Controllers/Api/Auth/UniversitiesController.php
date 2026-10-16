@@ -19,11 +19,7 @@ class UniversitiesController extends Controller
         $nameCol = $locale === 'ar' ? 'official_name_ar' : 'official_name_en';
 
         // الجامعة المحذوفة (صفها أو حساب مالكها) مينفعش تظهر في التسجيل.
-        $data = DB::table('universities')
-            ->whereNull('deleted_at')
-            ->where(function ($w) {
-                $w->whereNull('user_id')->orWhereIn('user_id', DB::table('users')->whereNull('deleted_at')->select('id'));
-            })
+        $data = \App\Models\University::applyListable(DB::table('universities'))
             ->select('id', "{$nameCol} as name")
             ->orderBy($nameCol)
             ->get();

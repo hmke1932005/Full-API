@@ -41,6 +41,24 @@ class University extends Model
         });
     }
 
+    /**
+     * الجامعات المسموح تظهر في أي قايمة اختيار (تسجيل/فلاتر/ربط): مش محذوفة،
+     * وحساب مالكها موجود، مش محذوف، ومش banned، ومعاه role الجامعة.
+     * بتشتغل على Eloquent و DB::table() الاتنين.
+     */
+    public static function applyListable($q, string $col = 'universities.deleted_at', string $userCol = 'universities.user_id')
+    {
+        return $q->whereNull($col)
+            ->whereIn($userCol, function ($sub) {
+                $sub->select('u.id')->from('users as u')
+                    ->join('user_roles as ur', 'ur.user_id', '=', 'u.id')
+                    ->join('roles as r', 'r.id', '=', 'ur.role_id')
+                    ->where('r.slug', 'university')
+                    ->whereNull('u.deleted_at')
+                    ->where('u.status', '!=', 'banned');
+            });
+    }
+
     protected $fillable = [
         'user_id', 'official_name_ar', 'official_name_en', 'slug', 'country', 'city',
         'website', 'logo_path', 'verification_status', 'verified_at', 'verified_by',
