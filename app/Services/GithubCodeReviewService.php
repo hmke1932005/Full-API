@@ -456,6 +456,14 @@ class GithubCodeReviewService
             . '"maintainability_score":number,"architecture_score":number,"quality_score":number,"summary":"1-3 sentence overview",'
             . '"issues":[{"file":"...","line":number,"category":"...","severity":"...","description":"...","recommendation":"...","suggested_fix":"..."}]}';
 
+        // لغة المنصة (X-Locale → UipLocaleMiddleware → app()->getLocale()): لو عربي، النص الحر بالعربي.
+        if (app()->getLocale() === 'ar') {
+            $system .= ' IMPORTANT — LANGUAGE: write every human-readable text value (summary, description, recommendation, and any explanatory text in suggested_fix) in clear Modern Standard Arabic. '
+                . 'Keep the JSON keys, the enum values of category and severity (security, performance, ..., critical, high, ...), file paths, '
+                . 'identifiers, API/class/method names, and code snippets exactly as they are in English/original form — do not translate them. '
+                . 'Code inside suggested_fix stays as code; only add short Arabic explanation around it if needed.';
+        }
+
         $parts = [];
         foreach ($files as $path => $content) {
             $parts[] = "=== File: {$path} ===\n{$content}";
