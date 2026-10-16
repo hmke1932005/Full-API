@@ -59,6 +59,10 @@ final class PlatformPolicy
         'platform_name'        => ['type' => 'string', 'min' => 1,  'max' => 60],   // APP_NAME  (e-mail header / footer)
         'session_live_seconds' => ['type' => 'int',    'min' => 30, 'max' => 1800], // SESSION_LIVE_SECONDS
         'google_client_ids'    => ['type' => 'string', 'min' => 0,  'max' => 700],  // GOOGLE_CLIENT_IDS (public IDs)
+        // Connect GitHub (OAuth App). Secret is stored ENCRYPTED and never echoed back in full.
+        'github_client_id'     => ['type' => 'string', 'min' => 0,  'max' => 100],  // GITHUB_CLIENT_ID
+        'github_client_secret' => ['type' => 'string', 'min' => 0,  'max' => 200, 'secret' => true], // GITHUB_CLIENT_SECRET
+        'github_oauth_redirect' => ['type' => 'string', 'min' => 0, 'max' => 300], // GITHUB_OAUTH_REDIRECT
         // حماية رموز OTP (OtpGuard): غلطات متراكمة => حظر، وحد إرسال في النافذة.
         'otp_max_wrong'           => ['type' => 'int', 'min' => 1, 'max' => 20],   // OTP_MAX_WRONG
         'otp_block_minutes'       => ['type' => 'int', 'min' => 1, 'max' => 1440], // OTP_BLOCK_MINUTES
@@ -195,6 +199,9 @@ final class PlatformPolicy
             'session_live_seconds' => max(30, (int) config('security.single_session.live_seconds', 120)),
             'google_client_ids'    => (string) config('services.google.client_ids', ''),
             'app_token'            => (string) config('site.app_token', ''),
+            'github_client_id'     => (string) config('services.github.client_id', ''),
+            'github_client_secret' => (string) config('services.github.client_secret', ''),
+            'github_oauth_redirect' => (string) config('services.github.redirect', ''),
             'otp_max_wrong'           => max(1, (int) config('security.otp.max_wrong', 5)),
             'otp_block_minutes'       => max(1, (int) config('security.otp.block_minutes', 10)),
             'otp_max_sends'           => max(1, (int) config('security.otp.max_sends', 5)),
@@ -289,6 +296,17 @@ final class PlatformPolicy
             }
             if (!app(\App\Repositories\ApiTokenRepository::class)->findActiveByRawToken($v)) {
                 return [null, 'This is not an active token. Issue one from Mobile App Management and paste it here.'];
+            }
+        }
+        if (in_array($key, ['github_client_id', 'github_client_secret'], true) && $v !== '' && !preg_match('/^[A-Za-z0-9._-]+$/', $v)) {
+            return [null, 'The GitHub value has characters that are not allowed (letters, digits, . _ - only).'];
+        }
+        if ($key === 'github_oauth_redirect' && $v !== '') {
+            if (!filter_var($v, FILTER_VALIDATE_URL) || !preg_match('#^https://#i', $v) && !preg_match('#^http://(localhost|127\.0\.0\.1)#i', $v)) {
+                return [null, 'The callback URL must be a full https:// address.'];
+            }
+            if (!preg_match('#/api/v1/github/callback/?$#', $v)) {
+                return [null, 'The callback URL must end with /api/v1/github/callback.'];
             }
         }
         if ($key === 'google_client_ids' && $v !== '') {

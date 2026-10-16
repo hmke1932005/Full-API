@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\GithubConnection;
 use App\Models\ProjectLink;
+use App\Support\PlatformPolicy;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -21,9 +22,13 @@ class GithubOAuthService
 
     public function isConfigured(): bool
     {
-        return config('services.github.client_id') !== '' && config('services.github.client_secret') !== ''
-            && config('services.github.redirect') !== '';
+        return $this->clientId() !== '' && $this->clientSecret() !== '' && $this->redirectUri() !== '';
     }
+
+    // القيم بتتقرأ من لوحة الأدمن (Platform Policy) أولًا، وبعدين من .env لو الأدمن مدخلهاش.
+    private function clientId(): string { return trim((string) PlatformPolicy::value('github_client_id')); }
+    private function clientSecret(): string { return trim((string) PlatformPolicy::value('github_client_secret')); }
+    private function redirectUri(): string { return trim((string) PlatformPolicy::value('github_oauth_redirect')); }
 
     /** @return string رابط صفحة موافقة GitHub */
     public function authorizeUrl(int $userId): string
@@ -32,8 +37,8 @@ class GithubOAuthService
         Cache::put($this->stateKey($state), $userId, self::STATE_TTL_SECONDS);
 
         return 'https://github.com/login/oauth/authorize?' . http_build_query([
-            'client_id'    => config('services.github.client_id'),
-            'redirect_uri' => config('services.github.redirect'),
+            'client_id'    => $this->clientId(),
+            'redirect_uri' => $this->redirectUri(),
             'scope'        => config('services.github.scope'),
             'state'        => $state,
             'allow_signup' => 'true',
@@ -51,10 +56,10 @@ class GithubOAuthService
         }
 
         $tokenRes = Http::acceptJson()->asForm()->timeout(15)->post('https://github.com/login/oauth/access_token', [
-            'client_id'     => config('services.github.client_id'),
-            'client_secret' => config('services.github.client_secret'),
+            'client_id'     => $this->clientId(),
+            'client_secret' => $this->clientSecret(),
             'code'          => $code,
-            'redirect_uri'  => config('services.github.redirect'),
+            'redirect_uri'  => $this->redirectUri(),
         ]);
         $token = $tokenRes->json('access_token');
         if (!$tokenRes->ok() || !$token) {
@@ -186,10 +191,10 @@ class GithubOAuthService
         $token = $conn->token();
         if ($token && $this->isConfigured()) {
             try {
-                Http::withBasicAuth(config('services.github.client_id'), config('services.github.client_secret'))
+                Http::withBasicAuth($this->clientId(), $this->clientSecret())
                     ->withHeaders(['Accept' => 'application/vnd.github+json', 'User-Agent' => 'UIP-Platform'])
                     ->timeout(10)
-                    ->send('DELETE', self::API . '/applications/' . config('services.github.client_id') . '/grant', ['json' => ['access_token' => $token]]);
+                    ->send('DELETE', self::API . '/applications/' . $this->clientId() . '/grant', ['json' => ['access_token' => $token]]);
             } catch (\Throwable $e) {
                 Log::info('GitHub grant revoke failed (ignored)', ['error' => $e->getMessage()]);
             }
