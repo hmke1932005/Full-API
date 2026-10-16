@@ -13,6 +13,7 @@ use App\Services\TrustedDeviceService;
 use App\Services\UipJwtService;
 use App\Services\UserSessionService;
 use App\Support\AuthCookies;
+use App\Support\OtpGuard;
 use App\Support\SecurityLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -78,10 +79,18 @@ class SessionTakeoverController extends Controller
         }
 
         $key = $this->cacheKey((int) $user->id);
+        $guard = 'takeover:' . (int) $user->id;
+        if ($left = OtpGuard::blockedSeconds($guard)) {
+            return $this->apiError(OtpGuard::message($this->locale($request) === 'ar', $left), ['code' => 'otp_blocked', 'retry_after' => $left], 429);
+        }
         $state = Cache::get($key);
         if ($state && (time() - (int) ($state['sent_at'] ?? 0)) < self::RESEND_AFTER_SECONDS) {
             $wait = self::RESEND_AFTER_SECONDS - (time() - (int) $state['sent_at']);
             return $this->apiError($this->t($request, "استنى {$wait} ثانية قبل إعادة الإرسال.", "Please wait {$wait} seconds before requesting another code."), ['retry_after' => $wait], 429);
+        }
+        // أكتر من حد الرموز في الساعة => حظر (بدل طلب رمز جديد للأبد).
+        if ($left = OtpGuard::registerSend($guard)) {
+            return $this->apiError(OtpGuard::message($this->locale($request) === 'ar', $left), ['code' => 'otp_blocked', 'retry_after' => $left], 429);
         }
 
         $otp = (string) random_int(10000000, 99999999);
@@ -124,6 +133,11 @@ class SessionTakeoverController extends Controller
         }
 
         $key = $this->cacheKey((int) $user->id);
+        $guard = 'takeover:' . (int) $user->id;
+        if ($left = OtpGuard::blockedSeconds($guard)) {
+            Cache::forget($key);
+            return $this->apiError(OtpGuard::message($this->locale($request) === 'ar', $left), ['code' => 'otp_blocked', 'retry_after' => $left], 429);
+        }
         $state = Cache::get($key);
         if (!$state) {
             return $this->apiError($this->t($request, 'الرمز منتهي أو لم يُرسل. اطلب رمز جديد.', 'The code expired or was not requested. Request a new one.'), ['code' => 'otp_expired'], 422);
@@ -136,6 +150,11 @@ class SessionTakeoverController extends Controller
         $given = preg_replace('/\D+/', '', (string) $request->input('otp'));
         if (!hash_equals((string) $state['hash'], $this->hashOtp((int) $user->id, (string) $given))) {
             $state['attempts'] = (int) $state['attempts'] + 1;
+            if ($blockedFor = OtpGuard::recordFailure($guard)) {
+                Cache::forget($key);
+                SecurityLog::write('Session takeover OTP blocked', ['user_id' => $user->id, 'ip' => $request->ip()]);
+                return $this->apiError(OtpGuard::message($this->locale($request) === 'ar', $blockedFor), ['code' => 'otp_blocked', 'retry_after' => $blockedFor], 429);
+            }
             Cache::put($key, $state, now()->addMinutes(self::OTP_TTL_MINUTES));
             SecurityLog::write('Session takeover OTP wrong', ['user_id' => $user->id, 'ip' => $request->ip(), 'attempt' => $state['attempts']]);
             return $this->apiError($this->t($request, 'الرمز غير صحيح.', 'The code is incorrect.'), ['code' => 'otp_invalid'], 422);
@@ -158,6 +177,7 @@ class SessionTakeoverController extends Controller
         }
 
         Cache::forget($key); // الرمز يُستخدم مرة واحدة
+        OtpGuard::recordSuccess($guard);
 
         $newHash = password_hash($password, PASSWORD_BCRYPT);
         DB::table('users')->where('id', $user->id)->update(['password_hash' => $newHash, 'updated_at' => now()]);

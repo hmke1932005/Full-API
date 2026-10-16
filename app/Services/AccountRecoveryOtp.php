@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\OtpGuard;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -25,10 +26,18 @@ class AccountRecoveryOtp
     public function issue(string $scope): array
     {
         $key = $this->key($scope);
+        // حد على العملية كلها (مش على الرمز بس): محظور مؤقتًا أو كتر الطلبات => مفيش رمز جديد.
+        if ($blocked = OtpGuard::blockedSeconds($key)) {
+            return ['otp' => null, 'retry_after' => $blocked];
+        }
         $state = Cache::get($key);
         $resend = (int) config('account_recovery.otp.resend_seconds', 60);
         if ($state && (time() - (int) ($state['sent_at'] ?? 0)) < $resend) {
             return ['otp' => null, 'retry_after' => $resend - (time() - (int) $state['sent_at'])];
+        }
+
+        if ($wait = OtpGuard::registerSend($key)) {
+            return ['otp' => null, 'retry_after' => $wait];
         }
 
         $otp = (string) random_int(10000000, 99999999);
@@ -41,6 +50,11 @@ class AccountRecoveryOtp
     public function verify(string $scope, string $given): string
     {
         $key = $this->key($scope);
+        if (OtpGuard::blockedSeconds($key) > 0) {
+            Cache::forget($key);
+
+            return self::LOCKED;
+        }
         $state = Cache::get($key);
         if (!$state) {
             return self::EXPIRED;
@@ -53,10 +67,16 @@ class AccountRecoveryOtp
         $given = preg_replace('/\D+/', '', $given) ?? '';
         if (!hash_equals((string) $state['hash'], $this->hash($scope, $given))) {
             $state['attempts'] = (int) ($state['attempts'] ?? 0) + 1;
+            if (OtpGuard::recordFailure($key) > 0) {
+                Cache::forget($key);
+
+                return self::LOCKED;
+            }
             Cache::put($key, $state, now()->addMinutes($this->ttl()));
 
             return self::INVALID;
         }
+        OtpGuard::recordSuccess($key);
 
         return self::OK;
     }

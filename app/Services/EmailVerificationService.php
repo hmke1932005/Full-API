@@ -44,6 +44,9 @@ class EmailVerificationService
 
         $otp = app(OtpService::class);
         $code = $otp->issue(self::OTP_PURPOSE, (int) $user->id);
+        if ($code === '') {
+            return false; // الحساب محظور مؤقتًا من طلب رموز (OtpGuard)
+        }
 
         $sent = $this->mail->sendEmailVerificationOtp(
             (string) $user->email,

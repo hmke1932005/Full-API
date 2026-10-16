@@ -31,6 +31,15 @@ return [
     // بيوقّع الـ IP الحقيقي للمستخدم، شوف UipTrustedClientIpMiddleware.
     'proxy_secret' => (string) env('UIP_PROXY_SECRET', ''),
 
+    // رموز OTP (تأكيد الإيميل، نسيان كلمة السر، استرجاع الحساب، "مش أنا"): حد على الحساب كله مش على الرمز الواحد.
+    // max_wrong غلطة => حظر block_minutes دقيقة. أكتر من max_sends رمز في send_window_minutes دقيقة => نفس الحظر.
+    'otp' => [
+        'max_wrong'           => (int) env('OTP_MAX_WRONG', 5),
+        'block_minutes'       => (int) env('OTP_BLOCK_MINUTES', 10),
+        'max_sends'           => (int) env('OTP_MAX_SENDS', 5),
+        'send_window_minutes' => (int) env('OTP_SEND_WINDOW_MINUTES', 60),
+    ],
+
     // دخول دائم (زي فيسبوك): عمر الـ refresh token لما "Persistent sign-in" شغّال في Admin > Platform Policy.
     // بيتجدد مع كل استخدام. المتصفحات بتقص الكوكي عند ~400 يوم، فالسنة هي الحد العملي.
     'persistent_refresh_ttl' => (int) env('PERSISTENT_REFRESH_TTL', 31536000),

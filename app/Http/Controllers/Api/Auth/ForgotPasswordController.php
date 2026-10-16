@@ -55,6 +55,15 @@ class ForgotPasswordController extends Controller
             // برضه مفيش إرسال أسرع من مرة كل 60 ثانية لنفس الحساب (والرد بيفضل ثابت).
             if ($otp->secondsUntilResend(self::OTP_PURPOSE, (int) $user->id) === 0) {
                 $code = $otp->issue(self::OTP_PURPOSE, (int) $user->id);
+                if ($code === '') {
+                    // محظور مؤقتًا (OtpGuard): مفيش إيميل، والرد بيفضل ثابت عشان مفيش تسريب.
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'If an account with that email exists, a reset code has been sent.',
+                        'retry_after' => $retryAfter,
+                        'data' => ['retry_after' => $retryAfter],
+                    ]);
+                }
 
                 $sent = $this->mail->sendPasswordResetOtp(
                     (string) $user->email,
