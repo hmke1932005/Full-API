@@ -40,7 +40,7 @@ final class ExportLocalizer
         'Students Results' => 'نتائج الطلاب', 'Exam Results' => 'نتائج الامتحان',
         'Score Comparison' => 'مقارنة الدرجات', 'Scores' => 'الدرجات', 'Average Scores' => 'متوسط الدرجات',
         'Issues by Severity' => 'المشكلات حسب الخطورة', 'Administrator Decision' => 'قرار المسؤول',
-        'Historical Comparison (All Versions)' => 'المقارنة التاريخية (كل النسخ)', 'Findings' => 'الملاحظات',
+        'Historical Comparison (All Versions)' => 'المقارنة التاريخية (كل النسخ)', 'Historical Comparison (Completed Versions)' => 'المقارنة التاريخية (النسخ المكتملة)', 'Findings' => 'الملاحظات',
         'Version A Findings' => 'ملاحظات النسخة A', 'Version B Findings' => 'ملاحظات النسخة B',
         'AI Code Review' => 'مراجعة الكود بالذكاء الاصطناعي', 'Project Report' => 'تقرير المشروع',
         'University Report' => 'تقرير الجامعة', 'Faculty Report' => 'تقرير الكلية', 'Version Comparison' => 'مقارنة النسخ',

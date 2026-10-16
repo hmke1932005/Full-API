@@ -243,8 +243,13 @@ class CodeReviewReportService
                 [$t('Admin Notes'), $r['admin_notes'] ?: '-'],
             ]];
         }
-        $sections[] = ['title' => 'Historical Comparison (All Versions)', 'header' => ['Version', 'Status', 'Overall Score', 'Issues', 'Date'],
-            'rows' => array_map(fn ($h) => ['v' . $h['version'], $h['status'], $h['overall'] ?? '-', $h['issues'], $h['created_at']], $report['history'])];
+        // Only finished reviews are worth comparing: failed attempts (every re-run that errored creates a version) would
+        // just pad the table. Latest 10 completed versions; skipped entirely when there is nothing to compare against.
+        $done = array_slice(array_values(array_filter($report['history'], fn ($h) => $h['status'] === 'completed' && $h['overall'] !== null)), 0, 10);
+        if (count($done) > 1) {
+            $sections[] = ['title' => 'Historical Comparison (Completed Versions)', 'header' => ['Version', 'Status', 'Overall Score', 'Issues', 'Date'],
+                'rows' => array_map(fn ($h) => ['v' . $h['version'], $h['status'], $h['overall'], $h['issues'], $h['created_at']], $done)];
+        }
 
         $chart = [
             'labels' => ['Overall', 'Security', 'Performance', 'Maintain.', 'Arch.', 'Quality'],
