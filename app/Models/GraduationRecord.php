@@ -19,7 +19,6 @@ class GraduationRecord extends Model
         'degree_title_ar', 'degree_title_en',
         'faculty_name_ar', 'faculty_name_en',
         'department_name_ar', 'department_name_en',
-        'program_name_ar', 'program_name_en',
         'certificate_number', 'notes',
         'approved_by', 'approved_at',
         'revoked_by', 'revoked_at', 'revoke_reason',

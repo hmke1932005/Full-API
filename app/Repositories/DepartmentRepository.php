@@ -91,9 +91,6 @@ class DepartmentRepository
             ->join('faculties as f', 'f.id', '=', 'd.faculty_id')
             ->select('d.*', 'f.name_en as faculty_name_en', 'f.name_ar as faculty_name_ar')
             ->selectSub(function ($q) {
-                $q->selectRaw('COUNT(*)')->from('programs as p')->whereColumn('p.department_id', 'd.id');
-            }, 'programs_count')
-            ->selectSub(function ($q) {
                 $q->selectRaw('COUNT(*)')->from('students as s')->whereColumn('s.department_id', 'd.id');
             }, 'students_count')
             ->selectSub(function ($q) {

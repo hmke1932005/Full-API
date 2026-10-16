@@ -1039,7 +1039,6 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/departments', [FacultyApiController::class, 'storeDepartment']);
 
         Route::post('/departments', [FacultyApiController::class, 'storeOwnDepartment']);
-        Route::post('/departments/{id}/programs', [FacultyApiController::class, 'storeProgram']);
     });
 
     // GET/archive/unarchive أُضيفوا مع صفحة Department Portfolio الجديدة —
@@ -1052,11 +1051,6 @@ Route::prefix('v1')->group(function () {
         Route::patch('/{id}', [FacultyApiController::class, 'updateDepartment']);
         Route::post('/{id}/archive', [FacultyApiController::class, 'archiveDepartment']);
         Route::post('/{id}/unarchive', [FacultyApiController::class, 'unarchiveDepartment']);
-        Route::post('/{id}/programs', [FacultyApiController::class, 'storeProgramForDepartment']);
-    });
-
-    Route::prefix('programs')->middleware('uip.auth')->group(function () {
-        Route::patch('/{id}', [FacultyApiController::class, 'updateProgram']);
     });
 
     // بند 4 — Students portal (8 endpoint، STUDENTS_API_CONTRACT.md) +

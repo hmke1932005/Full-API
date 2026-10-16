@@ -634,7 +634,6 @@ class ExamSystemService
             'university_id'                => $scope['university_id'],
             'faculty_id'                    => $scope['faculty_id'] ?? null,
             'department_id'                 => $scope['department_id'] ?? null,
-            'program_id'                    => $data['program_id'] ?? null,
             'created_by_academic_staff_id'  => $academicStaffId,
             'title'                         => trim($data['title']),
             'description'                   => $data['description'] ?? null,
@@ -680,7 +679,7 @@ class ExamSystemService
             'title', 'description', 'subject', 'exam_type', 'academic_year', 'semester',
             'duration_minutes', 'start_at', 'end_at', 'max_attempts', 'passing_score',
             'instructions', 'randomize_questions', 'randomize_options', 'result_visibility',
-            'program_id', 'secure_mode_enabled', 'max_violations',
+            'secure_mode_enabled', 'max_violations',
             'auto_submit_on_timeout', 'allow_back_navigation', 'show_answer_review', 'show_score_only',
             'late_grace_minutes', 'late_penalty_percent',
             'single_session_enabled', 'proctoring_mode', 'identity_check_required', 'snapshot_interval_seconds',
@@ -1048,11 +1047,6 @@ class ExamSystemService
             throw new \InvalidArgumentException("Department #{$departmentId} was not found in your university.");
         }
 
-        $programId = !empty($row['program_id']) ? (int) $row['program_id'] : null;
-        if ($programId !== null && !$this->programBelongsToUniversity($programId, $universityId)) {
-            throw new \InvalidArgumentException("Program #{$programId} was not found in your university.");
-        }
-
         $groupId = !empty($row['group_id']) ? (int) $row['group_id'] : null;
         if ($groupId !== null && !$this->groups->findOwned($groupId, $universityId)) {
             throw new \InvalidArgumentException("Group #{$groupId} was not found in your university.");
@@ -1068,20 +1062,9 @@ class ExamSystemService
         return [
             'faculty_id'    => $facultyId,
             'department_id' => $departmentId,
-            'program_id'    => $programId,
             'academic_year' => $academicYear,
             'group_id'      => $groupId,
         ];
-    }
-
-    private function programBelongsToUniversity(int $programId, int $universityId): bool
-    {
-        return DB::table('programs as p')
-            ->join('departments as d', 'd.id', '=', 'p.department_id')
-            ->join('faculties as f', 'f.id', '=', 'd.faculty_id')
-            ->where('p.id', $programId)
-            ->where('f.university_id', $universityId)
-            ->exists();
     }
 
     /**

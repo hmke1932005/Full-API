@@ -189,8 +189,7 @@ class StudentsApiController extends Controller
             $userId,
             $universityId,
             $this->nullableInt($request, 'faculty_id'),
-            $this->nullableInt($request, 'department_id'),
-            $this->nullableInt($request, 'program_id')
+            $this->nullableInt($request, 'department_id')
         );
 
         return $result['success']
@@ -332,7 +331,6 @@ class StudentsApiController extends Controller
             $this->nullableInt($request, 'academic_year'),
             $this->nullableInt($request, 'group_id'),
             $locale,
-            $this->nullableInt($request, 'program_id'),
             $this->nullableInt($request, 'current_semester'),
             $request->input('study_start_date'),
             $request->input('password') !== null ? (string) $request->input('password') : null,
@@ -579,7 +577,7 @@ class StudentsApiController extends Controller
             }
         }
 
-        if ($request->input('faculty_id') !== null || $request->input('department_id') !== null || $request->input('program_id') !== null) {
+        if ($request->input('faculty_id') !== null || $request->input('department_id') !== null ) {
             $attempted = true;
             $r = $this->management->updateAffiliation(
                 $id,
@@ -587,7 +585,6 @@ class StudentsApiController extends Controller
                 $actingUserId,
                 $this->nullableInt($request, 'faculty_id'),
                 $this->nullableInt($request, 'department_id'),
-                $this->nullableInt($request, 'program_id'),
                 $locale,
                 $scope['facultyId']
             );
@@ -645,7 +642,7 @@ class StudentsApiController extends Controller
 
         if (!$attempted) {
             return $this->apiError(
-                'No updatable fields provided. Supported: full_name, avatar, faculty_id, department_id, program_id, '
+                'No updatable fields provided. Supported: full_name, avatar, faculty_id, department_id, '
                 . 'student_number, academic_year, current_semester, study_start_date, expected_graduation_date, account_status.',
                 null,
                 422
@@ -868,7 +865,6 @@ class StudentsApiController extends Controller
             'faculty_id'               => isset($s['faculty_id']) && $s['faculty_id'] !== null ? (int) $s['faculty_id'] : null,
             'department'               => $s['department'],
             'department_id'            => isset($s['department_id']) && $s['department_id'] !== null ? (int) $s['department_id'] : null,
-            'program_id'               => isset($s['program_id']) && $s['program_id'] !== null ? (int) $s['program_id'] : null,
             'group_id'                 => $s['group_id'] !== null ? (int) $s['group_id'] : null,
             'group_name'               => $s['group_name'] ?? null,
             'account_status'           => $s['account_status'],
@@ -902,8 +898,6 @@ class StudentsApiController extends Controller
             'faculty_name'             => $locale === 'ar' ? ($s['faculty_name_ar'] ?? null) : ($s['faculty_name_en'] ?? null),
             'department_id'            => $s['department_id'] !== null ? (int) $s['department_id'] : null,
             'department_name'          => $locale === 'ar' ? ($s['department_name_ar'] ?? null) : ($s['department_name_en'] ?? null),
-            'program_id'               => $s['program_id'] !== null ? (int) $s['program_id'] : null,
-            'program_name'             => $locale === 'ar' ? ($s['program_name_ar'] ?? null) : ($s['program_name_en'] ?? null),
             'group_id'                 => $s['group_id'] !== null ? (int) $s['group_id'] : null,
             'bio'                      => $s['bio'] ?? null,
             'study_start_date'         => $s['study_start_date'] ?? null,

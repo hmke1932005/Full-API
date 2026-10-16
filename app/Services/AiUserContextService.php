@@ -150,11 +150,6 @@ class AiUserContextService
         $dept = $s->department_id ? DB::table('departments')->where('id', $s->department_id)->first(['name_en', 'name_ar']) : null;
         $out['department'] = $dept ? $this->bilingual($dept->name_en, $dept->name_ar) : ($s->department ?: null);
 
-        $program = $s->program_id ? DB::table('programs')->where('id', $s->program_id)->first() : null;
-        if ($program) {
-            $out['details']['Program'] = $this->bilingual($program->name_en ?? null, $program->name_ar ?? null);
-        }
-
         $out['details']['Student number'] = $s->student_number ?: null;
         $out['details']['Academic year'] = $s->academic_year ?: null;
         $out['details']['Current semester'] = $s->current_semester ?: null;

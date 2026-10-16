@@ -18,7 +18,7 @@ class AcademicRolesSeeder extends Seeder
             'faculty' => [
                 'name_ar' => 'كلية',
                 'name_en' => 'Faculty',
-                'description' => 'Faculty account managing departments, programs, academic staff and student approvals',
+                'description' => 'Faculty account managing departments, academic staff and student approvals',
                 'permissions' => ['project.approve', 'project.view_all', 'analytics.view', 'reports.generate', 'messaging.use', 'notifications.manage'],
             ],
             'academic_staff' => [

@@ -20,12 +20,12 @@
 - **Route جديد**: `GET questions/{id}/versions` في `routes/api.php`.
 
 ⚠️ **ملاحظة معروفة (Known limitation)**: `showQuestionVersions()` بيستخدم `findOwnedQuestion()` اللي بيستثني الأسئلة المحذوفة (soft-deleted) افتراضيًا — يعني تقدر تشوف تاريخ سؤال لسه موجود، بس لو اتحذف مش هتقدر توصله من الـ endpoint ده حاليًا (البيانات نفسها محفوظة في الجدول وسليمة، بس محتاجة تعديل بسيط في `findOwned()` لو عايز endpoint يدعم `withTrashed()` صراحة).
-- `database/migrations/2020_01_01_000000_create_test_support_tables.php` — migration **للاختبار بس**، بتعمل نسخة مصغّرة من جداول (`students`, `faculties`, `departments`, `programs`, `student_groups`, `universities`, `academic_staff`, `settings`) اللي الباتش ده بيفترض وجودها من التطبيق الأصلي الأكبر، بالإضافة لأعمدة إضافية على `users` (uuid/full_name/password_hash/status) عشان تطابق شكل الموديل الحقيقي.
+- `database/migrations/2020_01_01_000000_create_test_support_tables.php` — migration **للاختبار بس**، بتعمل نسخة مصغّرة من جداول (`students`, `faculties`, `departments`, `student_groups`, `universities`, `academic_staff`, `settings`) اللي الباتش ده بيفترض وجودها من التطبيق الأصلي الأكبر، بالإضافة لأعمدة إضافية على `users` (uuid/full_name/password_hash/status) عشان تطابق شكل الموديل الحقيقي.
 - `phpunit.sandbox.xml` — إعداد PHPUnit بديل بيستخدم **MySQL/MariaDB** بدل SQLite، لأن بيئة الاختبار (sandbox) اللي اتكتبت فيها الاختبارات دي معندهاش PHP 8.4 مع pdo_sqlite سوا.
 
 ## ⚠️ مهم جدًا قبل ما تشغّل الاختبارات دي في بيئتك
 
-1. **الجداول الأساسية**: لو عندك بالفعل جداول `students`/`faculties`/`departments`/`programs`/`student_groups`/`universities`/`academic_staff`/`settings` من التطبيق الأصلي (اللي الباتش ده مبني فوقه)، **متشغّلش** migration الـ `2020_01_01_000000_create_test_support_tables.php` — هتتعارض مع الجداول الحقيقية. امسحها أو استثنيها من `migrate`.
+1. **الجداول الأساسية**: لو عندك بالفعل جداول `students`/`faculties`/`departments`/`student_groups`/`universities`/`academic_staff`/`settings` من التطبيق الأصلي (اللي الباتش ده مبني فوقه)، **متشغّلش** migration الـ `2020_01_01_000000_create_test_support_tables.php` — هتتعارض مع الجداول الحقيقية. امسحها أو استثنيها من `migrate`.
 2. **PHP Version**: المشروع ده محتاج PHP 8.4 فعليًا (مش بس composer.json — فيه كود جوه `symfony/http-foundation` بيستخدم property hooks متسندة على 8.4 بس). لو سيرفرك على PHP 8.3 هيفشل أي أمر artisan.
 3. **الإعداد الأصلي (`phpunit.xml`)**: لو بيئتك فيها PHP 8.4 + pdo_sqlite (زي المفروض)، استخدم `phpunit.xml` الأصلي عادي (SQLite :memory:) واتجاهل `phpunit.sandbox.xml` (ده كان بديل مؤقت هنا بس).
 4. **تشغيل الاختبارات**:

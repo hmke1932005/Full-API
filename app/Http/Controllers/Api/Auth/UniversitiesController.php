@@ -47,18 +47,9 @@ class UniversitiesController extends Controller
             ->select('id', 'faculty_id', "{$nameCol} as name")
             ->get();
 
-        $departmentIds = $departments->pluck('id');
-
-        $programs = DB::table('programs')
-            ->whereIn('department_id', $departmentIds)
-            ->where('status', 'active')
-            ->select('id', 'department_id', "{$nameCol} as name")
-            ->get();
-
         return response()->json([
             'faculties'   => $faculties,
             'departments' => $departments,
-            'programs'    => $programs,
         ]);
     }
 }

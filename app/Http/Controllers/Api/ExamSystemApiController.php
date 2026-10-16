@@ -651,7 +651,6 @@ class ExamSystemApiController extends Controller
             'randomize_questions' => 'nullable|boolean',
             'randomize_options'   => 'nullable|boolean',
             'result_visibility'   => 'nullable|in:immediate,after_close,manual',
-            'program_id'          => 'nullable|integer',
             'secure_mode_enabled' => 'nullable|boolean',
             'max_violations'      => 'nullable|integer|min:1|max:255',
             'auto_submit_on_timeout' => 'nullable|boolean',
@@ -985,7 +984,6 @@ class ExamSystemApiController extends Controller
             'targets.*.student_id'     => 'nullable|integer',
             'targets.*.faculty_id'     => 'nullable|integer',
             'targets.*.department_id'  => 'nullable|integer',
-            'targets.*.program_id'     => 'nullable|integer',
             'targets.*.academic_year'  => 'nullable|integer|min:1|max:8',
             'targets.*.group_id'       => 'nullable|integer',
         ]);

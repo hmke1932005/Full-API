@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * يطابق جدول `students` القديم بالظبط: العمود الأصلي (migration الأساسية)
- * + faculty_id/department_id/program_id (migration 100/102) +
+ * + faculty_id/department_id (migration 100/102) +
  * study_start_date/expected_graduation_date (migration 103) +
  * group_id/invitation_status/invited_at/accepted_at/expires_at
  * (migration 099). الأعمدة النصية القديمة faculty/department متسيبة
@@ -19,7 +19,7 @@ class Student extends Model
 
     protected $fillable = [
         'user_id', 'university_id', 'student_number', 'faculty', 'department',
-        'faculty_id', 'department_id', 'program_id',
+        'faculty_id', 'department_id',
         'study_start_date', 'expected_graduation_date',
         'academic_year', 'current_semester', 'gpa', 'bio', 'skills', 'social_links',
         'group_id', 'invitation_status', 'invited_at', 'accepted_at', 'expires_at',

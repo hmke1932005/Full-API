@@ -9,14 +9,14 @@ use Illuminate\Support\Str;
 
 /**
  * Generates a full demo hierarchy in one go:
- *   universities -> faculties -> departments -> programs
+ *   universities -> faculties -> departments
  *   + faculty accounts, academic staff (doctors), supervisors
  *   + N students (default 10,000), each with an account and a project,
  *     some projects with teammates.
  *
  * Every user created is logged in demo_seed_log under a batch id in
  * demo_seed_batches, so a batch can be removed later with --purge.
- * Deleting the users cascades to universities/faculties/departments/programs,
+ * Deleting the users cascades to universities/faculties/departments,
  * students, projects, staff, supervisors, team members.
  *
  * Usage:
@@ -162,7 +162,7 @@ class SeedDemoData extends Command
         $ids = DB::table('demo_seed_log')->where('batch_id', $batchId)->where('table_name', 'users')->pluck('record_id')->all();
         $bar = $this->output->createProgressBar(count($ids));
         $bar->start();
-        // Cascades remove universities, faculties, departments, programs, students, projects, staff, supervisors...
+        // Cascades remove universities, faculties, departments, students, projects, staff, supervisors...
         foreach (array_chunk($ids, 200) as $chunk) {
             DB::table('users')->whereIn('id', $chunk)->delete();
             $bar->advance(count($chunk));
@@ -253,7 +253,7 @@ class SeedDemoData extends Command
     }
 
     /**
-     * @return array<int, array> universities with faculties/departments/programs/supervisors
+     * @return array<int, array> universities with faculties/departments/supervisors
      */
     private function buildOrganizations(int $uniCount, int $facCount, int $depCount, int $staffPerDept, int $supPerUni, array $rankIds): array
     {
@@ -290,7 +290,7 @@ class SeedDemoData extends Command
                 $groupIds[$year] = DB::table('student_groups')->insertGetId(['university_id' => $universityId, 'name' => $name, 'max_members' => null]);
             }
 
-            $uni = ['id' => $universityId, 'user_id' => $userId, 'groups' => $groupIds, 'programs' => [], 'supervisors' => [], 'faculties' => []];
+            $uni = ['id' => $universityId, 'user_id' => $userId, 'groups' => $groupIds, 'depts' => [], 'supervisors' => [], 'faculties' => []];
 
             $staffNo = 0;
             for ($f = 1; $f <= $facCount; $f++) {
@@ -319,18 +319,8 @@ class SeedDemoData extends Command
                         'status' => 'active',
                         'is_public' => 1,
                     ]);
-                    $programId = DB::table('programs')->insertGetId([
-                        'department_id' => $departmentId,
-                        'name_ar' => "بكالوريوس {$depAr}",
-                        'name_en' => "Bachelor of {$depEn}",
-                        'code' => strtoupper(substr(Str::slug($depEn, ''), 0, 4)) . "{$u}{$f}{$d}",
-                        'degree_type' => 'bachelor',
-                        'duration_years' => 4.0,
-                        'status' => 'active',
-                        'is_public' => 1,
-                    ]);
-                    $uni['programs'][] = [
-                        'id' => $programId, 'department_id' => $departmentId, 'faculty_id' => $facultyId,
+                    $uni['depts'][] = [
+                        'department_id' => $departmentId, 'faculty_id' => $facultyId,
                         'faculty_name' => $facEn, 'department_name' => $depEn,
                     ];
 
@@ -405,7 +395,7 @@ class SeedDemoData extends Command
 
         foreach ($tree as $ui => $uni) {
             $remaining = $perUni[$ui];
-            $programs = $uni['programs'];
+            $depts = $uni['depts'];
 
             while ($remaining > 0) {
                 $n = min(self::CHUNK, $remaining);
@@ -415,7 +405,7 @@ class SeedDemoData extends Command
                 $meta = [];
                 for ($i = 0; $i < $n; $i++) {
                     $this->seq++;
-                    $prog = $programs[array_rand($programs)];
+                    $prog = $depts[array_rand($depts)];
                     $year = random_int(1, 4);
                     $email = "student{$this->seq}.{$this->tag}@uip.demo";
                     $name = $this->randomName();
@@ -441,7 +431,7 @@ class SeedDemoData extends Command
                         'current_semester' => $m['year'] * 2 - random_int(0, 1),
                         'group_id' => $uni['groups'][$m['year']],
                         'invitation_status' => 'accepted', 'accepted_at' => now(),
-                        'faculty_id' => $p['faculty_id'], 'department_id' => $p['department_id'], 'program_id' => $p['id'],
+                        'faculty_id' => $p['faculty_id'], 'department_id' => $p['department_id'],
                         'study_start_date' => $start->format('Y-m-d'),
                         'expected_graduation_date' => $start->copy()->addYears(4)->format('Y-m-d'),
                     ];

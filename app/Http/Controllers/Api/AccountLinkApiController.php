@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 /**
  * Link existing platform accounts to the caller's university / faculty.
  *   GET  /api/v1/people/lookup?type=student|academic_staff|supervisor&email=…
- *   POST /api/v1/people/link/student         {email, faculty_id?, department_id?, program_id?, group_id?, academic_year?, current_semester?, student_number?}
+ *   POST /api/v1/people/link/student         {email, faculty_id?, department_id?, group_id?, academic_year?, current_semester?, student_number?}
  *   POST /api/v1/people/link/academic-staff  {email, faculty_id?, department_id?, academic_rank_id?, staff_number?, bio?}
  *   POST /api/v1/people/link/supervisor      {email, department?, title?, permissions?[]}   (university only)
  * University accounts act on their whole university; faculty accounts are locked to their own faculty
@@ -74,7 +74,7 @@ class AccountLinkApiController extends Controller
         }
         $res = $this->links->linkStudent(
             $scope['universityId'], $scope['userId'], (string) $request->input('email', ''),
-            $this->int($request, 'faculty_id'), $this->int($request, 'department_id'), $this->int($request, 'program_id'),
+            $this->int($request, 'faculty_id'), $this->int($request, 'department_id'),
             $this->int($request, 'group_id'), $this->int($request, 'academic_year'), $this->int($request, 'current_semester'),
             $request->input('student_number'), (string) $request->input('locale', 'ar'), $scope['facultyId']
         );

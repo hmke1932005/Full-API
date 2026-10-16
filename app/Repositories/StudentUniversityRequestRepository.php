@@ -17,8 +17,8 @@ class StudentUniversityRequestRepository
 {
     /**
      * SELECT مشترك للاستعلامين تحت: بيانات حساب الطالب (full_name/email)
-     * + اسم الكلية/القسم/البرنامج *المطلوبين* (عبر r.faculty_id/
-     * department_id/program_id، migration 105) — مش s.faculty/s.department
+     * + اسم الكلية/القسم *المطلوبين* (عبر r.faculty_id/
+     * department_id، migration 105) — مش s.faculty/s.department
      * اللي بتفضل NULL لحد ما الطلب ده بالظبط يتقبل.
      */
     private function baseQuery()
@@ -29,15 +29,13 @@ class StudentUniversityRequestRepository
             ->leftJoin('universities as uni', 'uni.id', '=', 'r.university_id')
             ->leftJoin('faculties as f', 'f.id', '=', 'r.faculty_id')
             ->leftJoin('departments as d', 'd.id', '=', 'r.department_id')
-            ->leftJoin('programs as p', 'p.id', '=', 'r.program_id')
             ->select(
                 'r.*',
                 's.student_number', 's.academic_year',
                 'u.full_name', 'u.email',
                 'uni.official_name_en as req_university_en', 'uni.official_name_ar as req_university_ar',
                 'f.name_en as req_faculty_en', 'f.name_ar as req_faculty_ar',
-                'd.name_en as req_department_en', 'd.name_ar as req_department_ar',
-                'p.name_en as req_program_en', 'p.name_ar as req_program_ar'
+                'd.name_en as req_department_en', 'd.name_ar as req_department_ar'
             );
     }
 
@@ -93,14 +91,13 @@ class StudentUniversityRequestRepository
     }
 
     /** بيقدّم الطالب طلب انضمام جديد لجامعة (status='pending' افتراضيًا). */
-    public function create(int $studentId, int $universityId, ?int $facultyId, ?int $departmentId, ?int $programId): StudentUniversityRequest
+    public function create(int $studentId, int $universityId, ?int $facultyId, ?int $departmentId): StudentUniversityRequest
     {
         return StudentUniversityRequest::create([
             'student_id'    => $studentId,
             'university_id' => $universityId,
             'faculty_id'    => $facultyId,
             'department_id' => $departmentId,
-            'program_id'    => $programId,
             'status'        => 'pending',
         ]);
     }

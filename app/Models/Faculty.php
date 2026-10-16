@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * يطابق جدول `faculties` القديم بالظبط (migration 100 + 106 user_id).
  * تابعة لجامعة واحدة (university_id). جزء من التسلسل الهرمي
- * University -> Faculty -> Department -> Program.
+ * University -> Faculty -> Department.
  */
 class Faculty extends Model
 {

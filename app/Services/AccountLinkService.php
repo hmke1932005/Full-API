@@ -7,7 +7,6 @@ use App\Repositories\AcademicRankRepository;
 use App\Repositories\AcademicStaffRepository;
 use App\Repositories\DepartmentRepository;
 use App\Repositories\FacultyRepository;
-use App\Repositories\ProgramRepository;
 use App\Repositories\StudentGroupRepository;
 use App\Repositories\StudentRepository;
 use App\Repositories\SupervisorRepository;
@@ -39,7 +38,6 @@ class AccountLinkService
         private SupervisorRepository $supervisors,
         private FacultyRepository $faculties,
         private DepartmentRepository $departments,
-        private ProgramRepository $programs,
         private StudentGroupRepository $groups,
         private AcademicRankRepository $ranks,
         private UniversityRepository $universities,
@@ -142,7 +140,7 @@ class AccountLinkService
         return $u ? ($u->name($locale) ?: $u->name('en')) : '';
     }
 
-    public function linkStudent($universityId, $actingUserId, string $email, ?int $facultyId, ?int $departmentId, ?int $programId, ?int $groupId, ?int $academicYear, ?int $currentSemester, ?string $studentNumber, string $locale = 'ar', ?int $scopeFacultyId = null): array
+    public function linkStudent($universityId, $actingUserId, string $email, ?int $facultyId, ?int $departmentId, ?int $groupId, ?int $academicYear, ?int $currentSemester, ?string $studentNumber, string $locale = 'ar', ?int $scopeFacultyId = null): array
     {
         if ($scopeFacultyId !== null) {
             $facultyId = $scopeFacultyId;
@@ -163,13 +161,6 @@ class AccountLinkService
                 return $this->fail($locale, 'القسم المختار غير صحيح أو لا يتبع الكلية.', 'The selected department is invalid for that faculty.');
             }
         }
-        $program = null;
-        if ($programId) {
-            $program = $department ? $this->programs->findOwnedByDepartment($programId, $department->id) : null;
-            if (!$program) {
-                return $this->fail($locale, 'البرنامج المختار غير صحيح.', 'The selected program is invalid.');
-            }
-        }
         if ($groupId && !$this->groups->findOwned($groupId, $universityId)) {
             $groupId = null;
         }
@@ -184,7 +175,6 @@ class AccountLinkService
             'student_number' => $studentNumber ?: $student->student_number,
             'faculty_id'     => $faculty?->id,
             'department_id'  => $department?->id,
-            'program_id'     => $program?->id,
             'faculty'        => $faculty ? $faculty->name($locale) : $student->faculty,
             'department'     => $department ? $department->name($locale) : $student->department,
             'academic_year'  => $academicYear ?? $student->academic_year,

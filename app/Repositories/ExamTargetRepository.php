@@ -67,7 +67,7 @@ class ExamTargetRepository
         }
 
         return DB::select(
-            "SELECT s.id, s.student_number, s.faculty_id, s.department_id, s.program_id,
+            "SELECT s.id, s.student_number, s.faculty_id, s.department_id,
                     s.academic_year, s.group_id, u.full_name, u.email
              FROM students s
              INNER JOIN users u ON u.id = s.user_id
@@ -213,8 +213,6 @@ class ExamTargetRepository
                         })->where(function ($q3) use ($student) {
                             $q3->whereNull('t.department_id')->orWhere('t.department_id', $student->department_id);
                         })->where(function ($q3) use ($student) {
-                            $q3->whereNull('t.program_id')->orWhere('t.program_id', $student->program_id);
-                        })->where(function ($q3) use ($student) {
                             $q3->whereNull('t.academic_year')->orWhere('t.academic_year', $student->academic_year);
                         })->where(function ($q3) use ($student) {
                             $q3->whereNull('t.group_id')->orWhere('t.group_id', $student->group_id);
@@ -235,7 +233,6 @@ class ExamTargetRepository
         return array_map(fn (ExamTarget $t) => [
             'faculty_id'    => $t->faculty_id,
             'department_id' => $t->department_id,
-            'program_id'    => $t->program_id,
             'academic_year' => $t->academic_year,
             'group_id'      => $t->group_id,
             'student_id'    => $t->student_id,
@@ -248,7 +245,6 @@ class ExamTargetRepository
         return [
             'faculty_id'    => $isStudent ? null : ($row['faculty_id'] ?? null),
             'department_id' => $isStudent ? null : ($row['department_id'] ?? null),
-            'program_id'    => $isStudent ? null : ($row['program_id'] ?? null),
             'academic_year' => $isStudent ? null : ($row['academic_year'] ?? null),
             'group_id'      => $isStudent ? null : ($row['group_id'] ?? null),
             'student_id'    => $isStudent ? (int) $row['student_id'] : null,
@@ -275,7 +271,7 @@ class ExamTargetRepository
             }
 
             $conds = [];
-            foreach (['faculty_id', 'department_id', 'program_id', 'group_id', 'academic_year'] as $col) {
+            foreach (['faculty_id', 'department_id', 'group_id', 'academic_year'] as $col) {
                 if (!empty($row[$col])) {
                     $conds[] = "s.$col = ?";
                     $params[] = (int) $row[$col];

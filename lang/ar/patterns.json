@@ -90,11 +90,6 @@
   "groups": 1
  },
  {
-  "regex": "^Program\\ \\#(.+?)\\ was\\ not\\ found\\ in\\ your\\ university\\.$",
-  "ar": "البرنامج رقم {1} غير موجود في جامعتك.",
-  "groups": 1
- },
- {
   "regex": "^Group\\ \\#(.+?)\\ was\\ not\\ found\\ in\\ your\\ university\\.$",
   "ar": "المجموعة رقم {1} غير موجودة في جامعتك.",
   "groups": 1

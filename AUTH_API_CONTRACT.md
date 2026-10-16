@@ -134,7 +134,7 @@ use the Bcrypt algorithm."** السبب: القديم بيستخدم دوال PH
   "password": "string, required, min 8, confirmed (يعني لازم password_confirmation)",
   "role": "string, required — لازم يكون من roleLabels() المتاحة للتسجيل العام فقط",
   "university_id": "int, optional (لو role=student)",
-  "faculty_id": "int, optional", "department_id": "int, optional", "program_id": "int, optional"
+  "faculty_id": "int, optional", "department_id": "int, optional"
 }
 ```
 > كل حساب (طالب/جامعة/دكتور/مشرف/أدمن…) لازم يكون له اسم بالعربي `name_ar` وبالإنجليزي `name_en`. عمود `users.full_name` بيتحسب تلقائيًا (حسب لغة الطلب `X-Locale`) للتوافق مع الكود القديم ومبقاش يتبعت من العميل. نفس الحقلين مطلوبين في: `POST /admin/users`، `POST /students`، `POST /academic-staff`، `POST /supervisors`، وتعديل البروفايل (`/students/me`، `/*/settings/profile`). الاستيراد الجماعي بيستخدم عمودي `name_ar` و`name_en`. فشل التحقق بيرجع 422 مع `errors.name_ar` / `errors.name_en`.
@@ -249,8 +249,7 @@ use the Bcrypt algorithm."** السبب: القديم بيستخدم دوال PH
 ```json
 {
   "faculties":   [ { "id": 1, "name": "..." } ],
-  "departments": [ { "id": 1, "faculty_id": 1, "name": "..." } ],
-  "programs":    [ { "id": 1, "department_id": 1, "name": "..." } ]
+  "departments": [ { "id": 1, "faculty_id": 1, "name": "..." } ]
 }
 ```
 
@@ -395,5 +394,5 @@ Body: `{ "id_token": "..." }`
 - توكن غلط/منتهي/aud غلط → 401.
 
 ### `POST /api/v1/auth/google/complete`  (throttle 10/min)
-Body: `{ registration_token, name_ar, name_en, university_id?, faculty_id?, department_id?, program_id?, preferred_language? }`
+Body: `{ registration_token, name_ar, name_en, university_id?, faculty_id?, department_id?, preferred_language? }`
 بينشئ حساب **طالب** (`status=active`, `email_verified_at=now`) بإيميل جوجل والاسمين اللي اتأكدوا (`BilingualName`)، وبيحمّل صورة جوجل لـ `avatar_path` (best-effort)، وبيبعت طلب الانضمام للجامعة لو اتحددت، وبعدها نفس رد اللوجين. `registration_token` منتهي → 422 `errors.code = signup_expired`. الحساب بيتعمل له باسورد عشوائي مجهول؛ لو الطالب عايز يدخل بالإيميل كمان يستخدم "نسيت كلمة السر".

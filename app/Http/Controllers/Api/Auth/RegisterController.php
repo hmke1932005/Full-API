@@ -178,9 +178,8 @@ class RegisterController extends Controller
         $university_id = $request->input('university_id');
         $faculty_id    = $request->input('faculty_id');
         $department_id = $request->input('department_id');
-        $program_id    = $request->input('program_id');
 
-        $user = DB::transaction(function () use ($data, $university_id, $faculty_id, $department_id, $program_id, $reclaimable, $existing) {
+        $user = DB::transaction(function () use ($data, $university_id, $faculty_id, $department_id, $reclaimable, $existing) {
             $newHash = password_hash($data['password'], PASSWORD_BCRYPT);
 
             if ($reclaimable) {
@@ -234,8 +233,7 @@ class RegisterController extends Controller
                         $user->id,
                         (int) $university_id,
                         $faculty_id ? (int) $faculty_id : null,
-                        $department_id ? (int) $department_id : null,
-                        $program_id ? (int) $program_id : null
+                        $department_id ? (int) $department_id : null
                     );
                 } catch (\Throwable $e) {
                     Log::warning('Join request on registration failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);

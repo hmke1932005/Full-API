@@ -98,11 +98,6 @@ class FacultyRepository
                 $q->selectRaw('COUNT(*)')->from('departments as d')->whereColumn('d.faculty_id', 'f.id');
             }, 'departments_count')
             ->selectSub(function ($q) {
-                $q->selectRaw('COUNT(*)')->from('programs as p')
-                    ->join('departments as d', 'd.id', '=', 'p.department_id')
-                    ->whereColumn('d.faculty_id', 'f.id');
-            }, 'programs_count')
-            ->selectSub(function ($q) {
                 $q->selectRaw('COUNT(*)')->from('students as s')->whereColumn('s.faculty_id', 'f.id');
             }, 'students_count')
             ->selectSub(function ($q) {

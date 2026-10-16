@@ -68,7 +68,6 @@ class AdminUsersApiController extends Controller
             'university_id' => $id('university_id'),
             'faculty_id'    => $id('faculty_id'),
             'department_id' => $id('department_id'),
-            'program_id'    => $id('program_id'),
             'academic_year' => $id('academic_year'),
             // affiliation: none = طلاب/مشرفين/هيئة مش مرتبطين بأي جامعة، has = مرتبط بجامعة
             'affiliation'   => $oneOf('affiliation', ['none', 'has']),
@@ -677,7 +676,6 @@ class AdminUsersApiController extends Controller
             'university_id' => 'required|integer',
             'faculty_id'    => 'nullable|integer',
             'department_id' => 'nullable|integer',
-            'program_id'    => 'nullable|integer',
         ]);
 
         $svc = app(AdminUserAffiliationService::class);
@@ -685,7 +683,6 @@ class AdminUsersApiController extends Controller
             (int) $target['id'], (int) $data['university_id'],
             !empty($data['faculty_id']) ? (int) $data['faculty_id'] : null,
             !empty($data['department_id']) ? (int) $data['department_id'] : null,
-            !empty($data['program_id']) ? (int) $data['program_id'] : null,
             (int) $request->attributes->get('uip_user_id')
         );
 

@@ -44,14 +44,12 @@ class StudentRepository
             ->leftJoin('universities as uni', 'uni.id', '=', 's.university_id')
             ->leftJoin('faculties as f', 'f.id', '=', 's.faculty_id')
             ->leftJoin('departments as d', 'd.id', '=', 's.department_id')
-            ->leftJoin('programs as p', 'p.id', '=', 's.program_id')
             ->select(
                 's.*',
                 'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.phone', 'u.avatar_path', 'u.status as account_status',
                 'uni.official_name_en as university_name_en', 'uni.official_name_ar as university_name_ar',
                 'f.name_en as faculty_name_en', 'f.name_ar as faculty_name_ar',
-                'd.name_en as department_name_en', 'd.name_ar as department_name_ar',
-                'p.name_en as program_name_en', 'p.name_ar as program_name_ar'
+                'd.name_en as department_name_en', 'd.name_ar as department_name_ar'
             )
             ->where('s.id', $id)
             ->first();
@@ -61,7 +59,7 @@ class StudentRepository
 
     /**
      * التسلسل الهرمي المؤسسي الكامل لطالب واحد (بحساب لوجينه، مش صف
-     * students.id) — جامعة/كلية/قسم/برنامج + مجموعته، لصفحة Contacts
+     * students.id) — جامعة/كلية/قسم + مجموعته، لصفحة Contacts
      * (بند 25). نفس أعمدة withProfileDetails() تقريبًا بس مفتاحة بـ
      * user_id ومعاها group_id/group_name صراحة عشان الفرونت يقرر يعرض
      * كارت "My Group Members" ولا لأ.
@@ -73,7 +71,6 @@ class StudentRepository
             ->leftJoin('universities as uni', 'uni.id', '=', 's.university_id')
             ->leftJoin('faculties as f', 'f.id', '=', 's.faculty_id')
             ->leftJoin('departments as d', 'd.id', '=', 's.department_id')
-            ->leftJoin('programs as p', 'p.id', '=', 's.program_id')
             ->leftJoin('student_groups as g', 'g.id', '=', 's.group_id')
             ->select(
                 's.*',
@@ -81,7 +78,6 @@ class StudentRepository
                 'uni.official_name_en as university_name_en', 'uni.official_name_ar as university_name_ar',
                 'f.name_en as faculty_name_en', 'f.name_ar as faculty_name_ar',
                 'd.name_en as department_name_en', 'd.name_ar as department_name_ar',
-                'p.name_en as program_name_en', 'p.name_ar as program_name_ar',
                 'g.name as group_name'
             )
             ->where('s.user_id', $userId)
@@ -181,7 +177,7 @@ class StudentRepository
             ->leftJoin('student_groups as g', 'g.id', '=', 's.group_id')
             ->select(
                 's.id', 's.student_number', 's.faculty', 's.faculty_id',
-                's.department', 's.department_id', 's.program_id',
+                's.department', 's.department_id',
                 's.academic_year', 's.group_id', 'g.name as group_name',
                 'u.full_name', 'u.name_ar', 'u.name_en', 'u.email'
             )

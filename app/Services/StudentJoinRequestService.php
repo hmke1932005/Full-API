@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Repositories\DepartmentRepository;
 use App\Repositories\FacultyRepository;
-use App\Repositories\ProgramRepository;
 use App\Repositories\StudentRepository;
 use App\Repositories\StudentUniversityRequestRepository;
 use App\Repositories\UniversityRepository;
@@ -29,7 +28,6 @@ class StudentJoinRequestService
         private UniversityRepository $universities,
         private FacultyRepository $faculties,
         private DepartmentRepository $departments,
-        private ProgramRepository $programs,
         private NotificationService $notifications,
         private AuditLogService $auditLog
     ) {
@@ -83,13 +81,11 @@ class StudentJoinRequestService
             // لسه بيقراها (فلاتر/قالب CSV/اختيار نطاق المشرف) يفضل شغال.
             $faculty = $request->faculty_id ? $this->faculties->find($request->faculty_id) : null;
             $department = $request->department_id ? $this->departments->find($request->department_id) : null;
-            $program = $request->program_id ? $this->programs->find($request->program_id) : null;
 
             $student->fill([
                 'university_id' => $universityId,
                 'faculty_id'    => $faculty?->id,
                 'department_id' => $department?->id,
-                'program_id'    => $program?->id,
                 'faculty'       => $faculty ? $faculty->name('en') : $student->faculty,
                 'department'    => $department ? $department->name('en') : $student->department,
             ]);
@@ -113,7 +109,7 @@ class StudentJoinRequestService
             ['status' => 'pending'],
             [
                 'status' => 'approved', 'student_id' => $request->student_id, 'university_id' => $universityId,
-                'faculty_id' => $request->faculty_id, 'department_id' => $request->department_id, 'program_id' => $request->program_id,
+                'faculty_id' => $request->faculty_id, 'department_id' => $request->department_id,
             ]
         );
 
@@ -155,10 +151,10 @@ class StudentJoinRequestService
      * الطالب بيقدّم طلب انضمام لجامعة من صفحة البروفايل بتاعته
      * (Student\StudentProfileController::linkUniversity() القديمة).
      * مرفوض لو الطالب مرتبط بجامعة بالفعل، أو معاه طلب pending لسه ماتقررش
-     * فيه. الجامعة/الكلية/القسم/البرنامج بيتأكد منهم قبل الحفظ.
+     * فيه. الجامعة/الكلية/القسم بيتأكد منهم قبل الحفظ.
      * @return array{success:bool,message:string,request_id?:int}
      */
-    public function submitRequest($userId, int $universityId, ?int $facultyId = null, ?int $departmentId = null, ?int $programId = null): array
+    public function submitRequest($userId, int $universityId, ?int $facultyId = null, ?int $departmentId = null): array
     {
         $student = $this->students->findByUserId($userId);
         if (!$student) {
@@ -184,11 +180,8 @@ class StudentJoinRequestService
         if ($departmentId && (!($department = $this->departments->find($departmentId)) || (int) $department->faculty_id !== (int) $facultyId)) {
             return ['success' => false, 'message' => 'Selected department does not belong to that faculty.'];
         }
-        if ($programId && (!($program = $this->programs->find($programId)) || (int) $program->department_id !== (int) $departmentId)) {
-            return ['success' => false, 'message' => 'Selected program does not belong to that department.'];
-        }
 
-        $request = $this->requests->create((int) $student->id, $universityId, $facultyId, $departmentId, $programId);
+        $request = $this->requests->create((int) $student->id, $universityId, $facultyId, $departmentId);
 
         $this->notifications->notify(
             $university->user_id ?? null,
@@ -227,7 +220,6 @@ class StudentJoinRequestService
         $universityName = $locale === 'ar' ? ($r['req_university_ar'] ?: $r['req_university_en']) : ($r['req_university_en'] ?: $r['req_university_ar']);
         $facultyName = $locale === 'ar' ? ($r['req_faculty_ar'] ?: $r['req_faculty_en']) : ($r['req_faculty_en'] ?: $r['req_faculty_ar']);
         $departmentName = $locale === 'ar' ? ($r['req_department_ar'] ?: $r['req_department_en']) : ($r['req_department_en'] ?: $r['req_department_ar']);
-        $programName = $locale === 'ar' ? ($r['req_program_ar'] ?: $r['req_program_en']) : ($r['req_program_en'] ?: $r['req_program_ar']);
 
         return [
             'id'             => (int) $r['id'],
@@ -238,7 +230,6 @@ class StudentJoinRequestService
             'university'     => $universityName ?: '—',
             'faculty'        => $facultyName ?: '—',
             'department'     => $departmentName ?: '—',
-            'program'        => $programName ?: '—',
             'academic_year'  => $r['academic_year'] ?: '—',
             'status'         => $r['status'],
             'requested_at'   => $r['created_at'] ? date('Y-m-d', strtotime((string) $r['created_at'])) : '—',

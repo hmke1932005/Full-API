@@ -326,10 +326,9 @@ class UserRepository
             ->leftJoin('academic_staff as ast', 'ast.user_id', '=', 'u.id')
             ->leftJoin('faculties as fac', 'fac.user_id', '=', 'u.id')
             ->leftJoin('universities as au', 'au.id', '=', DB::raw('COALESCE(uni.id, s.university_id, sup.university_id, ast.university_id, fac.university_id)'))
-            // الكلية / القسم / البرنامج الفعليين للمستخدم (طالب أو هيئة تدريس أو حساب كلية).
+            // الكلية / القسم الفعليين للمستخدم (طالب أو هيئة تدريس أو حساب كلية).
             ->leftJoin('faculties as ef', 'ef.id', '=', DB::raw('COALESCE(s.faculty_id, ast.faculty_id, fac.id)'))
-            ->leftJoin('departments as ed', 'ed.id', '=', DB::raw('COALESCE(s.department_id, ast.department_id)'))
-            ->leftJoin('programs as ep', 'ep.id', '=', 's.program_id');
+            ->leftJoin('departments as ed', 'ed.id', '=', DB::raw('COALESCE(s.department_id, ast.department_id)'));
     }
 
     /** أعمدة الفرز المسموحة (whitelist) => العمود الفعلي. */
@@ -373,9 +372,6 @@ class UserRepository
         }
         if (!empty($f['department_id'])) {
             $query->whereRaw('COALESCE(s.department_id, ast.department_id) = ?', [(int) $f['department_id']]);
-        }
-        if (!empty($f['program_id'])) {
-            $query->where('s.program_id', (int) $f['program_id']);
         }
         if (!empty($f['academic_year'])) {
             $query->where('s.academic_year', (int) $f['academic_year']);
@@ -515,7 +511,6 @@ class UserRepository
                 DB::raw('COALESCE(uni.official_name_ar, s.faculty) as org_ar'),
                 'ef.name_en as faculty_en', 'ef.name_ar as faculty_ar',
                 'ed.name_en as department_en', 'ed.name_ar as department_ar',
-                'ep.name_en as program_en', 'ep.name_ar as program_ar',
                 DB::raw('COALESCE(s.invitation_status, sup.invitation_status, ast.invitation_status) as invitation_status')
             );
         $this->applyDirectoryFilters($rowsQuery, $filters);

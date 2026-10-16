@@ -25,7 +25,7 @@ class Exam extends Model
     protected $table = 'exams';
 
     protected $fillable = [
-        'university_id', 'faculty_id', 'department_id', 'program_id', 'created_by_academic_staff_id',
+        'university_id', 'faculty_id', 'department_id', 'created_by_academic_staff_id',
         'title', 'description', 'subject', 'course_id', 'exam_type', 'academic_year', 'semester',
         'duration_minutes', 'start_at', 'end_at', 'max_attempts', 'passing_score', 'total_marks',
         'instructions', 'randomize_questions', 'randomize_options', 'result_visibility', 'results_published_at', 'status',

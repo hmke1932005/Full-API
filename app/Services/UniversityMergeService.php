@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
 /**
  * One university = one name. Finds universities that share a (normalised) name and merges
  * each group into ONE: every row that points at a duplicate (students, supervisors, academic
- * staff, faculties/departments/programs, groups, projects, exams, announcements, ...) is moved
+ * staff, faculties/departments, groups, projects, exams, announcements, ...) is moved
  * to the university that is kept, then the duplicate is soft-deleted (restorable).
  *
  * The move is one DB transaction per duplicate, so a failure (e.g. the same supervisor e-mail
@@ -18,8 +18,8 @@ use Illuminate\Support\Facades\Schema;
  */
 class UniversityMergeService
 {
-    /** Tables that hold the faculty/department/program tree itself — handled explicitly. */
-    private const TREE_TABLES = ['faculties', 'departments', 'programs'];
+    /** Tables that hold the faculty/department tree itself — handled explicitly. */
+    private const TREE_TABLES = ['faculties', 'departments'];
 
     /**
      * Groups of live universities that collide on a normalised name (Arabic or English, cross-language too).
@@ -150,8 +150,8 @@ class UniversityMergeService
         $moved = [];
         $tables = array_map(fn ($t) => is_array($t) ? $t['name'] : $t->name ?? $t, Schema::getTables());
 
-        // -- 1. faculty / department / program tree ---------------------------------------
-        $facMap = $depMap = $progMap = [];
+        // -- 1. faculty / department tree ---------------------------------------
+        $facMap = $depMap = [];
         $keepFaculties = DB::table('faculties')->where('university_id', $keepId)->get()->keyBy('slug');
 
         foreach (DB::table('faculties')->where('university_id', $dupId)->get() as $fac) {
@@ -169,16 +169,6 @@ class UniversityMergeService
                     continue;
                 }
                 $depMap[$dep->id] = $depTwin->id;
-                $twinProgs = DB::table('programs')->where('department_id', $depTwin->id)->get();
-                foreach (DB::table('programs')->where('department_id', $dep->id)->get() as $prog) {
-                    $progTwin = $twinProgs->first(fn ($p) => ($prog->code !== null && $prog->code !== '' && $p->code === $prog->code)
-                        || UniversityName::normalize($p->name_en) === UniversityName::normalize($prog->name_en));
-                    if ($progTwin) {
-                        $progMap[$prog->id] = $progTwin->id;
-                    } else {
-                        DB::table('programs')->where('id', $prog->id)->update(['department_id' => $depTwin->id]);
-                    }
-                }
                 // Keep the emptied twin as an archived row (nothing is hard-deleted).
                 DB::table('departments')->where('id', $dep->id)->update(['status' => 'inactive', 'slug' => $dep->slug . '-merged-' . $dep->id]);
             }
@@ -189,7 +179,7 @@ class UniversityMergeService
             ]);
         }
 
-        foreach (['faculty_id' => $facMap, 'department_id' => $depMap, 'program_id' => $progMap] as $col => $map) {
+        foreach (['faculty_id' => $facMap, 'department_id' => $depMap] as $col => $map) {
             if (!$map) {
                 continue;
             }

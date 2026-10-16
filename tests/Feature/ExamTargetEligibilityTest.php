@@ -16,7 +16,7 @@ use Tests\TestCase;
  *
  *  - صف target من غير أي عمود (كله null) = كل طلاب الجامعة مؤهلين.
  *  - صف عليه student_id = الطالب ده بالتحديد بس (باقي أعمدة الصف تتجاهل).
- *  - صف عليه أكتر من عمود (faculty/department/program/academic_year/
+ *  - صف عليه أكتر من عمود (faculty/department/academic_year/
  *    group_id) = لازم الطالب يطابق كل الأعمدة المحددة سوا (AND).
  *  - أكتر من صف target لنفس الامتحان = OR بينهم (يكفي الطالب يطابق صف واحد).
  *  - امتحان من غير أي target rows خالص = محدش مؤهل (مش "الكل مؤهل").
@@ -73,7 +73,7 @@ class ExamTargetEligibilityTest extends TestCase
         ]);
     }
 
-    /** بيتأكد إن lookup row (faculty/department/program/group) موجود فعلاً قبل ما نحط id بتاعه في student أو target، عشان الـ FK constraints. */
+    /** بيتأكد إن lookup row (faculty/department/group) موجود فعلاً قبل ما نحط id بتاعه في student أو target، عشان الـ FK constraints. */
     private function ensureLookupRow(string $table, ?int $id): void
     {
         if ($id === null) {
@@ -89,7 +89,6 @@ class ExamTargetEligibilityTest extends TestCase
     {
         $this->ensureLookupRow('faculties', $attrs['faculty_id'] ?? null);
         $this->ensureLookupRow('departments', $attrs['department_id'] ?? null);
-        $this->ensureLookupRow('programs', $attrs['program_id'] ?? null);
         $this->ensureLookupRow('student_groups', $attrs['group_id'] ?? null);
         $userId = DB::table('users')->insertGetId([
             'uuid'          => (string) \Illuminate\Support\Str::uuid(),
@@ -114,14 +113,12 @@ class ExamTargetEligibilityTest extends TestCase
     {
         $this->ensureLookupRow('faculties', $row['faculty_id'] ?? null);
         $this->ensureLookupRow('departments', $row['department_id'] ?? null);
-        $this->ensureLookupRow('programs', $row['program_id'] ?? null);
         $this->ensureLookupRow('student_groups', $row['group_id'] ?? null);
 
         DB::table('exam_targets')->insert(array_merge([
             'exam_id'       => $this->examId,
             'faculty_id'    => null,
             'department_id' => null,
-            'program_id'    => null,
             'academic_year' => null,
             'group_id'      => null,
             'student_id'    => null,
@@ -198,10 +195,10 @@ class ExamTargetEligibilityTest extends TestCase
     #[Test]
     public function group_id_targeting_works_alongside_other_columns(): void
     {
-        $inGroup    = $this->makeStudent(['group_id' => 7, 'program_id' => 4]);
-        $wrongGroup = $this->makeStudent(['group_id' => 8, 'program_id' => 4]);
+        $inGroup    = $this->makeStudent(['group_id' => 7, 'department_id' => 4]);
+        $wrongGroup = $this->makeStudent(['group_id' => 8, 'department_id' => 4]);
 
-        $this->addTarget(['group_id' => 7, 'program_id' => 4]);
+        $this->addTarget(['group_id' => 7, 'department_id' => 4]);
 
         $this->assertTrue($this->repo->studentIsEligibleForExam($this->examId, $inGroup));
         $this->assertFalse($this->repo->studentIsEligibleForExam($this->examId, $wrongGroup));
@@ -218,7 +215,7 @@ class ExamTargetEligibilityTest extends TestCase
         $this->makeStudent(['faculty_id' => 2]);
 
         $count = $this->repo->countMatching($this->universityId, [
-            ['faculty_id' => 1, 'department_id' => null, 'program_id' => null, 'academic_year' => null, 'group_id' => null, 'student_id' => null],
+            ['faculty_id' => 1, 'department_id' => null, 'academic_year' => null, 'group_id' => null, 'student_id' => null],
         ]);
 
         $this->assertSame(2, $count);
@@ -250,7 +247,7 @@ class ExamTargetEligibilityTest extends TestCase
         ]);
 
         $count = $this->repo->countMatching($this->universityId, [
-            ['faculty_id' => 1, 'department_id' => null, 'program_id' => null, 'academic_year' => null, 'group_id' => null, 'student_id' => null],
+            ['faculty_id' => 1, 'department_id' => null, 'academic_year' => null, 'group_id' => null, 'student_id' => null],
         ]);
 
         $this->assertSame(1, $count);

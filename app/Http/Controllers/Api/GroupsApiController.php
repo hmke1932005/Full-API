@@ -326,7 +326,6 @@ class GroupsApiController extends Controller
             $request->input('academic_year') ? (int) $request->input('academic_year') : null,
             $id,
             'en',
-            $request->input('program_id') ? (int) $request->input('program_id') : null,
             $request->input('current_semester') ? (int) $request->input('current_semester') : null,
             $request->input('study_start_date')
         );

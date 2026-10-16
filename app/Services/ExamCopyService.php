@@ -79,7 +79,7 @@ class ExamCopyService
                 foreach (ExamTarget::where('exam_id', $source->id)->get() as $t) {
                     ExamTarget::create([
                         'exam_id' => $copy->id, 'faculty_id' => $t->faculty_id, 'department_id' => $t->department_id,
-                        'program_id' => $t->program_id, 'academic_year' => $t->academic_year, 'group_id' => $t->group_id,
+                        'academic_year' => $t->academic_year, 'group_id' => $t->group_id,
                         'student_id' => $t->student_id,
                     ]);
                     $targets++;

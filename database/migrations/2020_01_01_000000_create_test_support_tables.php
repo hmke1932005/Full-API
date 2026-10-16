@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * هذا الباتش (laravel_exam_targets_fix.zip) بيفترض إنه شغال فوق تطبيق
- * جامعي أكبر عنده جداول users/faculties/departments/programs/
+ * جامعي أكبر عنده جداول users/faculties/departments/
  * student_groups/students/universities/academic_staff أصلًا. الباتش
  * مبيجيبش الـ migrations بتاعت الجداول دي لأنها مش جزء منه.
  *
@@ -69,13 +69,6 @@ return new class extends Migration {
             $table->timestamps();
         });
 
-        Schema::create('programs', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('department_id')->nullable();
-            $table->string('name')->nullable();
-            $table->timestamps();
-        });
-
         Schema::create('student_groups', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
@@ -117,7 +110,6 @@ return new class extends Migration {
             $table->string('department')->nullable();
             $table->foreignId('faculty_id')->nullable();
             $table->foreignId('department_id')->nullable();
-            $table->foreignId('program_id')->nullable();
             $table->date('study_start_date')->nullable();
             $table->date('expected_graduation_date')->nullable();
             $table->unsignedTinyInteger('academic_year')->nullable();
@@ -144,7 +136,6 @@ return new class extends Migration {
         Schema::dropIfExists('students');
         Schema::dropIfExists('academic_staff');
         Schema::dropIfExists('student_groups');
-        Schema::dropIfExists('programs');
         Schema::dropIfExists('departments');
         Schema::dropIfExists('faculties');
         Schema::dropIfExists('universities');

@@ -5,11 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Api\Concerns\Paginates;
 use App\Models\Department;
-use App\Models\Program;
 use App\Models\User;
 use App\Repositories\DepartmentRepository;
 use App\Repositories\FacultyRepository;
-use App\Repositories\ProgramRepository;
 use App\Repositories\UniversityRepository;
 use App\Services\AuditLogService;
 use App\Services\FacultyAccountService;
@@ -38,7 +36,6 @@ class FacultyApiController extends Controller
     public function __construct(
         private FacultyRepository $faculties,
         private DepartmentRepository $departments,
-        private ProgramRepository $programs,
         private UniversityRepository $universities,
         private AuditLogService $auditLog,
         private FacultyAccountService $accounts,
@@ -537,16 +534,8 @@ class FacultyApiController extends Controller
         }
 
         $departmentRows = $this->departments->forFaculty((int) $faculty->id);
-        $programRows = [];
-        foreach ($departmentRows as $dept) {
-            foreach (Program::where('department_id', $dept->id)->where('status', 'active')->get() as $program) {
-                $programRows[] = $program->toArray();
-            }
-        }
-
         return $this->apiSuccess([
             'departments' => array_map(fn (Department $d) => $d->toArray(), $departmentRows),
-            'programs'    => $programRows,
         ], 'Faculty hierarchy retrieved successfully.');
     }
 
@@ -619,11 +608,9 @@ class FacultyApiController extends Controller
         }
 
         $stats = $this->departments->withProfileStats((int) $department->id);
-        $programRows = $this->programs->forDepartment((int) $department->id);
 
         return $this->apiSuccess([
             'department' => $stats ?? $department->toArray(),
-            'programs'   => array_map(fn (Program $p) => $p->toArray(), $programRows),
         ], 'Department retrieved successfully.');
     }
 
@@ -731,39 +718,6 @@ class FacultyApiController extends Controller
         return $this->apiSuccess($department->toArray(), 'Department restored successfully.');
     }
 
-    /**
-     * PATCH /api/v1/programs/{id} — تبديل is_public بس، لبطاقة البرامج
-     * في صفحة Department Portfolio (نفس شكل updateDepartment أعلاه).
-     * الملكية بتتحل عبر البرنامج -> قسمه -> كليته -> جامعة الكولر، مش
-     * مباشرة (Program مالوش university_id). Role جامعة بس.
-     */
-    public function updateProgram(Request $request, $id)
-    {
-        if ($request->attributes->get('uip_role') !== 'university') {
-            return $this->apiError('Only university accounts can update a program.', null, 403);
-        }
-
-        $program = $this->programs->find($id);
-        if (!$program) {
-            return $this->apiError('Program not found.', null, 404);
-        }
-
-        $userId = (int) $request->attributes->get('uip_user_id');
-        $university = $this->universities->getOrCreate($userId);
-        $department = $this->departments->findOwnedByUniversity($program->department_id, $university->id);
-        if (!$department) {
-            return $this->apiError('Program not found.', null, 404);
-        }
-
-        $before = $program->toArray();
-        $program->fill(['is_public' => $request->boolean('is_public')]);
-        $program->save();
-
-        $this->auditLog->record($userId, 'program.visibility_update', 'Program', $program->id, $before, $program->toArray());
-
-        return $this->apiSuccess($program->toArray(), 'Program visibility updated successfully.');
-    }
-
     // -- Faculty portal self-service (Role كلية؛ كلية بتضيف لشجرتها هي
     // نفسها، عكس storeDepartment() اللي فوق ده اللي هي الجامعة بتنشئ قسم
     // تحت واحدة من كلياتها هي). الكلية (وملكية القسم بالنسبة للبرامج)
@@ -812,110 +766,6 @@ class FacultyApiController extends Controller
         $this->auditLog->record($userId, 'faculty.department_create', 'Department', $department->id, null, $department->toArray());
 
         return $this->apiSuccess($department->toArray(), 'Department created successfully.', 201);
-    }
-
-    /**
-     * POST /api/v1/faculty/departments/{id}/programs — تسجيل دخول كلية
-     * بيضيف برنامج تحت واحد من أقسامه هو. {id} هو معرّف القسم، محكوم
-     * بالملكية عبر findOwnedByFaculty() (لازم يكون تابع لكلية الكولر).
-     * Role كلية بس.
-     */
-    public function storeProgram(Request $request, $id)
-    {
-        if ($request->attributes->get('uip_role') !== 'faculty') {
-            return $this->apiError('Only faculty accounts can create a program this way.', null, 403);
-        }
-
-        $nameEn = trim((string) $request->input('name_en', ''));
-        $nameAr = trim((string) $request->input('name_ar', ''));
-        if ($nameEn === '' || $nameAr === '') {
-            return $this->apiError('Validation failed.', ['name_en' => 'Required.', 'name_ar' => 'Required.'], 422);
-        }
-
-        $userId = (int) $request->attributes->get('uip_user_id');
-        $faculty = $this->faculties->findByUserId($userId);
-        if (!$faculty) {
-            return $this->apiError('This login is not linked to a faculty.', null, 404);
-        }
-
-        $department = $this->departments->findOwnedByFaculty($id, $faculty->id);
-        if (!$department) {
-            return $this->apiError('Department not found.', null, 404);
-        }
-
-        $degreeType = $request->input('degree_type', 'bachelor');
-        if (!in_array($degreeType, ['diploma', 'bachelor', 'master', 'phd', 'other'], true)) {
-            $degreeType = 'bachelor';
-        }
-        $durationYears = $request->input('duration_years');
-
-        $program = $this->programs->create([
-            'department_id'  => $department->id,
-            'name_en'        => $nameEn,
-            'name_ar'        => $nameAr,
-            'code'           => $request->input('code') ?: null,
-            'description'    => $request->input('description') ?: null,
-            'degree_type'    => $degreeType,
-            'duration_years' => $durationYears !== null && $durationYears !== '' ? (float) $durationYears : null,
-            'status'         => 'active',
-            'is_public'      => 1,
-        ]);
-
-        $this->auditLog->record($userId, 'program.create', 'Program', $program->id, null, $program->toArray());
-
-        return $this->apiSuccess($program->toArray(), 'Program created successfully.', 201);
-    }
-
-    /**
-     * POST /api/v1/departments/{id}/programs — نفس storeProgram() فوق
-     * بالظبط، لكن من ناحية الجامعة (Role جامعة، ملكية عبر
-     * findOwnedByUniversity بدل findOwnedByFaculty) — لصفحة Department
-     * Portfolio الجديدة، نفس علاقة storeDepartment() بـ faculty/{id}/
-     * departments لكن مستوى واحد أعمق.
-     */
-    public function storeProgramForDepartment(Request $request, $id)
-    {
-        if ($request->attributes->get('uip_role') !== 'university') {
-            return $this->apiError('Only university accounts can create a program this way.', null, 403);
-        }
-
-        $nameEn = trim((string) $request->input('name_en', ''));
-        $nameAr = trim((string) $request->input('name_ar', ''));
-        if ($nameEn === '' || $nameAr === '') {
-            return $this->apiError('Validation failed.', ['name_en' => 'Required.', 'name_ar' => 'Required.'], 422);
-        }
-
-        $userId = (int) $request->attributes->get('uip_user_id');
-        $university = $this->universities->getOrCreate($userId);
-        $department = $this->departments->findOwnedByUniversity($id, $university->id);
-        if (!$department) {
-            return $this->apiError('Department not found.', null, 404);
-        }
-        if ($department->status === 'archived') {
-            return $this->apiError('This department is archived. Restore it first to add programs.', null, 422);
-        }
-
-        $degreeType = $request->input('degree_type', 'bachelor');
-        if (!in_array($degreeType, ['diploma', 'bachelor', 'master', 'phd', 'other'], true)) {
-            $degreeType = 'bachelor';
-        }
-        $durationYears = $request->input('duration_years');
-
-        $program = $this->programs->create([
-            'department_id'  => $department->id,
-            'name_en'        => $nameEn,
-            'name_ar'        => $nameAr,
-            'code'           => $request->input('code') ?: null,
-            'description'    => $request->input('description') ?: null,
-            'degree_type'    => $degreeType,
-            'duration_years' => $durationYears !== null && $durationYears !== '' ? (float) $durationYears : null,
-            'status'         => 'active',
-            'is_public'      => 1,
-        ]);
-
-        $this->auditLog->record($userId, 'program.create', 'Program', $program->id, null, $program->toArray());
-
-        return $this->apiSuccess($program->toArray(), 'Program created successfully.', 201);
     }
 
     // -- helpers --------------------------------------------------------------

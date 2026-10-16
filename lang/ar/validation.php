@@ -128,7 +128,6 @@ return [
         'university_id' => 'الجامعة',
         'faculty_id' => 'الكلية',
         'department_id' => 'القسم',
-        'program_id' => 'البرنامج',
         'project_id' => 'المشروع',
         'group_id' => 'المجموعة',
         'user_id' => 'المستخدم',

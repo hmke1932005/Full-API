@@ -14,7 +14,7 @@ class ExamTarget extends Model
     protected $table = 'exam_targets';
 
     protected $fillable = [
-        'exam_id', 'faculty_id', 'department_id', 'program_id',
+        'exam_id', 'faculty_id', 'department_id',
         'academic_year', 'group_id', 'student_id',
     ];
 
@@ -40,7 +40,6 @@ class ExamTarget extends Model
         return $this->student_id === null
             && $this->faculty_id === null
             && $this->department_id === null
-            && $this->program_id === null
             && $this->academic_year === null
             && $this->group_id === null;
     }

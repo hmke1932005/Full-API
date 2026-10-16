@@ -47,7 +47,6 @@ class AdminUserAffiliationService
                 'university' => $this->university($s->university_id),
                 'faculty' => $this->named('faculties', $s->faculty_id),
                 'department' => $this->named('departments', $s->department_id),
-                'program' => $this->named('programs', $s->program_id),
                 'group' => $s->group_id ? DB::table('student_groups')->where('id', $s->group_id)->value('name') : null,
                 'student_number' => $s->student_number,
                 'invitation_status' => $s->invitation_status,
@@ -68,7 +67,7 @@ class AdminUserAffiliationService
                 'kind' => 'supervisor', 'editable' => true, 'can_detach' => false,
                 'detach_blocked_reason' => 'A supervisor must belong to a university. Move them to another university, or suspend/delete the account.',
                 'university' => $this->university($s->university_id),
-                'faculty' => null, 'department' => null, 'program' => null,
+                'faculty' => null, 'department' => null,
                 'title' => $s->title ?? null,
                 'status' => $s->status ?? null,
                 'counts' => [
@@ -85,7 +84,6 @@ class AdminUserAffiliationService
                 'university' => $this->university($s->university_id),
                 'faculty' => $this->named('faculties', $s->faculty_id),
                 'department' => $this->named('departments', $s->department_id),
-                'program' => null,
                 'status' => $s->status ?? null,
                 'counts' => [
                     'assignments' => DB::table('staff_assignments')->where('academic_staff_id', $s->id)->where('is_active', 1)->count(),
@@ -101,7 +99,7 @@ class AdminUserAffiliationService
             return [
                 'kind' => 'university', 'editable' => false, 'can_detach' => false,
                 'university' => $this->university((int) $u->id),
-                'faculty' => null, 'department' => null, 'program' => null,
+                'faculty' => null, 'department' => null,
                 'counts' => [
                     'students' => DB::table('students')->where('university_id', $u->id)->count(),
                     'supervisors' => DB::table('supervisors')->where('university_id', $u->id)->count(),
@@ -118,7 +116,7 @@ class AdminUserAffiliationService
                 'kind' => 'faculty', 'editable' => false, 'can_detach' => false,
                 'university' => $this->university((int) $faculty->university_id),
                 'faculty' => ['id' => (int) $faculty->id, 'name_en' => $faculty->name_en, 'name_ar' => $faculty->name_ar],
-                'department' => null, 'program' => null,
+                'department' => null,
                 'counts' => [
                     'departments' => DB::table('departments')->where('faculty_id', $faculty->id)->count(),
                     'students' => DB::table('students')->where('faculty_id', $faculty->id)->count(),
@@ -143,11 +141,6 @@ class AdminUserAffiliationService
         $departments = DB::table('departments')->whereIn('faculty_id', $faculties->pluck('id'))
             ->where('status', '!=', 'inactive')
             ->orderBy('name_en')->get(['id', 'faculty_id', 'name_en', 'name_ar']);
-        $programs = DB::table('programs')->whereIn('department_id', $departments->pluck('id'))
-            ->where('status', '!=', 'inactive')
-            ->orderBy('name_en')->get(['id', 'department_id', 'name_en', 'name_ar']);
-
-        $progBy = $programs->groupBy('department_id');
         $depBy = $departments->groupBy('faculty_id');
         $facBy = $faculties->groupBy('university_id');
 
@@ -159,9 +152,6 @@ class AdminUserAffiliationService
                 'id' => (int) $f->id, 'name_en' => $f->name_en, 'name_ar' => $f->name_ar,
                 'departments' => ($depBy[$f->id] ?? collect())->map(fn ($d) => [
                     'id' => (int) $d->id, 'name_en' => $d->name_en, 'name_ar' => $d->name_ar,
-                    'programs' => ($progBy[$d->id] ?? collect())->map(fn ($p) => [
-                        'id' => (int) $p->id, 'name_en' => $p->name_en, 'name_ar' => $p->name_ar,
-                    ])->values()->all(),
                 ])->values()->all(),
             ])->values()->all(),
         ])->values()->all();
@@ -172,7 +162,7 @@ class AdminUserAffiliationService
     /**
      * @return array{ok:bool, error:?string, changed:array<string,mixed>}
      */
-    public function assign(int $userId, int $universityId, ?int $facultyId, ?int $departmentId, ?int $programId, int $actorId): array
+    public function assign(int $userId, int $universityId, ?int $facultyId, ?int $departmentId, int $actorId): array
     {
         $kind = $this->lifecycle->kindOf($userId);
         $uni = DB::table('universities')->where('id', $universityId)->whereNull('deleted_at')->first();
@@ -208,7 +198,7 @@ class AdminUserAffiliationService
             return $this->fail('That university does not exist or was deleted.');
         }
 
-        // الهيكل: كلية => جامعة، قسم => كلية، برنامج => قسم. كل مستوى يحتاج اللي فوقه.
+        // الهيكل: كلية => جامعة، قسم => كلية. كل مستوى يحتاج اللي فوقه.
         if ($facultyId && !DB::table('faculties')->where('id', $facultyId)->where('university_id', $universityId)->exists()) {
             return $this->fail('The selected faculty does not belong to that university.');
         }
@@ -220,19 +210,8 @@ class AdminUserAffiliationService
                 return $this->fail('The selected department does not belong to that faculty.');
             }
         }
-        if ($programId) {
-            if (!$departmentId) {
-                return $this->fail('Select a department before a program.');
-            }
-            if (!DB::table('programs')->where('id', $programId)->where('department_id', $departmentId)->exists()) {
-                return $this->fail('The selected program does not belong to that department.');
-            }
-        }
-        if ($kind === 'supervisor' && ($facultyId || $departmentId || $programId)) {
+        if ($kind === 'supervisor' && ($facultyId || $departmentId)) {
             return $this->fail('Supervisors are linked to a university only, not to a faculty or department.');
-        }
-        if ($kind === 'academic_staff' && $programId) {
-            return $this->fail('Academic staff are linked to a faculty/department, not to a program.');
         }
 
         $before = $this->describe($userId);
@@ -244,7 +223,7 @@ class AdminUserAffiliationService
         DB::beginTransaction();
         try {
             if ($kind === 'student') {
-                $result = array_merge($result, $this->assignStudent($userId, $universityId, $facultyId, $departmentId, $programId, $oldUniId, $actorId));
+                $result = array_merge($result, $this->assignStudent($userId, $universityId, $facultyId, $departmentId, $oldUniId, $actorId));
             } elseif ($kind === 'supervisor') {
                 $sup = DB::table('supervisors')->where('user_id', $userId)->first();
                 if ($moved || $oldUniId === null) {
@@ -329,7 +308,7 @@ class AdminUserAffiliationService
                 ->update(['university_id' => null]);
 
             DB::table('students')->where('id', $s->id)->update([
-                'university_id' => null, 'faculty_id' => null, 'department_id' => null, 'program_id' => null,
+                'university_id' => null, 'faculty_id' => null, 'department_id' => null,
                 'faculty' => null, 'department' => null, 'group_id' => null, 'expected_graduation_date' => null,
             ]);
             $this->rejectPendingRequests((int) $s->id, $actorId);
@@ -353,7 +332,7 @@ class AdminUserAffiliationService
 
     // -- helpers ---------------------------------------------------------------
 
-    private function assignStudent(int $userId, int $universityId, ?int $facultyId, ?int $departmentId, ?int $programId, ?int $oldUniId, int $actorId): array
+    private function assignStudent(int $userId, int $universityId, ?int $facultyId, ?int $departmentId, ?int $oldUniId, int $actorId): array
     {
         $s = DB::table('students')->where('user_id', $userId)->first();
         $moved = $oldUniId !== null && $oldUniId !== $universityId;
@@ -372,7 +351,7 @@ class AdminUserAffiliationService
 
         $update = [
             'university_id' => $universityId,
-            'faculty_id' => $facultyId, 'department_id' => $departmentId, 'program_id' => $programId,
+            'faculty_id' => $facultyId, 'department_id' => $departmentId,
             'faculty' => $facultyRow?->name_en, 'department' => $deptRow?->name_en,
         ];
         // المجموعة تخص جامعة/كلية/قسم معيّن.
@@ -472,7 +451,6 @@ class AdminUserAffiliationService
             'university_id' => $d['university']['id'] ?? null,
             'faculty_id' => $d['faculty']['id'] ?? null,
             'department_id' => $d['department']['id'] ?? null,
-            'program_id' => $d['program']['id'] ?? null,
         ];
     }
 

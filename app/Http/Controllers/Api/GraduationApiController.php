@@ -115,8 +115,6 @@ class GraduationApiController extends Controller
                 'faculty_name_en'    => (string) $request->input('faculty_name_en', ''),
                 'department_name_ar' => (string) $request->input('department_name_ar', ''),
                 'department_name_en' => (string) $request->input('department_name_en', ''),
-                'program_name_ar'    => (string) $request->input('program_name_ar', ''),
-                'program_name_en'    => (string) $request->input('program_name_en', ''),
                 'notes'              => (string) $request->input('notes', ''),
             ],
             'en',
@@ -157,8 +155,6 @@ class GraduationApiController extends Controller
                 'faculty_name_en'    => (string) $request->input('faculty_name_en', ''),
                 'department_name_ar' => (string) $request->input('department_name_ar', ''),
                 'department_name_en' => (string) $request->input('department_name_en', ''),
-                'program_name_ar'    => (string) $request->input('program_name_ar', ''),
-                'program_name_en'    => (string) $request->input('program_name_en', ''),
             ]
         );
 

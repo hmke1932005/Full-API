@@ -165,7 +165,6 @@ class GoogleAuthController extends Controller
             'university_id'      => 'nullable|integer',
             'faculty_id'         => 'nullable|integer',
             'department_id'      => 'nullable|integer',
-            'program_id'         => 'nullable|integer',
         ]);
         $suggest = $this->suggestNames($g);
         $names = BilingualName::resolve(
@@ -214,8 +213,7 @@ class GoogleAuthController extends Controller
                     $this->joinRequests->submitRequest(
                         $user->id, (int) $uid,
                         $request->input('faculty_id') ? (int) $request->input('faculty_id') : null,
-                        $request->input('department_id') ? (int) $request->input('department_id') : null,
-                        $request->input('program_id') ? (int) $request->input('program_id') : null
+                        $request->input('department_id') ? (int) $request->input('department_id') : null
                     );
                 } catch (\Throwable $e) {
                     Log::warning('Join request on Google registration failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);

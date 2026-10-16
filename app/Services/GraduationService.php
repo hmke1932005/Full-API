@@ -206,8 +206,6 @@ class GraduationService
             'faculty_name_en'    => $pick('faculty_name_en', $student['faculty_name_en'] ?? $student['faculty'] ?? null),
             'department_name_ar' => $pick('department_name_ar', $student['department_name_ar'] ?? $student['department'] ?? null),
             'department_name_en' => $pick('department_name_en', $student['department_name_en'] ?? $student['department'] ?? null),
-            'program_name_ar'    => $pick('program_name_ar', $student['program_name_ar'] ?? null),
-            'program_name_en'    => $pick('program_name_en', $student['program_name_en'] ?? null),
             'certificate_number' => $certificateNumber,
             'notes'              => $finalNotes,
             'approved_by'        => $approvedByUserId,
@@ -424,8 +422,6 @@ class GraduationService
             'faculty_name_en'    => $this->blankToNull($fields['faculty_name_en'] ?? null),
             'department_name_ar' => $this->blankToNull($fields['department_name_ar'] ?? null),
             'department_name_en' => $this->blankToNull($fields['department_name_en'] ?? null),
-            'program_name_ar'    => $this->blankToNull($fields['program_name_ar'] ?? null),
-            'program_name_en'    => $this->blankToNull($fields['program_name_en'] ?? null),
             'notes'              => $this->blankToNull($fields['notes'] ?? null),
         ];
 

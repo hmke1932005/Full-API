@@ -19,7 +19,7 @@ class StudentUniversityRequest extends Model
     protected $table = 'student_university_requests';
 
     protected $fillable = [
-        'student_id', 'university_id', 'faculty_id', 'department_id', 'program_id',
+        'student_id', 'university_id', 'faculty_id', 'department_id',
         'status', 'reviewed_by', 'reviewed_at',
     ];
 

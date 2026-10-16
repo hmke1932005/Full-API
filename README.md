@@ -69,7 +69,7 @@ DB_HOST=... DB_PORT=... DB_DATABASE=... DB_USERNAME=... DB_PASSWORD=...
 `refresh_tokens`, `roles`, `user_roles`, `password_reset_tokens`,
 `email_verification_tokens`, `password_history`, `security_policies`,
 `trusted_devices` (migration 070), `user_sessions`, `universities`,
-`faculties`, `departments`, `programs`, `students`,
+`faculties`, `departments`, `students`,
 `api_files` (migration 143)) بنفس الأعمدة
 بالظبط. `public/uploads/` لازم يتشارك (symlink أو نفس السيرفر) بين
 النسختين طول فترة الانتقال — شوف `FILES_API_CONTRACT.md`.
@@ -178,7 +178,7 @@ Portal بدل ما تتبني نسختين. **الجزء الأساسي (منع 
 ## ✅ بند 3 (Universities + Faculty) — منقول بالكامل
 
 `UniversitiesApiController` (14 endpoint) + `FacultyApiController` (16 endpoint،
-بما فيهم departments/programs المتداخلة). التفاصيل الكاملة في
+بما فيهم departments المتداخلة). التفاصيل الكاملة في
 `UNIVERSITIES_FACULTY_API_CONTRACT.md`.
 
 ## ✅ بند 4 (Students portal) — منقول بالكامل (8 من 8 endpoint)

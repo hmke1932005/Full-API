@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\User;
 use App\Repositories\DepartmentRepository;
 use App\Repositories\FacultyRepository;
-use App\Repositories\ProgramRepository;
 use App\Repositories\StudentGroupRepository;
 use App\Repositories\StudentRepository;
 use App\Repositories\UniversityRepository;
@@ -39,7 +38,6 @@ class StudentManagementService
         private UniversityRepository $universities,
         private FacultyRepository $faculties,
         private DepartmentRepository $departments,
-        private ProgramRepository $programs,
         private UserRepository $users,
         private MailService $mail,
         private NotificationService $notifications,
@@ -49,32 +47,8 @@ class StudentManagementService
     }
 
     /**
-     * دراسة-بداية + مدة البرنامج -> تاريخ تخرج متوقع. duration_years
-     * DECIMAL(3,1) بتتحول لشهور صحيحة (round(years*12)) بدل ما نضيف
-     * "سنين" كسرية لـ DateTime. بترجع null لو أي مدخل ناقص.
-     */
-    private function calculateExpectedGraduation(?string $studyStartDate, ?int $programId): ?string
-    {
-        if (!$studyStartDate || !$programId) {
-            return null;
-        }
-        $program = $this->programs->find($programId);
-        if (!$program || $program->duration_years === null) {
-            return null;
-        }
-        try {
-            $start = new \DateTimeImmutable($studyStartDate);
-        } catch (\Exception $e) {
-            return null;
-        }
-        $months = (int) round(((float) $program->duration_years) * 12);
-        return $start->modify("+{$months} months")->format('Y-m-d');
-    }
-
-    /**
      * @param int|null $facultyId    لازم يكون صف faculties حقيقي تابع لـ $universityId
      * @param int|null $departmentId لازم يكون صف departments حقيقي تابع لـ $facultyId
-     * @param int|null $programId    لازم يكون صف programs حقيقي تابع لـ $departmentId
      * @return array{success:bool, message:string}
      */
     public function invite(
@@ -88,7 +62,6 @@ class StudentManagementService
         ?int $academicYear,
         ?int $groupId,
         string $locale = 'ar',
-        ?int $programId = null,
         ?int $currentSemester = null,
         ?string $studyStartDate = null,
         ?string $password = null,
@@ -153,21 +126,6 @@ class StudentManagementService
             }
         }
 
-        $program = null;
-        if ($programId) {
-            if (!$department) {
-                return ['success' => false, 'message' => $locale === 'ar'
-                    ? 'يجب اختيار القسم أولًا قبل اختيار البرنامج.'
-                    : 'A department must be selected before a program.'];
-            }
-            $program = $this->programs->findOwnedByDepartment($programId, $department->id);
-            if (!$program) {
-                return ['success' => false, 'message' => $locale === 'ar'
-                    ? 'البرنامج المختار غير صحيح أو لا ينتمي لهذا القسم.'
-                    : 'The selected program is invalid or does not belong to that department.'];
-            }
-        }
-
         $tempPassword = $manualPassword ? $password : $this->generateTempPassword();
 
         $user = $this->users->createWithRole([
@@ -181,21 +139,17 @@ class StudentManagementService
 
         $studyStartDate = $studyStartDate !== null ? trim($studyStartDate) : null;
         $studyStartDate = ($studyStartDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $studyStartDate)) ? $studyStartDate : null;
-        $expectedGraduationDate = $this->calculateExpectedGraduation($studyStartDate, $program?->id);
-
         $student = $this->students->getOrCreate($user->id);
         $student->fill([
             'university_id'             => $universityId,
             'student_number'            => $studentNumber ? trim($studentNumber) : null,
             'faculty_id'                => $faculty?->id,
             'department_id'             => $department?->id,
-            'program_id'                => $program?->id,
             'faculty'                   => $faculty ? $faculty->name($locale) : null,
             'department'                => $department ? $department->name($locale) : null,
             'academic_year'             => $academicYear,
             'current_semester'          => $currentSemester,
             'study_start_date'          => $studyStartDate,
-            'expected_graduation_date'  => $expectedGraduationDate,
             'group_id'                  => $groupId,
             // A manually-set password means the admin hands the credentials over themselves:
             // no invitation flow (no "Invite pending/expired" badge, nothing to resend).
@@ -216,7 +170,7 @@ class StudentManagementService
 
         $this->auditLog->record($actingUserId, 'university.student_invite', 'Student', $student->id, null, [
             'email' => $email, 'faculty_id' => $faculty?->id, 'department_id' => $department?->id,
-            'program_id' => $program?->id, 'group_id' => $groupId,
+            'group_id' => $groupId,
             'manual_password' => $manualPassword, 'email_sent' => $emailSent,
         ]);
 
@@ -432,7 +386,7 @@ class StudentManagementService
     }
 
     /**
-     * إعادة تعيين faculty_id/department_id/program_id الحقيقية لطالب
+     * إعادة تعيين faculty_id/department_id الحقيقية لطالب
      * موجود. $scopeFacultyId (migration 106): لو موجودة يبقى الكولر حساب
      * كلية، ومينفعش ينقل طالب لكلية تانية غير كليته (الجامعة بس اللي تقدر).
      *
@@ -449,7 +403,6 @@ class StudentManagementService
         $actingUserId,
         ?int $facultyId,
         ?int $departmentId,
-        ?int $programId,
         string $locale = 'ar',
         $scopeFacultyId = null
     ): array {
@@ -500,29 +453,12 @@ class StudentManagementService
             }
         }
 
-        $program = null;
-        if ($programId) {
-            if (!$department) {
-                return ['success' => false, 'message' => $locale === 'ar'
-                    ? 'يجب اختيار القسم أولًا قبل اختيار البرنامج.'
-                    : 'A department must be selected before a program.'];
-            }
-            $program = $this->programs->findOwnedByDepartment($programId, $department->id);
-            if (!$program) {
-                return ['success' => false, 'message' => $locale === 'ar'
-                    ? 'البرنامج المختار غير صحيح أو لا ينتمي لهذا القسم.'
-                    : 'The selected program is invalid or does not belong to that department.'];
-            }
-        }
-
         $before = [
-            'faculty_id' => $student->faculty_id, 'department_id' => $student->department_id, 'program_id' => $student->program_id,
+            'faculty_id' => $student->faculty_id, 'department_id' => $student->department_id,
             'faculty' => $student->faculty, 'department' => $student->department,
             'expected_graduation_date' => $student->expected_graduation_date,
             'group_id' => $student->group_id,
         ];
-
-        $expectedGraduationDate = $this->calculateExpectedGraduation($student->study_start_date, $program?->id);
 
         $facultyChanged    = (int) ($student->faculty_id ?? 0) !== (int) ($faculty?->id ?? 0);
         $departmentChanged = (int) ($student->department_id ?? 0) !== (int) ($department?->id ?? 0);
@@ -532,10 +468,8 @@ class StudentManagementService
         $studentUpdate = [
             'faculty_id'                => $faculty?->id,
             'department_id'             => $department?->id,
-            'program_id'                => $program?->id,
             'faculty'                   => $faculty ? $faculty->name($locale) : null,
             'department'                => $department ? $department->name($locale) : null,
-            'expected_graduation_date'  => $expectedGraduationDate,
         ];
         if ($shouldClearGroup) {
             $studentUpdate['group_id'] = null;
@@ -544,7 +478,7 @@ class StudentManagementService
         $student->save();
 
         $this->auditLog->record($actingUserId, 'university.student_reassign_faculty', 'Student', $student->id, $before, [
-            'faculty_id' => $faculty?->id, 'department_id' => $department?->id, 'program_id' => $program?->id,
+            'faculty_id' => $faculty?->id, 'department_id' => $department?->id,
             'group_id' => $student->group_id,
         ]);
 
@@ -557,8 +491,8 @@ class StudentManagementService
                     ? 'قامت إدارة جامعتك بتحديث الكلية/القسم المسجّل بهم، وتمت إزالتك من مجموعتك السابقة نتيجة لذلك.'
                     : 'Your university has updated the faculty/department on your record, and you were removed from your previous group as a result.')
                 : ($locale === 'ar'
-                    ? 'قامت إدارة جامعتك بتحديث الكلية/القسم/البرنامج المسجّل بهم.'
-                    : 'Your university has updated the faculty/department/program on your record.'),
+                    ? 'قامت إدارة جامعتك بتحديث الكلية/القسم المسجّل بهم.'
+                    : 'Your university has updated the faculty/department on your record.'),
             '/student/profile'
         );
 
@@ -648,8 +582,7 @@ class StudentManagementService
         }
         $expectedGraduationOverride = ($expectedGraduationOverride === '') ? null : $expectedGraduationOverride;
 
-        $expectedGraduationDate = $expectedGraduationOverride
-            ?? $this->calculateExpectedGraduation($studyStartDate, $student->program_id);
+        $expectedGraduationDate = $expectedGraduationOverride;
 
         $before = [
             'study_start_date'         => $student->study_start_date,
@@ -781,7 +714,6 @@ class StudentManagementService
         $student->fill([
             'faculty_id'    => null,
             'department_id' => null,
-            'program_id'    => null,
             'faculty'       => null,
             'department'    => null,
             'group_id'      => null,
