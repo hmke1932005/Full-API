@@ -60,7 +60,7 @@ class FacultyRepository
         $query = DB::table('faculties as f')
             ->select('f.*')
             ->selectSub(function ($q) {
-                $q->selectRaw('COUNT(*)')->from('departments as d')->whereColumn('d.faculty_id', 'f.id');
+                $q->selectRaw('COUNT(*)')->from('departments as d')->whereNull('d.deleted_at')->whereColumn('d.faculty_id', 'f.id');
             }, 'departments_count')
             ->where('f.university_id', $universityId);
 
@@ -95,7 +95,7 @@ class FacultyRepository
         $row = DB::table('faculties as f')
             ->select('f.*')
             ->selectSub(function ($q) {
-                $q->selectRaw('COUNT(*)')->from('departments as d')->whereColumn('d.faculty_id', 'f.id');
+                $q->selectRaw('COUNT(*)')->from('departments as d')->whereNull('d.deleted_at')->whereColumn('d.faculty_id', 'f.id');
             }, 'departments_count')
             ->selectSub(function ($q) {
                 $q->selectRaw('COUNT(*)')->from('students as s')->whereColumn('s.faculty_id', 'f.id');

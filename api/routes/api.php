@@ -846,6 +846,8 @@ Route::prefix('v1')->group(function () {
         Route::patch('/{id}', [FacultyApiController::class, 'updateDepartment']);
         Route::post('/{id}/archive', [FacultyApiController::class, 'archiveDepartment']);
         Route::post('/{id}/unarchive', [FacultyApiController::class, 'unarchiveDepartment']);
+        Route::delete('/{id}', [FacultyApiController::class, 'deleteDepartment']);
+        Route::post('/{id}/restore', [FacultyApiController::class, 'restoreDepartment']);
     });
 
     // بند 4 — Students portal (8 endpoint، STUDENTS_API_CONTRACT.md) +

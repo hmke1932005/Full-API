@@ -1,4 +1,7 @@
 {
+ "Only university accounts can delete a department.": "حسابات الجامعات فقط يمكنها حذف قسم.",
+ "Department deleted successfully.": "تم حذف القسم بنجاح.",
+ "Deleted department not found.": "القسم المحذوف غير موجود.",
  "APP_KEY or JWT_SECRET must be set to issue auth cookies.": "مفتاح APP_KEY أو JWT_SECRET لازم يكون متضبط لإصدار كوكيز الدخول.",
  "Unsupported file type. Please upload a .csv or .xlsx file.": "نوع الملف غير مدعوم. من فضلك ارفع ملف .csv أو .xlsx.",
  "Could not open the uploaded file.": "تعذّر فتح الملف المرفوع.",

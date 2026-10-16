@@ -96,9 +96,18 @@ class FacultyApiController extends Controller
         $stats = $this->faculties->withProfileStats((int) $faculty->id);
         $departmentRows = $this->departments->forFaculty((int) $faculty->id);
 
+        $trashedRows = $this->departments->trashedForFaculty((int) $faculty->id);
+
+        // Student counts per department (live + deleted) so the UI can warn before a delete
+        // and show what comes back on restore.
+        $ids = array_merge(array_map(fn (Department $d) => (int) $d->id, $departmentRows), array_map(fn (Department $d) => (int) $d->id, $trashedRows));
+        $counts = $ids ? DB::table('students')->whereIn('department_id', $ids)->selectRaw('department_id, COUNT(*) as c')->groupBy('department_id')->pluck('c', 'department_id')->all() : [];
+        $withCount = fn (Department $d) => $d->toArray() + ['students_count' => (int) ($counts[$d->id] ?? 0)];
+
         return $this->apiSuccess([
-            'faculty'     => $stats ?? $faculty->toArray(),
-            'departments' => array_map(fn (Department $d) => $d->toArray(), $departmentRows),
+            'faculty'             => $stats ?? $faculty->toArray(),
+            'departments'         => array_map($withCount, $departmentRows),
+            'deleted_departments' => array_map($withCount, $trashedRows),
         ], 'Faculty retrieved successfully.');
     }
 
@@ -690,6 +699,91 @@ class FacultyApiController extends Controller
         $this->auditLog->record($userId, 'department.archive', 'Department', $department->id, $before, $department->toArray());
 
         return $this->apiSuccess($department->toArray(), 'Department archived successfully.');
+    }
+
+    /**
+     * DELETE /api/v1/departments/{id} — soft delete (Role جامعة بس). The row, its students, staff and
+     * exams are left untouched (only deleted_at is set), so POST /departments/{id}/restore brings
+     * everything back exactly as it was. Every student of the department gets a notification.
+     */
+    public function deleteDepartment(Request $request, $id)
+    {
+        if ($request->attributes->get('uip_role') !== 'university') {
+            return $this->apiError('Only university accounts can delete a department.', null, 403);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $university = $this->universities->getOrCreate($userId);
+        $department = $this->departments->findOwnedByUniversity($id, $university->id);
+        if (!$department) {
+            return $this->apiError('Department not found.', null, 404);
+        }
+
+        $before = $department->toArray();
+        $department->deleted_by = $userId;
+        $department->save();
+        $department->delete();
+
+        $notified = $this->notifyDepartmentStudents(
+            (int) $department->id,
+            'department_deleted',
+            'Your department was removed — تم حذف قسمك',
+            sprintf('The department "%s" was deleted by your university. Your data is kept, and you will be notified if it is restored. / تم حذف قسم "%s" من الجامعة، بياناتك محفوظة وهيجيلك إشعار لو اتسترجع القسم.', $department->name_en, $department->name_ar)
+        );
+
+        $this->auditLog->record($userId, 'department.delete', 'Department', $department->id, $before, ['deleted' => true, 'students_notified' => $notified]);
+
+        return $this->apiSuccess(['id' => (int) $department->id, 'students_notified' => $notified], 'Department deleted successfully.');
+    }
+
+    /** POST /api/v1/departments/{id}/restore — full restore of a soft-deleted department. Role جامعة بس. */
+    public function restoreDepartment(Request $request, $id)
+    {
+        if ($request->attributes->get('uip_role') !== 'university') {
+            return $this->apiError('Only university accounts can restore a department.', null, 403);
+        }
+
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $university = $this->universities->getOrCreate($userId);
+        $row = $this->departments->findOwnedByUniversity($id, $university->id, true);
+        if (!$row || $row->deleted_at === null) {
+            return $this->apiError('Deleted department not found.', null, 404);
+        }
+
+        $department = Department::withTrashed()->find($row->id);
+        $department->restore();
+        $department->deleted_by = null;
+        $department->save();
+
+        $notified = $this->notifyDepartmentStudents(
+            (int) $department->id,
+            'department_restored',
+            'Your department was restored — تم استرجاع قسمك',
+            sprintf('The department "%s" is active again. / تم استرجاع قسم "%s" وبقى شغال تاني.', $department->name_en, $department->name_ar)
+        );
+
+        $this->auditLog->record($userId, 'department.restore', 'Department', $department->id, ['deleted' => true], array_merge($department->toArray(), ['students_notified' => $notified]));
+
+        return $this->apiSuccess($department->toArray() + ['students_notified' => $notified], 'Department restored successfully.');
+    }
+
+    private function notifyDepartmentStudents(int $departmentId, string $type, string $title, string $body): int
+    {
+        $notifications = app(\App\Services\NotificationService::class);
+        $count = 0;
+        DB::table('students')->where('department_id', $departmentId)->whereNotNull('user_id')->orderBy('id')
+            ->select('user_id')->chunk(200, function ($rows) use ($notifications, $type, $title, $body, &$count) {
+                foreach ($rows as $r) {
+                    try {
+                        $notifications->notify((int) $r->user_id, $type, $title, $body, '/student/profile');
+                        $count++;
+                    } catch (\Throwable $e) {
+                        // a failed notification must not block the delete/restore
+                    }
+                }
+            });
+
+        return $count;
     }
 
     /** POST /api/v1/departments/{id}/unarchive — يقابل faculty's unarchive(). Role جامعة بس. */

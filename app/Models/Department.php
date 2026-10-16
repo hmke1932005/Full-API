@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * يطابق جدول `departments` القديم بالظبط (migration 100 + is_public لاحقًا).
@@ -10,10 +11,12 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Department extends Model
 {
+    use SoftDeletes;
+
     protected $table = 'departments';
 
     protected $fillable = [
-        'faculty_id', 'name_ar', 'name_en', 'slug', 'description', 'status', 'is_public',
+        'faculty_id', 'name_ar', 'name_en', 'slug', 'description', 'status', 'is_public', 'deleted_by',
     ];
 
     protected $casts = [

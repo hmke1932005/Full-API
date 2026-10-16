@@ -118,7 +118,7 @@ class AdminUserAffiliationService
                 'faculty' => ['id' => (int) $faculty->id, 'name_en' => $faculty->name_en, 'name_ar' => $faculty->name_ar],
                 'department' => null,
                 'counts' => [
-                    'departments' => DB::table('departments')->where('faculty_id', $faculty->id)->count(),
+                    'departments' => DB::table('departments')->whereNull('deleted_at')->where('faculty_id', $faculty->id)->count(),
                     'students' => DB::table('students')->where('faculty_id', $faculty->id)->count(),
                     'academic_staff' => DB::table('academic_staff')->where('faculty_id', $faculty->id)->count(),
                 ],
@@ -138,7 +138,7 @@ class AdminUserAffiliationService
         $faculties = DB::table('faculties')->whereIn('university_id', $unis->pluck('id'))
             ->where('status', '!=', 'archived')
             ->orderBy('name_en')->get(['id', 'university_id', 'name_en', 'name_ar']);
-        $departments = DB::table('departments')->whereIn('faculty_id', $faculties->pluck('id'))
+        $departments = DB::table('departments')->whereNull('deleted_at')->whereIn('faculty_id', $faculties->pluck('id'))
             ->where('status', '!=', 'inactive')
             ->orderBy('name_en')->get(['id', 'faculty_id', 'name_en', 'name_ar']);
         $depBy = $departments->groupBy('faculty_id');
@@ -206,7 +206,7 @@ class AdminUserAffiliationService
             if (!$facultyId) {
                 return $this->fail('Select a faculty before a department.');
             }
-            if (!DB::table('departments')->where('id', $departmentId)->where('faculty_id', $facultyId)->exists()) {
+            if (!DB::table('departments')->whereNull('deleted_at')->where('id', $departmentId)->where('faculty_id', $facultyId)->exists()) {
                 return $this->fail('The selected department does not belong to that faculty.');
             }
         }

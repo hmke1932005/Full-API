@@ -1411,7 +1411,7 @@ class AiPlatformTools
         }
 
         if ($isFaculty) {
-            $out['departments'] = DB::table('departments as d')->where('d.faculty_id', $fid)
+            $out['departments'] = DB::table('departments as d')->where('d.faculty_id', $fid)->whereNull('d.deleted_at')
                 ->select(['d.name_en', 'd.name_ar', DB::raw('(SELECT COUNT(*) FROM students s WHERE s.department_id = d.id) AS students')])
                 ->orderBy('d.name_en')->limit(30)->get()
                 ->map(fn ($d) => ['name' => $this->bi($d->name_en, $d->name_ar), 'students' => (int) $d->students])->all();

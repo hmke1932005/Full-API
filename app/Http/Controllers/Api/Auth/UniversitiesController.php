@@ -42,6 +42,7 @@ class UniversitiesController extends Controller
         $facultyIds = $faculties->pluck('id');
 
         $departments = DB::table('departments')
+            ->whereNull('deleted_at')
             ->whereIn('faculty_id', $facultyIds)
             ->where('status', 'active')
             ->select('id', 'faculty_id', "{$nameCol} as name")

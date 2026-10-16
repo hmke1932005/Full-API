@@ -198,7 +198,7 @@ class CourseService
 
         $departmentId = array_key_exists('department_id', $d) ? ($d['department_id'] !== null && $d['department_id'] !== '' ? (int) $d['department_id'] : null) : ($existing?->department_id);
         if ($departmentId) {
-            if (!$facultyId || !DB::table('departments')->where('id', $departmentId)->where('faculty_id', $facultyId)->exists()) {
+            if (!$facultyId || !DB::table('departments')->whereNull('deleted_at')->where('id', $departmentId)->where('faculty_id', $facultyId)->exists()) {
                 return $this->fail($locale, 'القسم لا يتبع الكلية المختارة.', 'The department does not belong to that faculty.');
             }
         }

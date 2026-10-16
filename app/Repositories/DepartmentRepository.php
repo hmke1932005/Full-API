@@ -24,10 +24,11 @@ class DepartmentRepository
     }
 
     /** Lookup محكوم بالملكية، مقيّد بجامعة كاملة (join واحد بدل رحلتين). */
-    public function findOwnedByUniversity($id, $universityId): ?Department
+    public function findOwnedByUniversity($id, $universityId, bool $withTrashed = false): ?Department
     {
         $row = DB::table('departments as d')
             ->join('faculties as f', 'f.id', '=', 'd.faculty_id')
+            ->when(!$withTrashed, fn ($q) => $q->whereNull('d.deleted_at'))
             ->where('d.id', $id)
             ->where('f.university_id', $universityId)
             ->select('d.*')
@@ -51,12 +52,19 @@ class DepartmentRepository
         return $query->orderBy('name_en')->get()->all();
     }
 
+    /** @return Department[] الأقسام المحذوفة (قابلة للاسترجاع) لكلية واحدة */
+    public function trashedForFaculty($facultyId): array
+    {
+        return Department::onlyTrashed()->where('faculty_id', $facultyId)->orderByDesc('deleted_at')->get()->all();
+    }
+
     /** كل أقسام جامعة كاملة (عبر كل كلياتها)، مع اسم الكلية — لفلتر "Department" في Innovation Statistics. منقولة من DepartmentRepository::forUniversity() القديمة. بند 23. @return array<int,array<string,mixed>> */
     public function forUniversity($universityId): array
     {
         return DB::table('departments as d')
             ->join('faculties as f', 'f.id', '=', 'd.faculty_id')
             ->where('f.university_id', $universityId)
+            ->whereNull('d.deleted_at')
             ->select('d.*', 'f.name_en as faculty_name_en', 'f.name_ar as faculty_name_ar')
             ->orderBy('f.name_en')
             ->orderBy('d.name_en')
@@ -71,7 +79,8 @@ class DepartmentRepository
 
     public function slugExists($facultyId, string $slug, ?int $excludeId = null): bool
     {
-        $query = Department::where('faculty_id', $facultyId)->where('slug', $slug);
+        // withTrashed: a soft-deleted department still owns its slug (unique per faculty) until purged.
+        $query = Department::withTrashed()->where('faculty_id', $facultyId)->where('slug', $slug);
         if ($excludeId !== null) {
             $query->where('id', '!=', $excludeId);
         }

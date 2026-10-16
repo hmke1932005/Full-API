@@ -236,7 +236,7 @@ class AiUserContextService
                 $this->warn('faculty.' . $key, $e);
             }
         };
-        $count('departments', fn () => DB::table('departments')->where('faculty_id', $fid)->count());
+        $count('departments', fn () => DB::table('departments')->whereNull('deleted_at')->where('faculty_id', $fid)->count());
         $count('students', fn () => DB::table('students')->where('faculty_id', $fid)->count());
         $count('academic_staff', fn () => DB::table('academic_staff')->where('faculty_id', $fid)->count());
         $out['stats'] = $stats;

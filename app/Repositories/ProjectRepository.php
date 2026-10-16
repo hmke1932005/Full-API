@@ -1218,6 +1218,7 @@ class ProjectRepository
     public function departmentProjectLeaderboard(int $limit = 5): array
     {
         return DB::table('departments as d')
+            ->whereNull('d.deleted_at')
             ->join('students as s', 's.department_id', '=', 'd.id')
             ->join('projects as p', function ($join) {
                 $join->on('p.owner_id', '=', 's.user_id')->where('p.status', '!=', 'draft');

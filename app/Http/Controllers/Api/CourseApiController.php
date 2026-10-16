@@ -115,7 +115,7 @@ class CourseApiController extends Controller
                 ->where('status', '!=', 'archived')->orderBy('name_en')->get(['id', 'name_en', 'name_ar'])->map(fn ($r) => (array) $r)->all();
         }
         $deps = \Illuminate\Support\Facades\DB::table('departments as d')->join('faculties as f', 'f.id', '=', 'd.faculty_id')
-            ->where('f.university_id', $scope['universityId'])
+            ->where('f.university_id', $scope['universityId'])->whereNull('d.deleted_at')
             ->when($scope['role'] !== 'university', fn ($q) => $q->where('d.faculty_id', $scope['facultyId'] ?: 0))
             ->orderBy('d.name_en')->get(['d.id', 'd.faculty_id', 'd.name_en', 'd.name_ar'])->map(fn ($r) => (array) $r)->all();
 
