@@ -24,6 +24,16 @@ class ProjectLink extends Model
         'documentation', 'video_demo', 'presentation', 'research_paper', 'other',
     ];
 
+    /**
+     * رابط مستودع GitHub صالح: https://github.com/{owner}/{repo} (مع .git أو / اختياريين).
+     * نفس الصيغة اللي GithubCodeReviewService::parseRepoUrl() بتقبلها، عشان
+     * الرابط اللي يتحفظ يشتغل فعلًا في مراجعة الكود.
+     */
+    public static function isValidGithubRepoUrl(string $url): bool
+    {
+        return (bool) preg_match('#^https?://(?:www\.)?github\.com/[\w.\-]+/[\w.\-]+?(?:\.git)?/?$#i', trim($url));
+    }
+
     /** يطابق ProjectLink::toRowArray() القديمة بالظبط. */
     public function toRowArray(): array
     {

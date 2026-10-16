@@ -211,6 +211,9 @@ class ProjectsApiController extends Controller
         if ($data instanceof \Illuminate\Http\JsonResponse) {
             return $data;
         }
+        if ($bad = $this->invalidRepositoryUrlResponse($request)) {
+            return $bad;
+        }
         $data['save_as_draft'] = $request->input('status') === 'draft';
 
         $data['repository_url'] = $request->input('repository_url');
@@ -236,6 +239,9 @@ class ProjectsApiController extends Controller
         $data = $this->validateProjectInput($request);
         if ($data instanceof \Illuminate\Http\JsonResponse) {
             return $data;
+        }
+        if ($bad = $this->invalidRepositoryUrlResponse($request)) {
+            return $bad;
         }
 
         $userId = (int) $request->attributes->get('uip_user_id');
@@ -841,6 +847,17 @@ class ProjectsApiController extends Controller
         }
 
         return $validator->validated();
+    }
+
+    /** لو repository_url اتبعت وهو مش رابط مستودع GitHub صالح → 422 (بدل ما يتحفظ ويفشل لاحقًا عند تشغيل المراجعة). */
+    private function invalidRepositoryUrlResponse(Request $request): ?\Illuminate\Http\JsonResponse
+    {
+        $url = trim((string) $request->input('repository_url', ''));
+        if ($url === '' || \App\Models\ProjectLink::isValidGithubRepoUrl($url)) {
+            return null;
+        }
+        $msg = 'Enter a valid GitHub repository URL, e.g. https://github.com/username/project';
+        return $this->apiError($msg, ['repository_url' => [$msg]], 422);
     }
 
     /** @return Project|\Illuminate\Http\JsonResponse */

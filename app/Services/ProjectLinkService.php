@@ -137,6 +137,9 @@ class ProjectLinkService
 
         $type = $data['type'];
         $url = trim((string) $data['url']);
+        if ($type === 'github' && !ProjectLink::isValidGithubRepoUrl($url)) {
+            throw new \RuntimeException('Enter a valid GitHub repository URL, e.g. https://github.com/username/project');
+        }
         $label = isset($data['label']) ? trim((string) $data['label']) : null;
         $label = $label !== '' ? $label : null;
         $isPrimary = filter_var($data['is_primary'] ?? false, FILTER_VALIDATE_BOOLEAN);
