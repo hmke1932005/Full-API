@@ -34,6 +34,15 @@ return [
         'client_ids' => env('GOOGLE_CLIENT_IDS', env('GOOGLE_CLIENT_ID', '')),
     ],
 
+    // Connect GitHub (OAuth App). أنشئ OAuth App من GitHub → Settings → Developer settings،
+    // وخلي Authorization callback URL = GITHUB_OAUTH_REDIRECT بالظبط.
+    'github' => [
+        'client_id'     => env('GITHUB_CLIENT_ID', ''),
+        'client_secret' => env('GITHUB_CLIENT_SECRET', ''),
+        'redirect'      => env('GITHUB_OAUTH_REDIRECT', ''),   // https://<api-domain>/api/v1/github/callback
+        'scope'         => env('GITHUB_OAUTH_SCOPE', 'repo read:user'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

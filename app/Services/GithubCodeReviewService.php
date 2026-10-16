@@ -143,6 +143,22 @@ class GithubCodeReviewService
     /** Pipeline مشترك لـ run()/runAsAdmin() بعد ما مسألة المشروع/الملكية اتحلت. */
     private function executeReview(Project $project): array
     {
+        // لو صاحب المشروع ربط GitHub بتاعه → المراجعة بتشتغل بتوكنه (مستودعات خاصة + حد معدل أعلى)،
+        // وبنرجّع التوكن الأصلي بعد المراجعة عشان مايتسربش لمراجعة مشروع تاني.
+        $previousToken = $this->githubToken;
+        $ownerToken = app(\App\Services\GithubOAuthService::class)->tokenFor($project->owner_id);
+        if ($ownerToken) {
+            $this->githubToken = $ownerToken;
+        }
+        try {
+            return $this->executeReviewInner($project);
+        } finally {
+            $this->githubToken = $previousToken;
+        }
+    }
+
+    private function executeReviewInner(Project $project): array
+    {
         $link = $this->links->primaryByType($project->id, 'github');
         if (!$link) {
             throw new \RuntimeException('Add a GitHub link to this project first (Project Links section).');
@@ -576,7 +592,7 @@ class GithubCodeReviewService
             throw new \RuntimeException('Could not reach GitHub (' . $error . ').');
         }
         if ($status === 404) {
-            throw new \RuntimeException('Repository not found — check the URL is correct and the repo is public.');
+            throw new \RuntimeException('Repository not found — check the URL is correct. For a private repository, connect your GitHub account first.');
         }
         if ($status === 403) {
             throw new \RuntimeException('GitHub rate-limited this request. Please try again in a few minutes.');

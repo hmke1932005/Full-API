@@ -105,6 +105,7 @@ use App\Http\Controllers\Api\FacultyApprovalsApiController;
 use App\Http\Controllers\Api\FacultySettingsApiController;
 use App\Http\Controllers\Api\DashboardsApiController;
 use App\Http\Controllers\Api\ProjectsApiController;
+use App\Http\Controllers\Api\GithubConnectionApiController;
 use App\Http\Controllers\Api\AdminApprovalsApiController;
 use App\Http\Controllers\Api\AdminFeaturedProjectsApiController;
 use App\Http\Controllers\Api\SupervisorProjectsApiController;
@@ -1934,5 +1935,20 @@ Route::prefix('v1')->group(function () {
             Route::post('/2fa/disable', [SecuritySettingsApiController::class, 'twoFactorDisable']);
             Route::post('/2fa/trusted-devices/{id}/revoke', [SecuritySettingsApiController::class, 'revokeTrustedDevice']);
         });
+    });
+});
+
+// Connect GitHub (OAuth) — الـ callback عام عمدًا (GitHub بيرجّع المتصفح من غير Authorization header؛
+// الهوية جاية من state الكاش). باقي المسارات محمية.
+Route::prefix('v1/github')->group(function () {
+    Route::get('/callback', [GithubConnectionApiController::class, 'callback']);
+
+    Route::middleware('uip.auth')->group(function () {
+        Route::get('/status', [GithubConnectionApiController::class, 'status']);
+        Route::post('/connect', [GithubConnectionApiController::class, 'connect']);
+        Route::get('/repos', [GithubConnectionApiController::class, 'repos']);
+        Route::post('/link', [GithubConnectionApiController::class, 'linkToProject'])->middleware('uip.can:project.edit_own');
+        Route::post('/create-project', [GithubConnectionApiController::class, 'createProject'])->middleware('uip.can:project.create');
+        Route::delete('/connection', [GithubConnectionApiController::class, 'disconnect']);
     });
 });
