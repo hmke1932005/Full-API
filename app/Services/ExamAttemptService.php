@@ -377,8 +377,13 @@ class ExamAttemptService
         }
 
         if ($question->type === 'true_false') {
-            $value = $payload['answer_text'] ?? null;
-            if (!in_array($value, ['true', 'false'], true)) {
+            // The UI may send answer_text, or selected_option_ids (['true']); Arabic wording is accepted too.
+            $raw = $payload['answer_text'] ?? null;
+            if (($raw === null || $raw === '') && !empty($payload['selected_option_ids'])) {
+                $raw = reset($payload['selected_option_ids']);
+            }
+            $value = \App\Support\TrueFalse::normalize($raw);
+            if ($value === null) {
                 throw new \InvalidArgumentException('answer_text must be "true" or "false" for this question.');
             }
             $data = ['answer_text' => $value, 'selected_option_ids' => null];

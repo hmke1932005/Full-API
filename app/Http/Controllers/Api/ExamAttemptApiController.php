@@ -241,7 +241,12 @@ class ExamAttemptApiController extends Controller
 
         $validator = Validator::make($request->all(), [
             'selected_option_ids'   => 'nullable|array',
-            'selected_option_ids.*' => 'integer',
+            // integer ids for mcq; true/false may arrive as 'true'/'false' — the service validates per question type.
+            'selected_option_ids.*' => ['required', function ($attr, $value, $fail) {
+                if (!is_scalar($value)) {
+                    $fail('Invalid option.');
+                }
+            }],
             'answer_text'           => 'nullable|string|max:20000',
         ]);
         if ($validator->fails()) {

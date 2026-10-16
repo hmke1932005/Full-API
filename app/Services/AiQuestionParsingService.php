@@ -113,8 +113,7 @@ class AiQuestionParsingService
 
             $correctAnswer = null;
             if ($type === 'true_false') {
-                $ca = strtolower(trim((string) ($q['correct_answer'] ?? '')));
-                $correctAnswer = in_array($ca, ['true', 'false'], true) ? $ca : null;
+                $correctAnswer = \App\Support\TrueFalse::normalize($q['correct_answer'] ?? null);
             } elseif ($type === 'short_answer') {
                 $correctAnswer = isset($q['correct_answer']) && $q['correct_answer'] !== ''
                     ? trim((string) $q['correct_answer'])
@@ -190,8 +189,7 @@ class AiQuestionParsingService
 
             $correctAnswer = null;
             if ($type === 'true_false') {
-                $ca = strtolower(trim((string) ($q['correct_answer'] ?? '')));
-                $correctAnswer = in_array($ca, ['true', 'false'], true) ? $ca : null;
+                $correctAnswer = \App\Support\TrueFalse::normalize($q['correct_answer'] ?? null);
             } elseif ($type === 'short_answer' && trim((string) ($q['correct_answer'] ?? '')) !== '') {
                 $correctAnswer = trim((string) $q['correct_answer']);
             }

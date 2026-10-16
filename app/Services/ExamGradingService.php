@@ -168,7 +168,9 @@ class ExamGradingService
         }
 
         if ($question->type === 'true_false') {
-            return $answer->answer_text === $question->correct_answer;
+            $given = \App\Support\TrueFalse::normalize($answer->answer_text);
+            $expected = \App\Support\TrueFalse::normalize($question->correct_answer);
+            return $given !== null && $given === $expected;
         }
 
         $selected = collect($answer->selected_option_ids ?? [])->map(fn ($id) => (int) $id)->sort()->values();

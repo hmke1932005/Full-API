@@ -155,7 +155,7 @@ class ExamSystemService
                 'topic'                         => $data['topic'] ?? null,
                 'tags'                          => $data['tags'] ?? null,
                 'correct_answer'                => $data['type'] === 'true_false'
-                    ? ($data['correct_answer'] ?? 'true')
+                    ? (\App\Support\TrueFalse::normalize($data['correct_answer'] ?? 'true') ?? 'true')
                     : ($data['type'] === 'short_answer' ? ($data['correct_answer'] ?? null) : null),
                 'accepted_answers'              => $data['type'] === 'short_answer' ? ($data['accepted_answers'] ?? null) : null,
                 'case_sensitive'                => $data['type'] === 'short_answer' ? (bool) ($data['case_sensitive'] ?? false) : false,
@@ -195,6 +195,9 @@ class ExamSystemService
             'accepted_answers', 'case_sensitive', 'model_answer', 'expected_concepts', 'keywords',
             'grading_instructions', 'ai_grading_enabled',
         ]));
+        if ($question->type === 'true_false' && array_key_exists('correct_answer', $fillable)) {
+            $fillable['correct_answer'] = \App\Support\TrueFalse::normalize($fillable['correct_answer']) ?? $question->correct_answer;
+        }
         $question->fill($fillable);
 
         $question->save();
@@ -267,7 +270,7 @@ class ExamSystemService
             $this->validateMcqOptions($data['options'] ?? []);
         }
 
-        if ($type === 'true_false' && isset($data['correct_answer']) && !in_array($data['correct_answer'], ['true', 'false'], true)) {
+        if ($type === 'true_false' && isset($data['correct_answer']) && \App\Support\TrueFalse::normalize($data['correct_answer']) === null) {
             throw new \InvalidArgumentException("A true/false question's correct_answer must be 'true' or 'false'.");
         }
     }
