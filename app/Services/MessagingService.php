@@ -57,6 +57,7 @@ class MessagingService
         private SettingRepository $settings,
         private RoleService $roles,
         private AudioDenoiseService $denoise,
+        private GroupChatService $groups,
     ) {
     }
 
@@ -83,6 +84,9 @@ class MessagingService
                 'peer_email'         => $peer['email'] ?? null,
                 'peer_avatar'        => $peer['avatar_path'] ?? null,
                 'peer_role'          => $peer['account_role'] ?? null,
+                'group_avatar'       => $row['group_avatar'] ?? null,
+                'preview_type'       => $row['last_message_type'] ?? 'text',
+                'preview_meta'       => ($row['last_message_type'] ?? '') === 'system' && !empty($row['last_message_meta']) ? json_decode($row['last_message_meta'], true) : null,
                 'preview'            => $row['last_message_deleted'] ? '(message deleted)' : ($row['last_message_body'] ? mb_substr($row['last_message_body'], 0, 120) : null),
                 'time'               => $row['last_message_at'] ?: $row['updated_at'],
                 'is_unread'          => (bool) $row['is_unread'],
@@ -170,13 +174,27 @@ class MessagingService
             $this->messages->forConversation($conversationId, $userId, $beforeId)
         );
 
+        $conversationOut = [
+            'id'       => (int) $conversation->id,
+            'subject'  => $conversation->subject ?: ($conversation->is_group ? $conversation->group_name : null) ?: ($others[0]['full_name'] ?? '—'),
+            'is_group' => (bool) $conversation->is_group,
+            'my_role'  => $this->conversations->memberRole($conversationId, $userId),
+        ];
+        if ($conversation->is_group) {
+            $conversationOut = array_merge($conversationOut, $this->groups->threadExtras($conversationId, $userId));
+            // per-member group role / send restriction for the members list
+            $flags = $this->groups->memberFlags($conversationId);
+            foreach ($others as &$o) {
+                $f = $flags[(int) $o['id']] ?? null;
+                $o['group_role'] = $f['role'] ?? 'member';
+                $o['send_restricted'] = $f['send_restricted'] ?? false;
+                $o['joined_at'] = $f['joined_at'] ?? null;
+            }
+            unset($o);
+        }
+
         return [
-            'conversation' => [
-                'id'       => (int) $conversation->id,
-                'subject'  => $conversation->subject ?: ($conversation->is_group ? $conversation->group_name : null) ?: ($others[0]['full_name'] ?? '—'),
-                'is_group' => (bool) $conversation->is_group,
-                'my_role'  => $this->conversations->memberRole($conversationId, $userId),
-            ],
+            'conversation' => $conversationOut,
             'others'   => $others,
             'messages' => $messages,
         ];
@@ -210,6 +228,15 @@ class MessagingService
         if (mb_strlen($body) > $maxLen) {
             throw new \RuntimeException("Message is too long (max {$maxLen} characters).");
         }
+
+        // Group rules: closed group / restricted member / allowed message types (no-op for 1:1 chats).
+        $kinds = [];
+        foreach (array_values((array) ($options['attachments'] ?? [])) as $file) {
+            if ($file instanceof UploadedFile) {
+                $kinds[] = $this->classifyKind(strtolower((string) $file->getClientOriginalExtension()), $file->getClientOriginalName(), $file->getClientMimeType());
+            }
+        }
+        $this->groups->assertCanSend($conversationId, $userId, (string) ($options['message_type'] ?? 'text'), $body, $kinds);
 
         $this->assertNotRateLimited($userId);
 
@@ -745,50 +772,39 @@ class MessagingService
 
     // -- Group / team conversations ----------------------------------------
 
-    public function createGroupConversation($creatorId, string $groupName, array $memberIds): array
+    public function createGroupConversation($creatorId, string $groupName, array $memberIds, ?string $description = null): array
     {
         $groupName = trim($groupName);
         if ($groupName === '') {
             throw new \RuntimeException('Group name is required.');
         }
-        $conversation = $this->conversations->createGroup($groupName, $creatorId, $memberIds);
+        $conversation = $this->conversations->createGroup(mb_substr($groupName, 0, 100), $creatorId, $memberIds);
+        $this->groups->afterCreate((int) $conversation->id, $creatorId, $description);
         return $this->threadForUser((int) $conversation->id, $creatorId) ?? [];
-    }
-
-    private function assertConversationAdmin(int $conversationId, $actingUserId): void
-    {
-        if (!in_array($this->conversations->memberRole($conversationId, $actingUserId), ['owner', 'admin'], true)) {
-            throw new \RuntimeException('Only conversation owners/admins can do that.');
-        }
     }
 
     public function addMember(int $conversationId, $actingUserId, $newUserId): void
     {
-        $this->assertConversationAdmin($conversationId, $actingUserId);
-        $this->conversations->addMember($conversationId, $newUserId);
+        $this->groups->addMembers($conversationId, $actingUserId, [$newUserId]);
     }
 
     public function removeMember(int $conversationId, $actingUserId, $targetUserId): void
     {
-        if ((string) $actingUserId !== (string) $targetUserId) {
-            $this->assertConversationAdmin($conversationId, $actingUserId);
+        if ((string) $actingUserId === (string) $targetUserId) {
+            $this->groups->leave($conversationId, $actingUserId);
+            return;
         }
-        $this->conversations->removeMember($conversationId, $targetUserId);
+        $this->groups->removeMember($conversationId, $actingUserId, $targetUserId);
     }
 
     public function setMemberRole(int $conversationId, $actingUserId, $targetUserId, string $role): void
     {
-        if (!in_array($role, ['owner', 'admin', 'member'], true)) {
-            throw new \RuntimeException('Invalid role.');
-        }
-        $this->assertConversationAdmin($conversationId, $actingUserId);
-        $this->conversations->setMemberRole($conversationId, $targetUserId, $role);
+        $this->groups->setRole($conversationId, $actingUserId, $targetUserId, $role);
     }
 
     public function renameGroup(int $conversationId, $actingUserId, string $groupName): void
     {
-        $this->assertConversationAdmin($conversationId, $actingUserId);
-        $this->conversations->renameGroup($conversationId, trim($groupName));
+        $this->groups->update($conversationId, $actingUserId, ['name' => $groupName]);
     }
 
     // -- Per-member conversation state (favorite/pin/mute/archive/category) --

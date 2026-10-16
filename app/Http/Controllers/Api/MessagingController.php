@@ -91,12 +91,17 @@ class MessagingController extends Controller
         });
     }
 
-    /** POST /api/v1/messaging/conversations/group — body: name, member_ids[] */
+    /** POST /api/v1/messaging/conversations/group — body: name, description?, member_ids[] */
     public function createGroup(Request $request)
     {
         return $this->handle(function () use ($request) {
             $memberIds = array_map('intval', (array) $request->input('member_ids', []));
-            $thread = $this->messaging->createGroupConversation($this->uid($request), (string) $request->input('name', ''), $memberIds);
+            $thread = $this->messaging->createGroupConversation(
+                $this->uid($request),
+                (string) $request->input('name', ''),
+                $memberIds,
+                $request->filled('description') ? (string) $request->input('description') : null
+            );
             return $this->apiSuccess($thread, 'Group created successfully.', 201);
         });
     }

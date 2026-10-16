@@ -65,6 +65,7 @@ use App\Http\Controllers\Api\MeetingsRecordingsApiController;
 use App\Http\Controllers\Api\MeetingsAttendanceApiController;
 use App\Http\Controllers\Api\MeetingsInvitationsApiController;
 use App\Http\Controllers\Api\MessagingController;
+use App\Http\Controllers\Api\GroupChatController;
 use App\Http\Controllers\Api\AccountPrivacyApiController;
 use App\Http\Controllers\Api\AdminAiConversationsApiController;
 use App\Http\Controllers\Api\AiAssistantController;
@@ -1512,6 +1513,24 @@ Route::prefix('v1')->group(function () {
         Route::post('/conversations/{id}/members', [MessagingController::class, 'addMember']);
         Route::delete('/conversations/{id}/members/{userId}', [MessagingController::class, 'removeMember']);
         Route::post('/conversations/{id}/members/{userId}/role', [MessagingController::class, 'setMemberRole']);
+
+        // WhatsApp-style group administration (GroupChatController)
+        Route::patch('/conversations/{id}/group', [GroupChatController::class, 'update']);
+        Route::delete('/conversations/{id}/group', [GroupChatController::class, 'destroy']);
+        Route::post('/conversations/{id}/group/avatar', [GroupChatController::class, 'setAvatar']);
+        Route::delete('/conversations/{id}/group/avatar', [GroupChatController::class, 'removeAvatar']);
+        Route::post('/conversations/{id}/members/bulk', [GroupChatController::class, 'addMembers']);
+        Route::post('/conversations/{id}/members/{userId}/restrict', [GroupChatController::class, 'restrict']);
+        Route::post('/conversations/{id}/transfer-owner', [GroupChatController::class, 'transferOwner']);
+        Route::post('/conversations/{id}/leave', [GroupChatController::class, 'leave']);
+        Route::get('/conversations/{id}/invite', [GroupChatController::class, 'invite']);
+        Route::post('/conversations/{id}/invite/reset', [GroupChatController::class, 'resetInvite']);
+        Route::get('/conversations/{id}/join-requests', [GroupChatController::class, 'joinRequests']);
+        Route::post('/conversations/{id}/join-requests/{requestId}/approve', [GroupChatController::class, 'approveRequest']);
+        Route::post('/conversations/{id}/join-requests/{requestId}/reject', [GroupChatController::class, 'rejectRequest']);
+        Route::get('/groups/invite/{token}', [GroupChatController::class, 'previewInvite']);
+        Route::post('/groups/invite/{token}/join', [GroupChatController::class, 'join']);
+        Route::delete('/groups/invite/{token}/request', [GroupChatController::class, 'cancelRequest']);
         Route::post('/conversations/{id}/flags/{flag}', [MessagingController::class, 'setFlag']);
         Route::post('/conversations/{id}/category', [MessagingController::class, 'setCategory']);
         Route::post('/conversations/{id}/messages', [MessagingController::class, 'send']);

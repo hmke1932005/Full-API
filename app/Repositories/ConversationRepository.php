@@ -18,11 +18,12 @@ class ConversationRepository
     {
         $rows = DB::select(
             "SELECT c.id, c.subject, c.related_project_id, c.updated_at,
-                    c.is_group, c.group_name,
+                    c.is_group, c.group_name, c.avatar_path AS group_avatar,
                     cp.last_read_at, cp.role AS my_role,
                     cp.is_favorite, cp.is_pinned, cp.is_muted, cp.is_archived, cp.category,
                     m.body AS last_message_body, m.created_at AS last_message_at, m.sender_id AS last_message_sender_id,
-                    m.is_deleted AS last_message_deleted
+                    m.is_deleted AS last_message_deleted,
+                    m.message_type AS last_message_type, m.metadata AS last_message_meta
              FROM conversations c
              INNER JOIN conversation_participants cp ON cp.conversation_id = c.id AND cp.user_id = ?
              LEFT JOIN messages m ON m.id = (
