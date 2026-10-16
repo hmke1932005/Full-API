@@ -40,7 +40,7 @@ class ConfirmEmailChangeController extends Controller
         }
 
         // العنوان الجديد بقى مستخدم من حد تاني في الفترة بين إنشاء التوكن واستخدامه
-        if (DB::table('users')->where('email', $row->new_email)->exists()) {
+        if (DB::table('users')->whereRaw('LOWER(email) = ?', [strtolower($row->new_email)])->where('id', '!=', $row->user_id)->exists()) {
             DB::table('email_verification_tokens')->where('id', $row->id)->update(['used_at' => now()]);
             DB::table('users')->where('id', $row->user_id)->update(['pending_email' => null]);
             return $this->apiError($genericError, null, 422);
@@ -49,6 +49,8 @@ class ConfirmEmailChangeController extends Controller
         DB::table('users')->where('id', $row->user_id)->update([
             'email'          => $row->new_email,
             'pending_email'  => null,
+            // فتح اللينك من الإيميل الجديد = إثبات ملكيته.
+            'email_verified_at' => now(),
             'updated_at'     => now(),
         ]);
         DB::table('email_verification_tokens')->where('id', $row->id)->update(['used_at' => now()]);

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Auth\ForgotPasswordController;
 use App\Http\Controllers\Api\Auth\ResetPasswordController;
 use App\Http\Controllers\Api\Auth\VerifyEmailController;
 use App\Http\Controllers\Api\Auth\ConfirmEmailChangeController;
+use App\Http\Controllers\Api\Auth\RequestEmailChangeController;
 use App\Http\Controllers\Api\Auth\RoleSelectionController;
 use App\Http\Controllers\Api\Auth\UniversitiesController;
 use App\Http\Controllers\Api\Auth\SessionsController;
@@ -191,6 +192,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/account-recovery/merge/candidates', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'mergeCandidates']);
             Route::post('/account-recovery/merge/send', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'mergeSend'])->middleware('throttle:6,1');
             Route::post('/account-recovery/merge/confirm', [\App\Http\Controllers\Api\Auth\AccountRecoveryController::class, 'mergeConfirm'])->middleware('throttle:12,1');
+            Route::get('/email-change', [RequestEmailChangeController::class, 'show']);
+            Route::post('/email-change', [RequestEmailChangeController::class, 'submit'])->middleware('throttle:5,1');
+            Route::delete('/email-change', [RequestEmailChangeController::class, 'cancel'])->middleware('throttle:10,1');
             Route::get('/sessions', [SessionsController::class, 'index']);
             Route::delete('/sessions/{id}', [SessionsController::class, 'revoke']);
         });

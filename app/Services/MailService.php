@@ -453,7 +453,31 @@ class MailService
         );
     }
 
-    /** إيميل إعادة تعيين كلمة السر — بيرجّع نتيجة الإرسال الفعلية. */
+    /** لينك تأكيد تغيير الإيميل — بيتبعت للإيميل الجديد، والتغيير ما بيحصلش قبل الضغط عليه. */
+    public function sendEmailChangeConfirmation(string $toEmail, string $fullName, string $confirmUrl, int $hours, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+
+        return $this->deliver(
+            $toEmail,
+            $ar ? 'أكّد بريدك الإلكتروني الجديد' : 'Confirm your new email address',
+            $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
+            [
+                $ar
+                    ? "طلبت تغيير بريد حسابك إلى هذا العنوان. اضغط على الزر أدناه لتأكيده. الرابط صالح لمدة {$hours} ساعة."
+                    : "You asked to change your account email to this address. Click the button below to confirm it. The link is valid for {$hours} hours.",
+                $ar
+                    ? 'لو ماكنتش أنت اللي طلب ده، تجاهل هذه الرسالة — بريد الحساب مش هيتغير.'
+                    : "If you didn't request this, ignore this message — your account email won't change.",
+            ],
+            ['label' => $ar ? 'تأكيد البريد الجديد' : 'Confirm new email', 'url' => $confirmUrl],
+            $locale,
+            [],
+            'sendEmailChangeConfirmation',
+            'info'
+        );
+    }
+
     /** لينك تأكيد الإيميل بعد التسجيل — الحساب مبيشتغلش قبل الضغط عليه. */
     public function sendEmailVerification(string $toEmail, string $fullName, string $verifyUrl, string $locale = 'ar'): bool
     {
