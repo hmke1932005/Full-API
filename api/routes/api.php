@@ -195,6 +195,13 @@ Route::prefix('v1')->group(function () {
     // مجموعة prefix('faculty') تحت — 'faculty/approvals' و'faculty/{id}'
     // بيتطابقوا مع نفس الـ path لو 'approvals' اتحل كـ {id}، والراوتر بياخد
     // أول تطابق بالترتيب، فالمجموعة الأخص لازم تسبق الأعم.
+    // تقرير مراجعة الكود لمشروع — لكل أطراف المشروع (طالب/دكتور/معيد/مشرف/كلية/جامعة/أدمن)؛
+    // الصلاحية في CodeReviewReportService::resolveProject (نفس نطاق صفحات كل دور).
+    Route::prefix('code-review-report')->middleware('uip.auth')->group(function () {
+        Route::get('/{uuid}', [\App\Http\Controllers\Api\CodeReviewReportApiController::class, 'show']);
+        Route::get('/{uuid}/export', [\App\Http\Controllers\Api\CodeReviewReportApiController::class, 'export']);
+    });
+
     Route::prefix('faculty/approvals')->middleware('uip.auth')->group(function () {
         Route::get('/', [FacultyApprovalsApiController::class, 'index']);
         Route::get('/{id}', [FacultyApprovalsApiController::class, 'show']);

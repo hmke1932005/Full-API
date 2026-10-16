@@ -61,7 +61,14 @@ final class ExportLocalizer
         'Architecture' => 'البنية', 'Quality' => 'الجودة', 'Reviewed By (User ID)' => 'تمت المراجعة بواسطة (رقم المستخدم)',
         'Approved At' => 'تاريخ الاعتماد', 'Not yet approved' => 'لم يُعتمد بعد', 'Score Overridden' => 'تم تعديل الدرجة',
         'Override Reason' => 'سبب التعديل', 'Admin Notes' => 'ملاحظات المسؤول', 'Yes' => 'نعم', 'No' => 'لا',
-        'Critical' => 'حرجة', 'High' => 'عالية', 'Medium' => 'متوسطة', 'Low' => 'منخفضة',
+        'Critical' => 'حرجة', 'High' => 'عالية', 'Medium' => 'متوسطة', 'Low' => 'منخفضة', 'Info' => 'معلومة',
+        // تقرير مراجعة الكود للمشروع (CodeReviewReportService)
+        'Code Review Report' => 'تقرير مراجعة الكود', 'Summary' => 'الملخص', 'Project' => 'المشروع',
+        'Department' => 'القسم',
+        'Doctor / Supervisor' => 'الدكتور / المشرف', 'Teaching Assistant' => 'المعيد', 'Repository' => 'المستودع',
+        'Analysis Method' => 'طريقة التحليل', 'Review Version' => 'نسخة المراجعة', 'Review Date' => 'تاريخ المراجعة',
+        'Suggested Fix' => 'الحل المقترح', 'Language Mix' => 'توزيع اللغات', 'Language' => 'اللغة', 'Share %' => 'النسبة %',
+        'Files Analyzed' => 'الملفات التي تم تحليلها',
     ];
 
     public static function isArabic(): bool

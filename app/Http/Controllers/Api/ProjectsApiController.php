@@ -678,6 +678,17 @@ class ProjectsApiController extends Controller
             return $this->apiError($e->getMessage(), null, 422);
         }
 
+        // وصّل التقرير للدكتور/المعيد/الكلية/الجامعة (بدون ما يأثر على نجاح المراجعة لو الإشعار فشل).
+        if (($result['status'] ?? null) === 'completed') {
+            $project = $this->projectRepo->findByUuid((string) $id);
+            app(\App\Services\ProjectNotifier::class)->notifyCodeReviewReady(
+                $project,
+                (int) ($result['scores']['overall'] ?? 0),
+                (int) ($result['issues_found'] ?? 0),
+                $request->attributes->get('uip_user_id')
+            );
+        }
+
         return $this->apiSuccess($result, 'Code review completed.');
     }
 

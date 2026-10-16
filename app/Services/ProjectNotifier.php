@@ -141,6 +141,49 @@ class ProjectNotifier
     }
 
     /**
+     * تقرير مراجعة الكود جاهز: بيوصل للدكتور/المشرف والمعيد (عبر الفريق + ربط اسم المشرف) وكلية الطالب
+     * والجامعة — نفس سلسلة notifySubmitted — مع رابط صفحة المشروع اللي فيها التقرير والتصدير.
+     * بيتجاهل المسودات (مفيش حد بيراجعها لسه). مابيرميش exception أبدًا.
+     */
+    public function notifyCodeReviewReady(?Project $project, int $score, int $issues, $exceptUserId = null): void
+    {
+        try {
+            if (!$project || $project->status === 'draft') {
+                return;
+            }
+            $this->linkSupervisor($project);
+            $title = $this->title($project);
+            $sent = [(int) $project->owner_id => true, (int) $exceptUserId => true];
+            $body = "تقرير مراجعة الكود لمشروع \"{$title}\" جاهز: الدرجة {$score}/100 و{$issues} ملاحظة. افتح صفحة المشروع للاطلاع على التفاصيل وتصدير التقرير.";
+            $send = function ($userId, string $link) use (&$sent, $body) {
+                $userId = (int) $userId;
+                if (!$userId || isset($sent[$userId])) {
+                    return;
+                }
+                $sent[$userId] = true;
+                $this->notifications->notify($userId, 'code_review_ready', 'تقرير مراجعة الكود جاهز', $body, $link);
+            };
+
+            $staffIds = ProjectTeamMember::where('project_id', $project->id)->where('status', 'accepted')
+                ->whereIn('role', self::STAFF_ROLES)->whereNotNull('user_id')->pluck('user_id')->all();
+            foreach ($staffIds as $uid) {
+                $send($uid, '/academic-staff/projects/' . $project->uuid);
+            }
+
+            $facultyId = DB::table('students')->where('user_id', $project->owner_id)->value('faculty_id');
+            if ($facultyId) {
+                $send(DB::table('faculties')->where('id', $facultyId)->value('user_id'), '/faculty/approvals/' . $project->uuid);
+            }
+            $uni = $this->universityId($project);
+            if ($uni) {
+                $send(DB::table('universities')->where('id', $uni)->value('user_id'), '/university/approvals/' . $project->uuid);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Code review notification failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * "دورك الآن": بيتبعت لصاحب المرحلة الجاية بعد ما اللي قبلها اعتمد (مسار الاعتماد الإجباري).
      * $stage = faculty_review | university_review (الدكتور بيتبلّغ وقت التقديم).
      */
