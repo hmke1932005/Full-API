@@ -134,6 +134,9 @@ class AdminUserAffiliationService
     public function options(): array
     {
         $unis = DB::table('universities')->whereNull('deleted_at')
+            ->where(function ($w) {
+                $w->whereNull('user_id')->orWhereIn('user_id', DB::table('users')->whereNull('deleted_at')->select('id'));
+            })
             ->orderBy('official_name_en')
             ->get(['id', 'official_name_en', 'official_name_ar', 'verification_status']);
 

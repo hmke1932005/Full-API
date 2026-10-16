@@ -18,8 +18,12 @@ class UniversitiesController extends Controller
         $locale = $request->query('locale', 'en');
         $nameCol = $locale === 'ar' ? 'official_name_ar' : 'official_name_en';
 
+        // الجامعة المحذوفة (صفها أو حساب مالكها) مينفعش تظهر في التسجيل.
         $data = DB::table('universities')
             ->whereNull('deleted_at')
+            ->where(function ($w) {
+                $w->whereNull('user_id')->orWhereIn('user_id', DB::table('users')->whereNull('deleted_at')->select('id'));
+            })
             ->select('id', "{$nameCol} as name")
             ->orderBy($nameCol)
             ->get();

@@ -27,7 +27,7 @@ class ExamResultsHubApiController extends ExamResultsExportApiController
             return $err;
         }
 
-        $exams = DB::table('exams')->where('created_by_academic_staff_id', $staffId)->orderByDesc('id')->get();
+        $exams = DB::table('exams')->whereNull('deleted_at')->where('created_by_academic_staff_id', $staffId)->orderByDesc('id')->get();
         $attempts = $this->attemptsFor($exams->pluck('id')->all());
 
         $out = [];
@@ -149,7 +149,7 @@ class ExamResultsHubApiController extends ExamResultsExportApiController
 
     protected function buildStudentRows(int $staffId, string $q, int $examId): array
     {
-        $examQuery = DB::table('exams')->where('created_by_academic_staff_id', $staffId);
+        $examQuery = DB::table('exams')->whereNull('deleted_at')->where('created_by_academic_staff_id', $staffId);
         if ($examId > 0) {
             $examQuery->where('id', $examId);
         }
