@@ -279,6 +279,13 @@ Route::prefix('v1')->group(function () {
         Route::delete('/{id}', [\App\Http\Controllers\Api\ProjectDeadlinesApiController::class, 'destroy']);
     });
 
+    // تقرير مراجعة الكود لمشروع — لكل أطراف المشروع (طالب/دكتور/معيد/مشرف/كلية/جامعة/أدمن)؛
+    // الصلاحية في CodeReviewReportService::resolveProject (نفس نطاق صفحات كل دور).
+    Route::prefix('code-review-report')->middleware('uip.auth')->group(function () {
+        Route::get('/{uuid}', [\App\Http\Controllers\Api\CodeReviewReportApiController::class, 'show']);
+        Route::get('/{uuid}/export', [\App\Http\Controllers\Api\CodeReviewReportApiController::class, 'export']);
+    });
+
     Route::prefix('faculty/approvals')->middleware('uip.auth')->group(function () {
         Route::get('/', [FacultyApprovalsApiController::class, 'index']);
         Route::get('/{id}', [FacultyApprovalsApiController::class, 'show']);
