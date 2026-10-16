@@ -969,6 +969,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/bulk', [AdminUsersApiController::class, 'bulkStore'])->middleware('throttle:10,1');
         // static قبل /{id} عشان مايتبلعش كـ uuid
         Route::get('/affiliation-options', [AdminUsersApiController::class, 'affiliationOptions']);
+        Route::get('/filter-options', [AdminUsersApiController::class, 'filterOptions']);
         Route::get('/{id}', [AdminUsersApiController::class, 'show']);
         Route::patch('/{id}', [AdminUsersApiController::class, 'update']);
         Route::delete('/{id}', [AdminUsersApiController::class, 'destroy']);

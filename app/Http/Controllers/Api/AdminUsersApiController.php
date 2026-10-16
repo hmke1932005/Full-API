@@ -53,14 +53,52 @@ class AdminUsersApiController extends Controller
             return $err;
         }
 
+        $in = fn (string $k) => trim((string) $request->input($k, ''));
+        $date = fn (string $k) => preg_match('/^\d{4}-\d{2}-\d{2}$/', $in($k)) ? $in($k) : null;
+        $days = fn (string $k) => ($n = (int) $request->input($k)) > 0 ? min($n, 36500) : null;
+        $oneOf = fn (string $k, array $allowed) => in_array($in($k), $allowed, true) ? $in($k) : null;
+        $yn = fn (string $k) => $oneOf($k, ['yes', 'no']);
+        $id = fn (string $k) => ($n = (int) $request->input($k)) > 0 ? $n : null;
+
         $filters = array_filter([
-            'role'   => $request->input('role') ?: null,
-            'status' => $request->input('status') ?: null,
-            'search' => $request->input('q') ?: null,
-            'university_id' => $request->input('university_id') ?: null,
-            // affiliation=none => طلاب/مشرفين/هيئة مش مرتبطين بأي جامعة
-            'affiliation'   => $request->input('affiliation') === 'none' ? 'none' : null,
-        ]);
+            // role/status بيقبلوا قيمة واحدة أو أكتر مفصولة بفاصلة: role=student,supervisor
+            'role'   => $in('role') ?: null,
+            'status' => $in('status') ?: null,
+            'search' => $in('q') ?: null,
+            'university_id' => $id('university_id'),
+            'faculty_id'    => $id('faculty_id'),
+            'department_id' => $id('department_id'),
+            'program_id'    => $id('program_id'),
+            'academic_year' => $id('academic_year'),
+            // affiliation: none = طلاب/مشرفين/هيئة مش مرتبطين بأي جامعة، has = مرتبط بجامعة
+            'affiliation'   => $oneOf('affiliation', ['none', 'has']),
+            // حالة الانضمام
+            'invitation_status' => $oneOf('invitation_status', ['pending', 'accepted', 'expired', 'none']),
+            'email_verified'    => $yn('email_verified'),
+            // أمان
+            'two_factor'           => $yn('two_factor'),
+            'locked'               => $yn('locked'),
+            'must_change_password' => $oneOf('must_change_password', ['yes']),
+            'failed_logins_min'    => $days('failed_logins_min'),
+            // تاريخ الانضمام
+            'joined_from'        => $date('joined_from'),
+            'joined_to'          => $date('joined_to'),
+            'joined_within_days' => $days('joined_within_days'),
+            'joined_before_days' => $days('joined_before_days'),
+            // آخر دخول
+            'last_login'         => $oneOf('last_login', ['never', 'ever']),
+            'active_within_days' => $days('active_within_days'),
+            'inactive_days'      => $days('inactive_days'),
+            'last_login_from'    => $date('last_login_from'),
+            'last_login_to'      => $date('last_login_to'),
+            // بيانات الحساب
+            'email_domain' => mb_substr($in('email_domain'), 0, 120) ?: null,
+            'has_phone'    => $yn('has_phone'),
+            'has_avatar'   => $yn('has_avatar'),
+            // فرز
+            'sort' => $in('sort') ?: null,
+            'dir'  => $oneOf('dir', ['asc', 'desc']),
+        ], fn ($v) => $v !== null && $v !== '');
         $page = max(1, (int) $request->input('page', 1));
         $perPage = max(1, min(self::PER_PAGE_MAX, (int) $request->input('per_page', self::PER_PAGE_DEFAULT)));
 
@@ -601,6 +639,16 @@ class AdminUsersApiController extends Controller
         return $ok
             ? $this->apiSuccess(['ip' => $ip], 'IP blocked successfully.', 201)
             : $this->apiError('That IP is already blocked.', null, 422);
+    }
+
+    /** GET /api/v1/admin/users/filter-options — دومينات الإيميل الأكتر استخدامًا + السنوات الدراسية (لقوائم الفلاتر). */
+    public function filterOptions(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        return $this->apiSuccess($this->users->filterFacets(), 'Filter options retrieved successfully.');
     }
 
     /** GET /api/v1/admin/users/affiliation-options — الجامعات الشغالة وهيكلها (كليات/أقسام/برامج). */

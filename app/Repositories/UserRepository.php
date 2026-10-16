@@ -318,50 +318,187 @@ class UserRepository
             ->whereNull('u.deleted_at');
     }
 
-    /** rolesWithOrgQuery() + الجامعة التابع لها المستخدم (طالب/مشرف/هيئة/كلية/جامعة نفسها). */
+    /** rolesWithOrgQuery() + الجامعة التابع لها المستخدم (طالب/مشرف/هيئة/كلية/جامعة نفسها) + الكلية/القسم/البرنامج. */
     private function rolesWithAffiliationQuery()
     {
         return $this->rolesWithOrgQuery()
             ->leftJoin('supervisors as sup', 'sup.user_id', '=', 'u.id')
             ->leftJoin('academic_staff as ast', 'ast.user_id', '=', 'u.id')
             ->leftJoin('faculties as fac', 'fac.user_id', '=', 'u.id')
-            ->leftJoin('universities as au', 'au.id', '=', DB::raw('COALESCE(uni.id, s.university_id, sup.university_id, ast.university_id, fac.university_id)'));
+            ->leftJoin('universities as au', 'au.id', '=', DB::raw('COALESCE(uni.id, s.university_id, sup.university_id, ast.university_id, fac.university_id)'))
+            // الكلية / القسم / البرنامج الفعليين للمستخدم (طالب أو هيئة تدريس أو حساب كلية).
+            ->leftJoin('faculties as ef', 'ef.id', '=', DB::raw('COALESCE(s.faculty_id, ast.faculty_id, fac.id)'))
+            ->leftJoin('departments as ed', 'ed.id', '=', DB::raw('COALESCE(s.department_id, ast.department_id)'))
+            ->leftJoin('programs as ep', 'ep.id', '=', 's.program_id');
+    }
+
+    /** أعمدة الفرز المسموحة (whitelist) => العمود الفعلي. */
+    private const SORTABLE = [
+        'created_at'    => 'u.created_at',
+        'last_login_at' => 'u.last_login_at',
+        'full_name'     => 'u.full_name',
+        'email'         => 'u.email',
+        'status'        => 'u.status',
+        'role'          => 'r.slug',
+    ];
+
+    /** يحوّل قيمة "a,b,c" أو array لـ array نضيفة من strings. */
+    private function listOf($value): array
+    {
+        $arr = is_array($value) ? $value : explode(',', (string) $value);
+        return array_values(array_filter(array_map(fn ($v) => trim((string) $v), $arr), fn ($v) => $v !== ''));
     }
 
     /**
-     * منقولة من UserRepository::paginateWithRoles() القديمة — نفس فلاتر
-     * buildRoleFilters() (role/status/search)، بس هنا كـ query builder.
-     *     * @return array{rows: array<int,array<string,mixed>>, total: int}
+     * فلاتر متقدمة لدليل المستخدمين. كل فلتر اختياري ويتجمعوا بـ AND.
+     * ماتتحسبش على الـ deleted (دي ليها paginateTrashed).
+     */
+    private function applyDirectoryFilters($query, array $f): void
+    {
+        $uniExpr = 'COALESCE(uni.id, s.university_id, sup.university_id, ast.university_id, fac.university_id)';
+
+        if ($roles = $this->listOf($f['role'] ?? '')) {
+            $query->whereIn('r.slug', $roles);
+        }
+        if ($statuses = $this->listOf($f['status'] ?? '')) {
+            $query->whereIn('u.status', $statuses);
+        }
+
+        // ---- الانتماء الأكاديمي ----
+        if (!empty($f['university_id'])) {
+            $query->whereRaw($uniExpr . ' = ?', [(int) $f['university_id']]);
+        }
+        if (!empty($f['faculty_id'])) {
+            $query->whereRaw('COALESCE(s.faculty_id, ast.faculty_id, fac.id) = ?', [(int) $f['faculty_id']]);
+        }
+        if (!empty($f['department_id'])) {
+            $query->whereRaw('COALESCE(s.department_id, ast.department_id) = ?', [(int) $f['department_id']]);
+        }
+        if (!empty($f['program_id'])) {
+            $query->where('s.program_id', (int) $f['program_id']);
+        }
+        if (!empty($f['academic_year'])) {
+            $query->where('s.academic_year', (int) $f['academic_year']);
+        }
+        if (($f['affiliation'] ?? null) === 'none') {
+            // اللي ينفع يتربط بجامعة (طالب/مشرف/هيئة) ومش مرتبط بأي واحدة.
+            $query->whereIn('r.slug', ['student', 'supervisor', 'academic_staff'])
+                ->whereRaw('COALESCE(s.university_id, sup.university_id, ast.university_id) IS NULL');
+        }
+        if (($f['affiliation'] ?? null) === 'has') {
+            $query->whereRaw($uniExpr . ' IS NOT NULL');
+        }
+
+        // ---- حالة الانضمام / الدعوة ----
+        // invitation_status: pending (لسه ماقبلش الدعوة) | accepted | expired | none (مالوش دعوة)
+        if (!empty($f['invitation_status'])) {
+            $inv = 'COALESCE(s.invitation_status, sup.invitation_status, ast.invitation_status)';
+            if ($f['invitation_status'] === 'none') {
+                $query->whereRaw($inv . ' IS NULL');
+            } elseif (in_array($f['invitation_status'], ['pending', 'accepted', 'expired'], true)) {
+                $query->whereRaw($inv . ' = ?', [$f['invitation_status']]);
+            }
+        }
+        if (($f['email_verified'] ?? null) === 'yes') {
+            $query->whereNotNull('u.email_verified_at');
+        } elseif (($f['email_verified'] ?? null) === 'no') {
+            $query->whereNull('u.email_verified_at');
+        }
+
+        // ---- الأمان والقفل ----
+        if (($f['two_factor'] ?? null) === 'yes') {
+            $query->where('u.two_factor_enabled', 1);
+        } elseif (($f['two_factor'] ?? null) === 'no') {
+            $query->where(fn ($w) => $w->where('u.two_factor_enabled', 0)->orWhereNull('u.two_factor_enabled'));
+        }
+        if (($f['locked'] ?? null) === 'yes') {
+            $query->where(fn ($w) => $w->where('u.lock_permanent', 1)->orWhere('u.locked_until', '>', now()));
+        } elseif (($f['locked'] ?? null) === 'no') {
+            $query->where(fn ($w) => $w->where(fn ($x) => $x->where('u.lock_permanent', 0)->orWhereNull('u.lock_permanent'))
+                ->where(fn ($x) => $x->whereNull('u.locked_until')->orWhere('u.locked_until', '<=', now())));
+        }
+        if (($f['must_change_password'] ?? null) === 'yes') {
+            $query->where('u.must_change_password', 1);
+        }
+        if (!empty($f['failed_logins_min'])) {
+            $query->where('u.failed_login_attempts', '>=', (int) $f['failed_logins_min']);
+        }
+
+        // ---- تاريخ الانضمام (created_at) ----
+        if (!empty($f['joined_from'])) {
+            $query->where('u.created_at', '>=', $f['joined_from'] . ' 00:00:00');
+        }
+        if (!empty($f['joined_to'])) {
+            $query->where('u.created_at', '<=', $f['joined_to'] . ' 23:59:59');
+        }
+        if (!empty($f['joined_within_days'])) {
+            $query->where('u.created_at', '>=', now()->subDays(max(0, (int) $f['joined_within_days'] - 1))->startOfDay());
+        }
+        if (!empty($f['joined_before_days'])) {
+            $query->where('u.created_at', '<', now()->subDays((int) $f['joined_before_days'])->startOfDay());
+        }
+
+        // ---- آخر دخول ----
+        if (($f['last_login'] ?? null) === 'never') {
+            $query->whereNull('u.last_login_at');
+        } elseif (($f['last_login'] ?? null) === 'ever') {
+            $query->whereNotNull('u.last_login_at');
+        }
+        if (!empty($f['active_within_days'])) {
+            $query->where('u.last_login_at', '>=', now()->subDays(max(0, (int) $f['active_within_days'] - 1))->startOfDay());
+        }
+        if (!empty($f['inactive_days'])) {
+            // دخل قبل كده بس بقاله N يوم ماظهرش.
+            $query->where('u.last_login_at', '<', now()->subDays((int) $f['inactive_days'])->startOfDay());
+        }
+        if (!empty($f['last_login_from'])) {
+            $query->where('u.last_login_at', '>=', $f['last_login_from'] . ' 00:00:00');
+        }
+        if (!empty($f['last_login_to'])) {
+            $query->where('u.last_login_at', '<=', $f['last_login_to'] . ' 23:59:59');
+        }
+
+        // ---- بيانات الإيميل / الاتصال ----
+        if (!empty($f['email_domain'])) {
+            $domain = ltrim(strtolower($f['email_domain']), '@');
+            $domain = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $domain);
+            $query->where('u.email', 'like', '%@' . $domain);
+        }
+        if (($f['has_phone'] ?? null) === 'yes') {
+            $query->whereNotNull('u.phone')->where('u.phone', '!=', '');
+        } elseif (($f['has_phone'] ?? null) === 'no') {
+            $query->where(fn ($w) => $w->whereNull('u.phone')->orWhere('u.phone', ''));
+        }
+        if (($f['has_avatar'] ?? null) === 'yes') {
+            $query->whereNotNull('u.avatar_path')->where('u.avatar_path', '!=', '');
+        } elseif (($f['has_avatar'] ?? null) === 'no') {
+            $query->where(fn ($w) => $w->whereNull('u.avatar_path')->orWhere('u.avatar_path', ''));
+        }
+
+        // ---- بحث نصي (اسم/إيميل/تليفون/رقم جامعي/uuid) ----
+        if (!empty($f['search'])) {
+            $q = '%' . $f['search'] . '%';
+            $query->where(function ($w) use ($q) {
+                $w->where('u.full_name', 'like', $q)
+                    ->orWhere('u.email', 'like', $q)
+                    ->orWhere('u.phone', 'like', $q)
+                    ->orWhere('u.uuid', 'like', $q)
+                    ->orWhere('s.student_number', 'like', $q)
+                    ->orWhere('ast.staff_number', 'like', $q);
+            });
+        }
+    }
+
+    /**
+     * منقولة من UserRepository::paginateWithRoles() القديمة، وموسّعة بفلاتر متقدمة
+     * وفرز (sort/dir) — شوف applyDirectoryFilters().
+     *
+     * @return array{rows: array<int,array<string,mixed>>, total: int}
      */
     public function paginateWithRoles(array $filters, int $page, int $perPage): array
     {
-        $applyFilters = function ($query) use ($filters) {
-            if (!empty($filters['role'])) {
-                $query->where('r.slug', $filters['role']);
-            }
-            if (!empty($filters['status'])) {
-                $query->where('u.status', $filters['status']);
-            }
-            if (!empty($filters['university_id'])) {
-                $query->whereRaw('COALESCE(uni.id, s.university_id, sup.university_id, ast.university_id, fac.university_id) = ?', [(int) $filters['university_id']]);
-            }
-            if (($filters['affiliation'] ?? null) === 'none') {
-                // اللي ينفع يتربط بجامعة (طالب/مشرف/هيئة) ومش مرتبط بأي واحدة.
-                $query->whereIn('r.slug', ['student', 'supervisor', 'academic_staff'])
-                    ->whereRaw('COALESCE(s.university_id, sup.university_id, ast.university_id) IS NULL');
-            }
-            if (!empty($filters['search'])) {
-                $q = '%' . $filters['search'] . '%';
-                $query->where(function ($w) use ($q) {
-                    $w->where('u.full_name', 'like', $q)
-                        ->orWhere('u.email', 'like', $q)
-                        ->orWhere('u.uuid', 'like', $q);
-                });
-            }
-        };
-
         $countQuery = $this->rolesWithAffiliationQuery();
-        $applyFilters($countQuery);
+        $this->applyDirectoryFilters($countQuery, $filters);
         $total = $countQuery->count('u.id');
 
         $perPage = max(1, $perPage);
@@ -369,19 +506,51 @@ class UserRepository
 
         $rowsQuery = $this->rolesWithAffiliationQuery()
             ->select(
-                'u.id', 'u.uuid', 'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.avatar_path', 'u.status', 'u.created_at',
+                'u.id', 'u.uuid', 'u.full_name', 'u.name_ar', 'u.name_en', 'u.email', 'u.phone', 'u.avatar_path', 'u.status', 'u.created_at',
+                'u.last_login_at', 'u.email_verified_at', 'u.two_factor_enabled', 'u.lock_permanent', 'u.locked_until',
                 'r.slug as role',
                 'au.id as university_id', 'au.official_name_en as university_en', 'au.official_name_ar as university_ar',
                 DB::raw('(au.deleted_at IS NOT NULL) as university_deleted'),
                 DB::raw('COALESCE(uni.official_name_en, s.faculty) as org_en'),
-                DB::raw('COALESCE(uni.official_name_ar, s.faculty) as org_ar')
+                DB::raw('COALESCE(uni.official_name_ar, s.faculty) as org_ar'),
+                'ef.name_en as faculty_en', 'ef.name_ar as faculty_ar',
+                'ed.name_en as department_en', 'ed.name_ar as department_ar',
+                'ep.name_en as program_en', 'ep.name_ar as program_ar',
+                DB::raw('COALESCE(s.invitation_status, sup.invitation_status, ast.invitation_status) as invitation_status')
             );
-        $applyFilters($rowsQuery);
+        $this->applyDirectoryFilters($rowsQuery, $filters);
 
-        $rows = $rowsQuery->orderByDesc('u.created_at')->limit($perPage)->offset($offset)->get()
+        $sortCol = self::SORTABLE[$filters['sort'] ?? ''] ?? 'u.created_at';
+        $dir = strtolower((string) ($filters['dir'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
+        $rowsQuery->orderBy($sortCol, $dir);
+        if ($sortCol !== 'u.created_at') {
+            $rowsQuery->orderByDesc('u.created_at');
+        }
+        $rowsQuery->orderBy('u.id', $dir);
+
+        $rows = $rowsQuery->limit($perPage)->offset($offset)->get()
             ->map(fn ($row) => (array) $row)->all();
 
         return ['rows' => $rows, 'total' => $total];
+    }
+
+    /**
+     * خيارات الفلاتر الديناميكية: أكتر دومينات الإيميل استخدامًا + السنوات الدراسية الموجودة.
+     * SUBSTR/INSTR شغّالين في MySQL و SQLite.
+     */
+    public function filterFacets(): array
+    {
+        $domains = DB::table('users')->whereNull('deleted_at')
+            ->selectRaw("LOWER(SUBSTR(email, INSTR(email, '@') + 1)) as domain, COUNT(*) as n")
+            ->whereRaw("INSTR(email, '@') > 0")
+            ->groupBy('domain')->orderByDesc('n')->limit(25)->get()
+            ->map(fn ($r) => ['domain' => $r->domain, 'count' => (int) $r->n])->all();
+
+        $years = DB::table('students')->whereNotNull('academic_year')
+            ->distinct()->orderBy('academic_year')->pluck('academic_year')
+            ->map(fn ($y) => (int) $y)->all();
+
+        return ['email_domains' => $domains, 'academic_years' => $years];
     }
 
     /**
@@ -511,13 +680,17 @@ class UserRepository
             ->whereNull('deleted_at')
             ->selectRaw("COUNT(*) as total,
                 SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
-                SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) as suspended")
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) as suspended,
+                SUM(CASE WHEN status = 'banned' THEN 1 ELSE 0 END) as banned")
             ->first();
 
         return [
             'total'     => (int) ($row->total ?? 0),
             'active'    => (int) ($row->active ?? 0),
+            'pending'   => (int) ($row->pending ?? 0),
             'suspended' => (int) ($row->suspended ?? 0),
+            'banned'    => (int) ($row->banned ?? 0),
         ];
     }
 
