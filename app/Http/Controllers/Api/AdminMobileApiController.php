@@ -107,4 +107,47 @@ class AdminMobileApiController extends Controller
 
         return $this->apiError('Token not found, or it is still active — revoke it first.', null, 404);
     }
+
+    /** GET /api/v1/admin/mobile-tokens/{id} — token info + full usage summary (users / IPs / devices / endpoints / daily trend). */
+    public function show(Request $request, string $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $token = $this->tokens->findWithCreator((int) $id);
+        if (!$token) {
+            return $this->apiError('Token not found.', null, 404);
+        }
+
+        return $this->apiSuccess([
+            'token'   => $token,
+            'summary' => $this->tokens->usageSummary((int) $id),
+        ], 'Token details retrieved successfully.');
+    }
+
+    /** GET /api/v1/admin/mobile-tokens/{id}/requests?page=&per_page=&status=ok|error|rejected&user_id=&ip=&q= */
+    public function requests(Request $request, string $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        if (!$this->tokens->findWithCreator((int) $id)) {
+            return $this->apiError('Token not found.', null, 404);
+        }
+
+        $page = max(1, (int) $request->query('page', 1));
+        $per = min(100, max(10, (int) $request->query('per_page', 50)));
+        $res = $this->tokens->usageLog((int) $id, $page, $per, [
+            'status'  => (string) $request->query('status', ''),
+            'user_id' => $request->query('user_id'),
+            'ip'      => (string) $request->query('ip', ''),
+            'q'       => (string) $request->query('q', ''),
+        ]);
+
+        return $this->apiSuccess($res['rows'], 'Token requests retrieved successfully.', 200, [
+            'page' => $page, 'per_page' => $per, 'total' => $res['total'], 'pages' => (int) max(1, ceil($res['total'] / $per)),
+        ]);
+    }
 }

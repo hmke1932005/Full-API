@@ -19,6 +19,8 @@ return [
     'app_token'              => env('APP_TOKEN', ''),
     'app_token_required'     => filter_var(env('APP_TOKEN_REQUIRED', false), FILTER_VALIDATE_BOOL),
     'app_token_block_webview' => filter_var(env('APP_TOKEN_BLOCK_WEBVIEW', false), FILTER_VALIDATE_BOOL),
+    // كام يوم نحتفظ بسجل استخدام التوكن (api_token_usages) قبل التنضيف التلقائي.
+    'app_token_log_days'     => (int) env('APP_TOKEN_LOG_DAYS', 60),
 
     'support_email' => env('APP_SUPPORT_EMAIL', env('MAIL_REPLY_TO', env('MAIL_FROM_ADDRESS', ''))),
 

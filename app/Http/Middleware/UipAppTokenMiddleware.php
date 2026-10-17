@@ -45,44 +45,90 @@ class UipAppTokenMiddleware
         }
 
         $raw = trim((string) $request->header('X-App-Token', ''));
-        $valid = $raw !== '' && $this->isValid($raw);
+        $tokenId = $raw !== '' ? $this->activeId($raw) : 0;
+        $valid = $tokenId > 0;
+        // توكن ملغي بيحاول يدخل: بنسجّله برضه (outcome=revoked) عشان تشوف مين لسه بيستخدمه.
+        $revokedId = (!$valid && $raw !== '') ? $this->revokedId($raw) : 0;
 
-        if (!config('site.app_token_required')) {
-            return $next($request);
+        $response = null;
+        if (config('site.app_token_required')) {
+            $ua = (string) $request->userAgent();
+            $isApp = $request->headers->has('X-UIP-Client')
+                || (config('site.app_token_block_webview') && str_contains($ua, '; wv)'));
+
+            if ($isApp && !$valid) {
+                $response = response()->json([
+                    'success' => false,
+                    'message' => 'This app build is not authorized. Please install the latest official version.',
+                    'data'    => null,
+                    'errors'  => null,
+                    'meta'    => (object) [],
+                    'code'    => 'app_token_invalid',
+                ], 403);
+            }
+        }
+        $response ??= $next($request);
+
+        // بعد الرد: وقتها uip.auth يكون خلّص وعارفين مين المستخدم.
+        if ($tokenId || $revokedId) {
+            $this->logUsage($request, $response, $tokenId ?: $revokedId, $valid ? 'ok' : 'revoked');
         }
 
-        $ua = (string) $request->userAgent();
-        $isApp = $request->headers->has('X-UIP-Client')
-            || (config('site.app_token_block_webview') && str_contains($ua, '; wv)'));
-
-        if ($isApp && !$valid) {
-            return response()->json([
-                'success' => false,
-                'message' => 'This app build is not authorized. Please install the latest official version.',
-                'data'    => null,
-                'errors'  => null,
-                'meta'    => (object) [],
-                'code'    => 'app_token_invalid',
-            ], 403);
-        }
-
-        return $next($request);
+        return $response;
     }
 
-    private function isValid(string $raw): bool
+    /** id التوكن الفعال (0 لو مش صالح). بيحدّث last_used_at كل 10 دقايق. */
+    private function activeId(string $raw): int
     {
         $hash = hash('sha256', $raw);
         // cache قصير: مفيش DB hit في كل ريكوست، والإلغاء بيسري في أقل من دقيقة.
-        $id = Cache::remember('app_token:' . $hash, 60, function () use ($raw) {
+        $id = (int) Cache::remember('app_token:' . $hash, 60, function () use ($raw) {
             return $this->tokens->findActiveByRawToken($raw)?->id ?? 0;
         });
         if (!$id) {
             Cache::forget('app_token:' . $hash); // ما نكاشيش الرفض، عشان توكن جديد يشتغل فورًا
-            return false;
+            return 0;
         }
         if (Cache::add('app_token_seen:' . $id, 1, 600)) {
             DB::table('api_tokens')->where('id', $id)->update(['last_used_at' => now()]);
         }
-        return true;
+        return $id;
+    }
+
+    private function revokedId(string $raw): int
+    {
+        $hash = hash('sha256', $raw);
+        return (int) Cache::remember('app_token_revoked:' . $hash, 60, function () use ($hash) {
+            return (int) (DB::table('api_tokens')->where('token_hash', $hash)->whereNotNull('revoked_at')->value('id') ?? 0);
+        });
+    }
+
+    /** صف في api_token_usages — فشله ما يوقّفش الطلب أبدًا. بدون query string (ممكن فيها أسرار). */
+    private function logUsage(Request $request, $response, int $tokenId, string $outcome): void
+    {
+        try {
+            DB::table('api_token_usages')->insert([
+                'api_token_id' => $tokenId,
+                'user_id'      => $request->attributes->get('uip_user_id') ?: null,
+                'method'       => substr($request->method(), 0, 10),
+                'path'         => substr('/' . ltrim($request->path(), '/'), 0, 255),
+                'route'        => ($uri = $request->route()?->uri()) ? substr('/' . ltrim($uri, '/'), 0, 255) : null,
+                'status'       => (int) $response->getStatusCode(),
+                'outcome'      => $outcome,
+                'ip'           => substr((string) $request->ip(), 0, 45) ?: null,
+                'user_agent'   => substr((string) $request->userAgent(), 0, 255) ?: null,
+                'client'       => substr((string) $request->header('X-UIP-Client', ''), 0, 40) ?: null,
+                'device_id'    => substr((string) $request->header('X-Device-Id', ''), 0, 64) ?: null,
+                'created_at'   => now(),
+            ]);
+
+            // تنضيف تلقائي: 1% من الطلبات بتمسح السجل الأقدم من المدة المحددة.
+            if (random_int(1, 100) === 1) {
+                $days = max(1, (int) config('site.app_token_log_days', 60));
+                DB::table('api_token_usages')->where('created_at', '<', now()->subDays($days))->delete();
+            }
+        } catch (\Throwable $e) {
+            // التسجيل ثانوي: لو الجدول لسه ما اتعملوش (migration) أو حصل خطأ، الطلب يكمل عادي.
+        }
     }
 }
