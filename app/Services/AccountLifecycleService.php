@@ -121,6 +121,7 @@ class AccountLifecycleService
         });
 
         $this->revokeAccess($userId, 'account_deleted');
+        try { app(MessagingService::class)->announceAccountEvent($userId, 'account_deleted'); } catch (\Throwable $e) { report($e); }
         $this->notifyAccount($row, 'deleted', $actorId !== null && $actorId === $userId);
         $this->notifyUniversity($userId, $row, $kind, 'deleted');
 
@@ -168,6 +169,7 @@ class AccountLifecycleService
         }
 
         $fresh = DB::table('users')->where('id', $userId)->first();
+        try { app(MessagingService::class)->announceAccountEvent($userId, 'account_restored'); } catch (\Throwable $e) { report($e); }
         $this->notifyAccount($fresh, 'restored');
         $this->notifyUniversity($userId, $fresh, $kind, 'restored');
 

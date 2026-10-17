@@ -69,7 +69,7 @@ class MessagingService
         $rows = $this->conversations->inboxForUser($userId);
 
         return array_map(function ($row) {
-            $others = $this->applyAvatarPrivacy($row['other_participants']);
+            $others = $this->flagDeleted($this->applyAvatarPrivacy($row['other_participants']));
             $displayName = $row['subject'] ?: ($row['is_group'] ? $row['group_name'] : null) ?: ($others[0]['full_name'] ?? '—');
             $peer = !$row['is_group'] ? ($others[0] ?? null) : null;
 
@@ -84,6 +84,8 @@ class MessagingService
                 'peer_email'         => $peer['email'] ?? null,
                 'peer_avatar'        => $peer['avatar_path'] ?? null,
                 'peer_role'          => $peer['account_role'] ?? null,
+                // الطرف التاني حذف حسابه: المحادثة بتتقفل (قراءة بس) والفرونت بيغيّر شكلها.
+                'peer_deleted'       => (bool) ($peer['is_deleted'] ?? false),
                 'group_avatar'       => $row['group_avatar'] ?? null,
                 'preview_type'       => $row['last_message_type'] ?? 'text',
                 'preview_meta'       => ($row['last_message_type'] ?? '') === 'system' && !empty($row['last_message_meta']) ? json_decode($row['last_message_meta'], true) : null,
@@ -168,7 +170,7 @@ class MessagingService
             $this->notifications->markConversationNotificationsRead($userId, $conversationId);
         }
 
-        $others = $this->applyAvatarPrivacy($this->conversations->otherParticipants($conversationId, $userId));
+        $others = $this->flagDeleted($this->applyAvatarPrivacy($this->conversations->otherParticipants($conversationId, $userId)));
         $messages = array_map(
             fn ($m) => $this->shapeMessage($m, $userId),
             $this->messages->forConversation($conversationId, $userId, $beforeId)
@@ -180,6 +182,13 @@ class MessagingService
             'is_group' => (bool) $conversation->is_group,
             'my_role'  => $this->conversations->memberRole($conversationId, $userId),
         ];
+        if (!$conversation->is_group) {
+            // محادثة مباشرة مع حساب محذوف: القراءة متاحة والإرسال لأ.
+            $peerDeleted = (bool) ($others[0]['is_deleted'] ?? false);
+            $conversationOut['peer_deleted'] = $peerDeleted;
+            $conversationOut['can_send'] = !$peerDeleted;
+            $conversationOut['send_block'] = $peerDeleted ? 'peer_deleted' : null;
+        }
         if ($conversation->is_group) {
             $conversationOut = array_merge($conversationOut, $this->groups->threadExtras($conversationId, $userId));
             // per-member group role / send restriction for the members list
@@ -222,6 +231,10 @@ class MessagingService
         }
         if (!$this->conversations->isParticipant($conversationId, $userId)) {
             throw new \RuntimeException('Conversation not found.');
+        }
+
+        if ($this->directPeerDeleted($conversationId)) {
+            throw new \RuntimeException('This account was deleted, so you can no longer send messages in this conversation.');
         }
 
         $maxLen = (int) config('messaging.max_message_length', 8000);
@@ -873,6 +886,82 @@ class MessagingService
         }
         unset($p);
         return $participants;
+    }
+
+    /**
+     * يعلّم المشاركين اللي حساباتهم اتحذفت (is_deleted) ويخفي صورتهم وإيميلهم — الاسم بيفضل عشان المحادثة تفضل مفهومة.
+     * @param array<int,array<string,mixed>> $participants
+     * @return array<int,array<string,mixed>>
+     */
+    private function flagDeleted(array $participants): array
+    {
+        foreach ($participants as &$p) {
+            $p['is_deleted'] = !empty($p['deleted_at']);
+            unset($p['deleted_at']);
+            if ($p['is_deleted']) {
+                $p['avatar_path'] = null;
+                $p['email'] = '';
+            }
+        }
+        unset($p);
+
+        return $participants;
+    }
+
+    /** محادثة مباشرة (مش جروب) والطرف التاني فيها حسابه محذوف؟ */
+    private function directPeerDeleted(int $conversationId): bool
+    {
+        if (DB::table('conversations')->where('id', $conversationId)->value('is_group')) {
+            return false;
+        }
+
+        return DB::table('conversation_participants as cp')
+            ->join('users as u', 'u.id', '=', 'cp.user_id')
+            ->where('cp.conversation_id', $conversationId)
+            ->whereNotNull('u.deleted_at')
+            ->exists();
+    }
+
+    /**
+     * صاحب الحساب اتحذف (أو اترجّع): سطر نظام في كل محادثاته + إشعار لكل طرف في محادثة مباشرة.
+     * الحالة الفعلية (peer_deleted) بتتحسب لحظيًا من users.deleted_at، فده إضافة للتنبيه مش مصدر الحقيقة.
+     */
+    public function announceAccountEvent(int $userId, string $event): void
+    {
+        $name = (string) (DB::table('users')->where('id', $userId)->value('full_name') ?? '');
+        $convs = DB::table('conversation_participants as cp')
+            ->join('conversations as c', 'c.id', '=', 'cp.conversation_id')
+            ->where('cp.user_id', $userId)
+            ->get(['c.id', 'c.is_group']);
+
+        foreach ($convs as $c) {
+            $cid = (int) $c->id;
+            $meta = ['event' => $event, 'actor_id' => $userId, 'actor_name' => $name];
+            $this->messages->create($cid, $userId, $event === 'account_deleted' ? "{$name} deleted their account" : "{$name}'s account was restored", null, null, null, 'system', $meta);
+            $this->conversations->touchUpdatedAt($cid);
+
+            if ($c->is_group) {
+                continue;
+            }
+            $peerId = DB::table('conversation_participants')->where('conversation_id', $cid)->where('user_id', '!=', $userId)->value('user_id');
+            if (!$peerId) {
+                continue;
+            }
+            $ar = (DB::table('users')->where('id', $peerId)->value('preferred_language') ?? 'ar') === 'ar';
+            $deleted = $event === 'account_deleted';
+            try {
+                $this->notifications->notify(
+                    (int) $peerId,
+                    'message_account_status',
+                    $deleted ? ($ar ? "{$name} حذف حسابه" : "{$name} deleted their account") : ($ar ? "{$name} استرجع حسابه" : "{$name} restored their account"),
+                    $deleted ? ($ar ? 'لم يعد بإمكانك مراسلته. تقدر تقرأ المحادثة القديمة فقط.' : 'You can no longer message them. You can still read the old conversation.')
+                             : ($ar ? 'تقدر تكمل المحادثة معه من جديد.' : 'You can continue the conversation again.'),
+                    $this->messagesLinkFor($peerId, $cid)
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
     }
 
     /** @return array{read_receipts_enabled:bool,show_avatar:bool} */
