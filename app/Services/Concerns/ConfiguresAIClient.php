@@ -109,6 +109,8 @@ trait ConfiguresAIClient
             $label = \App\Models\ProjectLink::defaultLabelFor((string) $link->type);
             $lines[] = $label . ' URL: ' . $link->url;
         }
+        $lines[] = "\n--- REAL REPOSITORY EVIDENCE (fetched from GitHub; base your judgement on this, not just the description) ---";
+        $lines[] = app(\App\Services\ProjectRepoContextService::class)->snapshot($project);
         return implode("\n", $lines);
     }
 }

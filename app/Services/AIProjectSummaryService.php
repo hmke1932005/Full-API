@@ -40,8 +40,10 @@ class AIProjectSummaryService
     public function summarize(Project $project, string $locale = 'en'): array
     {
         $language = $locale === 'ar' ? 'Arabic (Modern Standard)' : 'English';
-        $system = "Write a plain-language summary (3-4 sentences) of the project below, understandable to someone "
-            . "outside the field — such as a university reviewer. Write in {$language}. "
+        $system = "Write an insightful reviewer-style summary (5-7 sentences) of the project below for a university reviewer outside the field. Write in {$language}. "
+            . "Use the real repository evidence, not only the description. Cover: (1) what the project actually does and for whom, (2) the real tech stack and architecture you can see, "
+            . "(3) its main strengths with concrete evidence, (4) its most important weaknesses or gaps (tests, security, docs, completeness), and (5) an overall maturity verdict. "
+            . "Be specific and honest — avoid vague praise and do not repeat the project description. "
             . 'Respond as JSON: {"summary": string}.';
 
         $user = $this->projectContext($project);

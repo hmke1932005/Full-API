@@ -11,7 +11,7 @@ use App\Services\Concerns\ConfiguresAIClient;
 
 /**
  * منقولة من app/Services/AIStartupPotentialService.php القديمة — بند 21.
- * بتقيّم إمكانية الاستثمار في مشروع: درجة 0-100، تقدير حجم السوق، الميزة
+ * بتقيّم القيمة العملية والتطبيقية لمشروع (مش جدوى استثمارية — مشروع الطالب مش منتج بيتباع للمستثمرين): درجة 0-100، تقدير حجم السوق، الميزة
  * التنافسية، وعوامل الخطر الرئيسية.
  */
 class AIStartupPotentialService
@@ -36,11 +36,17 @@ class AIStartupPotentialService
     /** @throws \RuntimeException لو غير مُعد أو نداء/فك الـ AI فشل */
     public function assess(Project $project): StartupPotential
     {
-        $system = 'You assess the investment/startup potential of a university innovation project for a general commercialization audience. '
+        // NOTE: the table/field names still say "startup potential" for backward compatibility, but the
+        // meaning is now "practical & academic value". Student graduation projects are NOT judged as investments.
+        $system = 'You assess the PRACTICAL and ACADEMIC VALUE of a university student project — how useful, complete and applicable it is in the real world. '
+            . 'Do NOT assess investment, funding, valuation, ROI or startup viability; this is a student project, not a venture. '
+            . 'Use the written description and the real repository evidence provided (code, README, structure, tests). '
+            . 'potential_score (0-100) = practical value: does it solve a real problem for identifiable users, how complete/working is it, could it be used or extended in practice, and what skills does it demonstrate. '
+            . 'Calibrate honestly: a tutorial-level CRUD app is 25-45; a working, documented, well-structured solution to a real need is 65-85. '
             . 'Respond as JSON: {"potential_score": number (0-100), '
-            . '"market_size_estimate": string (short phrase, e.g. "Niche / regional" or "Large / global"), '
-            . '"competitive_edge": string (1-2 sentences, specific to this project), '
-            . '"risk_factors": string[] (2-4 short concrete risks)}.';
+            . '"market_size_estimate": string (short phrase for the intended audience/scope, e.g. "Academic / learning" or "Small businesses" or "Public / large user base"), '
+            . '"competitive_edge": string (2-3 sentences: what is actually strong or distinctive in THIS project, citing concrete evidence from the code/README), '
+            . '"risk_factors": string[] (3-5 concrete limitations or gaps that reduce its practical value, each specific to this project)}.';
 
         $user = $this->projectContext($project);
 
