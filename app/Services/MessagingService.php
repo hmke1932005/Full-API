@@ -65,9 +65,9 @@ class MessagingService
     // -- Inbox / search --------------------------------------------------
 
     /** @return array<int,array<string,mixed>> صفوف الـ inbox، بشكل الفرونت المتوقع */
-    public function inboxForUser($userId): array
+    public function inboxForUser($userId, bool $trashed = false): array
     {
-        $rows = $this->conversations->inboxForUser($userId);
+        $rows = $this->conversations->inboxForUser($userId, $trashed);
         $blockedSet = array_flip($this->safety->blockedIds((int) $userId));
 
         return array_map(function ($row) use ($blockedSet) {
@@ -103,6 +103,9 @@ class MessagingService
                 'is_archived'        => (bool) $row['is_archived'],
                 'category'           => $row['category'],
                 'my_role'            => $row['my_role'],
+                // سلة المحذوفات: وقت الحذف + الأيام المتبقية قبل الحذف النهائي التلقائي (null في الـ inbox العادي).
+                'deleted_at'         => $row['deleted_at'] ?? null,
+                'days_left'          => !empty($row['deleted_at']) ? \App\Services\ConversationTrashService::daysLeft($row['deleted_at']) : null,
             ];
         }, $rows);
     }
@@ -286,6 +289,8 @@ class MessagingService
         // before its attachments exist (it would be delivered as an empty bubble
         // and never re-fetched, because the client's since_id moves past it).
         $message = DB::transaction(function () use ($conversationId, $userId, $body, $options, $hasAttachments) {
+            // رسالة جديدة في محادثة محذوفة (في السلة) بترجّعها لقايمة الرسائل لكل الأعضاء.
+            DB::table('conversation_participants')->where('conversation_id', $conversationId)->whereNotNull('deleted_at')->update(['deleted_at' => null]);
             $message = $this->messages->create(
                 $conversationId,
                 $userId,

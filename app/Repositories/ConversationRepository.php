@@ -14,13 +14,14 @@ use Illuminate\Support\Facades\DB;
 class ConversationRepository
 {
     /** @return array<int,array<string,mixed>> صفوف inbox لمستخدم معين، بكل حالة العضو (favorite/pinned/muted/archived/category). */
-    public function inboxForUser($userId): array
+    /** $trashed=true بيرجّع سلة المحذوفات (deleted_at مش null) بدل الـ inbox العادي. */
+    public function inboxForUser($userId, bool $trashed = false): array
     {
         $rows = DB::select(
             "SELECT c.id, c.subject, c.related_project_id, c.updated_at,
                     c.is_group, c.group_name, c.avatar_path AS group_avatar,
                     cp.last_read_at, cp.role AS my_role,
-                    cp.is_favorite, cp.is_pinned, cp.is_muted, cp.is_archived, cp.category,
+                    cp.is_favorite, cp.is_pinned, cp.is_muted, cp.is_archived, cp.category, cp.deleted_at,
                     m.body AS last_message_body, m.created_at AS last_message_at, m.sender_id AS last_message_sender_id,
                     m.is_deleted AS last_message_deleted,
                     m.message_type AS last_message_type, m.metadata AS last_message_meta
@@ -32,7 +33,8 @@ class ConversationRepository
                    AND id NOT IN (SELECT message_id FROM message_hidden_for_user WHERE user_id = ?)
                  ORDER BY created_at DESC LIMIT 1
              )
-             ORDER BY cp.is_pinned DESC, COALESCE(m.created_at, c.updated_at) DESC",
+             WHERE cp.deleted_at " . ($trashed ? 'IS NOT NULL' : 'IS NULL') . "
+             ORDER BY " . ($trashed ? 'cp.deleted_at DESC' : 'cp.is_pinned DESC, COALESCE(m.created_at, c.updated_at) DESC'),
             [$userId, $userId]
         );
 

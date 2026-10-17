@@ -68,6 +68,7 @@ use App\Http\Controllers\Api\MeetingsInvitationsApiController;
 use App\Http\Controllers\Api\MessagingController;
 use App\Http\Controllers\Api\GroupChatController;
 use App\Http\Controllers\Api\ChatSafetyApiController;
+use App\Http\Controllers\Api\ConversationTrashController;
 use App\Http\Controllers\Api\AccountPrivacyApiController;
 use App\Http\Controllers\Api\AdminAiConversationsApiController;
 use App\Http\Controllers\Api\AiAssistantController;
@@ -1530,6 +1531,11 @@ Route::prefix('v1')->group(function () {
 
     Route::prefix('messaging')->middleware(['uip.auth', 'uip.can:messaging.use'])->group(function () {
         Route::get('/inbox', [MessagingController::class, 'inbox']);
+        // سلة المحذوفات (30 يوم): حذف متعدد/الكل، استرجاع، حذف نهائي.
+        Route::get('/trash', [ConversationTrashController::class, 'index']);
+        Route::post('/trash/delete', [ConversationTrashController::class, 'delete']);
+        Route::post('/trash/restore', [ConversationTrashController::class, 'restore']);
+        Route::post('/trash/purge', [ConversationTrashController::class, 'purge']);
         Route::get('/recipients', [MessagingController::class, 'recipients']);
         Route::get('/search', [MessagingController::class, 'search']);
         Route::get('/mentions', [MessagingController::class, 'mentions']);

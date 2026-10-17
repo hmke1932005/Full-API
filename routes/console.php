@@ -51,3 +51,6 @@ Schedule::command('projects:send-deadline-reminders')->hourly()->withoutOverlapp
 
 // Keep the disposable-email blocklist fresh (new temp-mail domains appear all the time).
 Schedule::command('mail:update-disposable-domains')->weekly()->withoutOverlapping();
+
+// سلة محذوفات المحادثات: حذف نهائي لكل اللي عدّى عليه 30 يوم.
+Schedule::command('messaging:purge-trash')->dailyAt('03:30')->withoutOverlapping();
