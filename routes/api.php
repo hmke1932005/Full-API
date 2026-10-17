@@ -1160,6 +1160,9 @@ Route::prefix('v1')->group(function () {
         Route::patch('/notifications', [StudentSettingsApiController::class, 'updateNotificationPreferences']);
         Route::patch('/messaging-privacy', [StudentSettingsApiController::class, 'updateMessagingPrivacy']);
         Route::patch('/password', [StudentSettingsApiController::class, 'updatePassword']);
+        // حذف الحساب بنفسه: كلمة السر -> كود OTP على الإيميل -> تأكيد (soft delete، قابل للاسترجاع).
+        Route::post('/delete-account/send-otp', [StudentSettingsApiController::class, 'deleteAccountSendOtp'])->middleware('throttle:6,1');
+        Route::post('/delete-account', [StudentSettingsApiController::class, 'deleteAccount'])->middleware('throttle:10,1');
         Route::post('/2fa/setup', [StudentSettingsApiController::class, 'twoFactorSetup']);
         Route::post('/2fa/confirm', [StudentSettingsApiController::class, 'twoFactorConfirm']);
         Route::post('/2fa/disable', [StudentSettingsApiController::class, 'twoFactorDisable']);

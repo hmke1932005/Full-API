@@ -356,20 +356,34 @@ class MailService
     {
         $ar = $locale === 'ar';
         $merge = $purpose === 'merge';
+        $delete = $purpose === 'delete';
         $from = $ip ? ($ar ? " (من IP: {$ip})" : " (from IP: {$ip})") : '';
+
+        $subject = $delete
+            ? ($ar ? 'رمز تأكيد حذف حسابك' : 'Code to confirm deleting your account')
+            : ($merge ? ($ar ? 'رمز استرجاع بيانات حسابك القديم' : 'Code to recover your old account data') : ($ar ? 'رمز استرجاع حسابك المحذوف' : 'Code to restore your deleted account'));
+
+        if ($delete) {
+            $lead = $ar ? "طُلب حذف حسابك على المنصة من إعدادات الحساب{$from}. استخدم الرمز التالي لتأكيد الحذف."
+                        : "A request was made to delete your account from the account settings{$from}. Use the code below to confirm.";
+            $ignore = $ar ? 'لو ماكنتش أنت، تجاهل الرسالة وغيّر كلمة السر فورًا — مفيش حاجة هتتحذف.' : "If this wasn't you, ignore this email and change your password right away — nothing will be deleted.";
+        } else {
+            $lead = $merge
+                ? ($ar ? "طُلب نقل بيانات حسابك القديم (المحذوف) إلى حسابك الحالي{$from}. استخدم الرمز التالي لتأكيد إنك صاحب الإيميل."
+                       : "A request was made to move the data of your old (deleted) account into your current account{$from}. Use the code below to confirm you own this email.")
+                : ($ar ? "طُلب استرجاع حسابك المحذوف على المنصة{$from}. استخدم الرمز التالي لتأكيد إنك صاحب الإيميل وتحديد كلمة سر جديدة."
+                       : "A request was made to restore your deleted account on the platform{$from}. Use the code below to confirm you own this email and set a new password.");
+            $ignore = $ar ? 'لو ماكنتش أنت، تجاهل الرسالة — مفيش حاجة هتتغير.' : "If this wasn't you, ignore this email — nothing will change.";
+        }
 
         return $this->deliver(
             $toEmail,
-            $merge ? ($ar ? 'رمز استرجاع بيانات حسابك القديم' : 'Code to recover your old account data') : ($ar ? 'رمز استرجاع حسابك المحذوف' : 'Code to restore your deleted account'),
+            $subject,
             $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
             [
-                $merge
-                    ? ($ar ? "طُلب نقل بيانات حسابك القديم (المحذوف) إلى حسابك الحالي{$from}. استخدم الرمز التالي لتأكيد إنك صاحب الإيميل."
-                           : "A request was made to move the data of your old (deleted) account into your current account{$from}. Use the code below to confirm you own this email.")
-                    : ($ar ? "طُلب استرجاع حسابك المحذوف على المنصة{$from}. استخدم الرمز التالي لتأكيد إنك صاحب الإيميل وتحديد كلمة سر جديدة."
-                           : "A request was made to restore your deleted account on the platform{$from}. Use the code below to confirm you own this email and set a new password."),
+                $lead,
                 $ar ? "الرمز صالح لمدة {$minutes} دقايق ويُستخدم مرة واحدة. متشاركوش مع حد." : "The code is valid for {$minutes} minutes and works once. Never share it with anyone.",
-                $ar ? 'لو ماكنتش أنت، تجاهل الرسالة — مفيش حاجة هتتغير.' : "If this wasn't you, ignore this email — nothing will change.",
+                $ignore,
             ],
             null,
             $locale,

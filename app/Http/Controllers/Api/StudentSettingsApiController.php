@@ -7,7 +7,13 @@ use App\Models\User;
 use App\Repositories\SettingRepository;
 use App\Repositories\StudentRepository;
 use App\Repositories\UserRepository;
+use App\Services\AccountLifecycleService;
+use App\Services\AccountRecoveryOtp;
 use App\Services\AuditLogService;
+use App\Services\MailService;
+use App\Support\OtpGuard;
+use App\Support\SecurityLog;
+use Illuminate\Support\Facades\DB;
 use App\Services\NotificationPreferencesService;
 use App\Services\PasswordPolicyService;
 use App\Services\TwoFactorService;
@@ -35,7 +41,10 @@ class StudentSettingsApiController extends Controller
         private PasswordPolicyService $passwordPolicy,
         private AuditLogService $auditLog,
         private TwoFactorService $twoFactor,
-        private NotificationPreferencesService $notifications
+        private NotificationPreferencesService $notifications,
+        private AccountLifecycleService $lifecycle,
+        private AccountRecoveryOtp $otp,
+        private MailService $mail
     ) {
     }
 
@@ -63,6 +72,7 @@ class StudentSettingsApiController extends Controller
             'email_notifications'      => $this->settings->get('email_notifications', 'user', $userId, '1') === '1',
             'read_receipts_enabled'    => $this->settings->get('messaging_read_receipts_enabled', 'user', $userId, '1') === '1',
             'two_factor'               => $this->twoFactor->status($userId),
+            'account_deletion'         => ['password_required' => $this->passwordRequiredFor($userId)],
             'notification_categories'  => $this->notifications->categoryLabels(),
             'muted_categories'         => $this->notifications->mutedCategoriesFor($userId),
             'digest_frequency'         => $this->notifications->digestFrequencyFor($userId),
@@ -255,5 +265,115 @@ class StudentSettingsApiController extends Controller
         return $ok
             ? $this->apiSuccess(null, 'Two-factor authentication disabled successfully.')
             : $this->apiError('Incorrect password — two-factor authentication was not disabled.', null, 422);
+    }
+
+    // ------------------------------------------------------------ delete my account
+
+    /**
+     * حساب اتعمل بجوجل ومحدّدش كلمة سر بنفسه عمره (مفيش password_history) كلمة سره عشوائية —
+     * فمنطلبهاش منه، ويبقى الـ OTP على الإيميل هو الإثبات.
+     */
+    private function passwordRequiredFor(int $userId): bool
+    {
+        $social = DB::table('user_social_accounts')->where('user_id', $userId)->exists();
+        $setOwn = DB::table('password_history')->where('user_id', $userId)->exists();
+
+        return !($social && !$setOwn);
+    }
+
+    /** @return array{0:?User,1:?\Illuminate\Http\JsonResponse} */
+    private function checkDeletionPassword(Request $request, int $userId): array
+    {
+        $ar = $request->input('locale') !== 'en';
+        $user = User::find($userId);
+        if (!$user) {
+            return [null, $this->apiError('User not found.', null, 404)];
+        }
+        if ($this->passwordRequiredFor($userId)) {
+            $scope = 'delete-pw:' . $userId;
+            if ($left = OtpGuard::blockedSeconds($scope)) {
+                return [null, $this->apiError(OtpGuard::message($ar, $left), null, 429)];
+            }
+            if (!password_verify((string) $request->input('password', ''), (string) $user->password_hash)) {
+                $blocked = OtpGuard::recordFailure($scope);
+                return [null, $blocked
+                    ? $this->apiError(OtpGuard::message($ar, $blocked), null, 429)
+                    : $this->apiError($ar ? 'كلمة السر غير صحيحة.' : 'Incorrect password.', null, 422)];
+            }
+            OtpGuard::recordSuccess($scope);
+        }
+
+        return [$user, null];
+    }
+
+    /** POST /api/v1/student/settings/delete-account/send-otp — يتأكد من كلمة السر ويبعت كود على الإيميل. */
+    public function deleteAccountSendOtp(Request $request)
+    {
+        if ($err = $this->requireStudent($request)) {
+            return $err;
+        }
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $ar = $request->input('locale') !== 'en';
+        [$user, $fail] = $this->checkDeletionPassword($request, $userId);
+        if ($fail) {
+            return $fail;
+        }
+
+        $issued = $this->otp->issue('self-delete:' . $userId);
+        if ($issued['otp'] === null) {
+            return $this->apiError($ar ? "استنى {$issued['retry_after']} ثانية قبل طلب كود جديد." : "Wait {$issued['retry_after']}s before requesting a new code.", ['retry_after' => $issued['retry_after']], 429);
+        }
+        $sent = $this->mail->sendAccountRecoveryOtp((string) $user->email, (string) $user->full_name, $issued['otp'], $this->otp->ttl(), 'delete', $request->ip(), $ar ? 'ar' : 'en');
+        if (!$sent) {
+            $this->otp->consume('self-delete:' . $userId);
+            return $this->apiError($ar ? 'تعذّر إرسال الكود. حاول بعد شوية.' : 'Could not send the code. Try again shortly.', null, 502);
+        }
+
+        return $this->apiSuccess([
+            'email'              => \App\Services\AccountRecoveryService::maskEmail((string) $user->email),
+            'expires_in_minutes' => $this->otp->ttl(),
+            'retry_after'        => (int) config('account_recovery.otp.resend_seconds', 60),
+        ], $ar ? 'تم إرسال الكود إلى إيميلك.' : 'A code was sent to your email.');
+    }
+
+    /** POST /api/v1/student/settings/delete-account — كلمة السر + OTP + تأكيد صريح => حذف (soft) وقفل كل الجلسات. */
+    public function deleteAccount(Request $request)
+    {
+        if ($err = $this->requireStudent($request)) {
+            return $err;
+        }
+        $userId = (int) $request->attributes->get('uip_user_id');
+        $ar = $request->input('locale') !== 'en';
+
+        $v = Validator::make($request->all(), ['otp' => 'required|string|max:20', 'confirm' => 'required|accepted']);
+        if ($v->fails()) {
+            return $this->apiError($ar ? 'أدخل الكود وأكّد الحذف.' : 'Enter the code and confirm the deletion.', $v->errors()->toArray(), 422);
+        }
+
+        [$user, $fail] = $this->checkDeletionPassword($request, $userId);
+        if ($fail) {
+            return $fail;
+        }
+
+        $scope = 'self-delete:' . $userId;
+        $res = $this->otp->verify($scope, (string) $request->input('otp'));
+        if ($res !== AccountRecoveryOtp::OK) {
+            $msg = [
+                AccountRecoveryOtp::EXPIRED => $ar ? 'انتهت صلاحية الكود. اطلب كود جديد.' : 'The code has expired. Request a new one.',
+                AccountRecoveryOtp::LOCKED  => $ar ? 'محاولات كتير. اطلب كود جديد بعد شوية.' : 'Too many attempts. Request a new code in a moment.',
+                AccountRecoveryOtp::INVALID => $ar ? 'الكود غير صحيح.' : 'The code is incorrect.',
+            ][$res] ?? 'Invalid code.';
+            return $this->apiError($msg, null, $res === AccountRecoveryOtp::LOCKED ? 429 : 422);
+        }
+
+        $result = $this->lifecycle->delete($userId, $userId);
+        if (!$result['ok']) {
+            return $this->apiError((string) ($result['error'] ?? 'Could not delete the account.'), null, 422);
+        }
+        $this->otp->consume($scope);
+        $this->auditLog->record($userId, 'student.self_delete', 'User', $userId, null, null, $request->ip());
+        SecurityLog::write('Student deleted own account', ['user_id' => $userId, 'ip' => $request->ip()]);
+
+        return $this->apiSuccess(null, $ar ? 'تم حذف حسابك.' : 'Your account was deleted.');
     }
 }

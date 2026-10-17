@@ -121,7 +121,7 @@ class AccountLifecycleService
         });
 
         $this->revokeAccess($userId, 'account_deleted');
-        $this->notifyAccount($row, 'deleted');
+        $this->notifyAccount($row, 'deleted', $actorId !== null && $actorId === $userId);
         $this->notifyUniversity($userId, $row, $kind, 'deleted');
 
         return ['ok' => true, 'kind' => $kind, 'accounts_suspended' => 0, 'error' => null];
@@ -175,10 +175,14 @@ class AccountLifecycleService
     }
 
     /** إيميل + إشعار منصة لصاحب الحساب نفسه. */
-    private function notifyAccount(object $user, string $event): void
+    private function notifyAccount(object $user, string $event, bool $self = false): void
     {
         $ar = ($user->preferred_language ?? 'ar') === 'ar';
-        if ($event === 'deleted') {
+        if ($event === 'deleted' && $self) {
+            $title = $ar ? 'تم حذف حسابك' : 'Your account was deleted';
+            $body  = $ar ? 'حذفت حسابك من إعدادات الحساب. لو ده كان بالغلط تقدر تسترجعه بتسجيل حساب بنفس الإيميل وتأكيد الكود، خلال فترة الاحتفاظ.'
+                         : 'You deleted your account from the account settings. If this was a mistake you can restore it by signing up with the same email and confirming the code, within the retention period.';
+        } elseif ($event === 'deleted') {
             $title = $ar ? 'تم حذف حسابك من المنصة' : 'Your account was removed from the platform';
             $body  = $ar ? 'تم حذف حسابك بواسطة إدارة المنصة. تواصل مع الدعم لو محتاج مساعدة أو لاسترجاعه.'
                          : 'Your account was removed by the platform administrators. Contact support if you need help or want it restored.';
