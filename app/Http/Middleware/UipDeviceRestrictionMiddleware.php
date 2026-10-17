@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\BlockedDeviceService;
 use App\Services\DeviceRestrictionPolicyService;
 use Closure;
 use Illuminate\Http\Request;
@@ -25,7 +26,7 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class UipDeviceRestrictionMiddleware
 {
-    public function __construct(private DeviceRestrictionPolicyService $policy)
+    public function __construct(private DeviceRestrictionPolicyService $policy, private BlockedDeviceService $blocked)
     {
     }
 
@@ -35,11 +36,23 @@ class UipDeviceRestrictionMiddleware
             return $next($request);
         }
 
+        $locale = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
+
+        // جهاز محظور يدويًا من /admin/mobile (X-Device-Id). نفس شكل رد device_blocked عشان DeviceGate يعرض صفحة الحظر.
+        if ($this->blocked->isBlocked($request->header('X-Device-Id'))) {
+            $msg = $locale === 'ar' ? 'تم حظر هذا الجهاز من قبل إدارة المنصة.' : 'This device has been blocked by the platform administrators.';
+            return response()->json([
+                'success' => false,
+                'message' => $msg,
+                'data'    => ['device_blocked' => true, 'device_type' => 'banned'],
+                'errors'  => ['code' => 'device_blocked'],
+                'meta'    => (object) [],
+            ], 403)->header('Cache-Control', 'no-store');
+        }
+
         if ($this->policy->isAllowed($request->userAgent())) {
             return $next($request);
         }
-
-        $locale = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
 
         return response()->json([
             'success' => false,

@@ -898,6 +898,9 @@ Route::prefix('v1')->group(function () {
     Route::prefix('admin/mobile-tokens')->middleware(['uip.auth', 'uip.admin'])->group(function () {
         Route::get('/', [AdminMobileApiController::class, 'index']);
         Route::post('/', [AdminMobileApiController::class, 'store']);
+        Route::get('/blocked-devices', [AdminMobileApiController::class, 'blockedDevices']);
+        Route::post('/blocked-devices', [AdminMobileApiController::class, 'blockDevice'])->middleware('throttle:30,1');
+        Route::delete('/blocked-devices/{id}', [AdminMobileApiController::class, 'unblockDevice'])->where('id', '[0-9]+');
         Route::post('/{id}/revoke', [AdminMobileApiController::class, 'revoke']);
         Route::get('/{id}', [AdminMobileApiController::class, 'show'])->where('id', '[0-9]+');
         Route::get('/{id}/requests', [AdminMobileApiController::class, 'requests'])->where('id', '[0-9]+');

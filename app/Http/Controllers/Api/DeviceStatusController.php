@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\BlockedDeviceService;
 use App\Services\DeviceRestrictionPolicyService;
 use Illuminate\Http\Request;
 
@@ -15,15 +16,27 @@ use Illuminate\Http\Request;
  */
 class DeviceStatusController extends Controller
 {
-    public function __construct(private DeviceRestrictionPolicyService $policy)
+    public function __construct(private DeviceRestrictionPolicyService $policy, private BlockedDeviceService $blocked)
     {
     }
 
     public function show(Request $request)
     {
         $ua      = $request->userAgent();
-        $allowed = $this->policy->isAllowed($ua);
         $locale  = $request->header('X-Locale', 'en') === 'ar' ? 'ar' : 'en';
+
+        // جهاز محظور يدويًا (X-Device-Id) — نفس رد "مش مسموح" بنوع banned.
+        if ($this->blocked->isBlocked($request->header('X-Device-Id'))) {
+            $msg = $locale === 'ar' ? 'تم حظر هذا الجهاز من قبل إدارة المنصة.' : 'This device has been blocked by the platform administrators.';
+            return response()->json([
+                'success' => true,
+                'message' => $msg,
+                'data'    => ['allowed' => false, 'device_type' => 'banned', 'message' => $msg],
+                'meta'    => (object) [],
+            ])->header('Cache-Control', 'no-store');
+        }
+
+        $allowed = $this->policy->isAllowed($ua);
 
         return response()->json([
             'success' => true,

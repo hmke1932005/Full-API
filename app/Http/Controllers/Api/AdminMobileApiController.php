@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Repositories\ApiTokenRepository;
 use App\Services\AuditLogService;
+use App\Services\BlockedDeviceService;
 use Illuminate\Http\Request;
 
 /**
@@ -19,7 +20,7 @@ use Illuminate\Http\Request;
  */
 class AdminMobileApiController extends Controller
 {
-    public function __construct(private ApiTokenRepository $tokens, private AuditLogService $auditLog)
+    public function __construct(private ApiTokenRepository $tokens, private AuditLogService $auditLog, private BlockedDeviceService $blockedDevices)
     {
     }
 
@@ -120,9 +121,16 @@ class AdminMobileApiController extends Controller
             return $this->apiError('Token not found.', null, 404);
         }
 
+        $summary = $this->tokens->usageSummary((int) $id);
+        $blocked = $this->blockedDevices->idsFor(array_column($summary['devices'], 'dev'));
+        $summary['devices'] = array_map(function ($d) use ($blocked) {
+            $bid = !empty($d['dev']) ? ($blocked[$d['dev']] ?? null) : null;
+            return $d + ['blocked' => $bid !== null, 'block_id' => $bid];
+        }, $summary['devices']);
+
         return $this->apiSuccess([
             'token'   => $token,
-            'summary' => $this->tokens->usageSummary((int) $id),
+            'summary' => $summary,
         ], 'Token details retrieved successfully.');
     }
 
@@ -153,5 +161,45 @@ class AdminMobileApiController extends Controller
         return $this->apiSuccess($res['rows'], 'Token requests retrieved successfully.', 200, [
             'page' => $page, 'per_page' => $per, 'total' => $res['total'], 'pages' => (int) max(1, ceil($res['total'] / $per)),
         ]);
+    }
+
+    /** GET /api/v1/admin/mobile-tokens/blocked-devices — every manually blocked device. */
+    public function blockedDevices(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        return $this->apiSuccess($this->blockedDevices->all(), 'Blocked devices retrieved successfully.');
+    }
+
+    /** POST /api/v1/admin/mobile-tokens/blocked-devices — {device_id, label?, reason?}. Every API call carrying that X-Device-Id gets 403 device_blocked. */
+    public function blockDevice(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        $deviceId = BlockedDeviceService::normalize((string) $request->input('device_id', ''));
+        if ($deviceId === '') {
+            return $this->apiError('This device has no device ID, so it cannot be blocked individually. Update the app so it sends one.', null, 422);
+        }
+        $id = $this->blockedDevices->block($deviceId, (string) $request->input('label', ''), (string) $request->input('reason', ''), $request->attributes->get('uip_user_id'));
+        $this->auditLog->record($request->attributes->get('uip_user_id'), 'device.block', 'BlockedDevice', $id, null, ['device_id' => $deviceId, 'reason' => (string) $request->input('reason', '')]);
+
+        return $this->apiSuccess(['id' => $id, 'device_id' => $deviceId], 'Device blocked.');
+    }
+
+    /** DELETE /api/v1/admin/mobile-tokens/blocked-devices/{id} — lifts the block. */
+    public function unblockDevice(Request $request, string $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        $deviceId = $this->blockedDevices->unblock((int) $id);
+        if ($deviceId === null) {
+            return $this->apiError('Blocked device not found.', null, 404);
+        }
+        $this->auditLog->record($request->attributes->get('uip_user_id'), 'device.unblock', 'BlockedDevice', (int) $id, ['device_id' => $deviceId]);
+
+        return $this->apiSuccess(null, 'Device unblocked.');
     }
 }
