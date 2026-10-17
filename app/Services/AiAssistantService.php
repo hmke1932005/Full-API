@@ -286,7 +286,7 @@ class AiAssistantService
 
         // اعطاء عنوان تلقائي لشات جديد من أول رسالة.
         if ((int) $conversation->message_count === 0 || $conversation->title === 'New chat') {
-            $conversation->fill(['title' => mb_substr(trim(strip_tags($content)) ?: 'New chat', 0, 80)]);
+            $conversation->fill(['title' => $this->titleFromContent($content)]);
             $conversation->save();
         }
 
@@ -501,7 +501,7 @@ class AiAssistantService
         ]);
 
         if ((int) $conversation->message_count === 0 || $conversation->title === 'New chat') {
-            $conversation->fill(['title' => mb_substr(trim(strip_tags($content)) ?: 'New chat', 0, 80)]);
+            $conversation->fill(['title' => $this->titleFromContent($content)]);
             $conversation->save();
         }
 
@@ -600,6 +600,14 @@ class AiAssistantService
         }
         $this->ownedConversation($userId, (int) $message->conversation_id);
         return $message;
+    }
+
+    /** Chat title from the user's first message — without the auto-transcripts of recordings (they travel inside the message). */
+    private function titleFromContent(string $content): string
+    {
+        $clean = preg_replace('/\[Transcript of "[^"\n]*" \(auto speech-to-text\)\]\n[\s\S]*?\n\[End transcript\]/', '', $content);
+        $clean = trim(strip_tags($clean ?? $content));
+        return mb_substr($clean !== '' ? $clean : 'New chat', 0, 80);
     }
 
     private function attachAttachmentsToMessage(array $attachmentIds, int $messageId): void

@@ -189,7 +189,7 @@ class AiAssistantController extends Controller
                 $extractedText = @file_get_contents($absolutePath) ?: null;
             }
 
-            $kind = $this->classifyKind($extension);
+            $kind = $this->classifyKind($extension, (string) $stored['original_name'], (string) ($stored['mime_type'] ?? ''));
 
             $attachmentId = DB::table('ai_message_attachments')->insertGetId([
                 'message_id'      => null,
@@ -234,18 +234,27 @@ class AiAssistantController extends Controller
             return $this->apiError('File no longer exists.', null, 404);
         }
 
-        return response(file_get_contents($path), 200, [
-            'Content-Type'        => $attachment->mime_type ?: 'application/octet-stream',
-            'Content-Disposition' => 'inline; filename="' . $attachment->original_name . '"',
+        // response()->file() = BinaryFileResponse: streams from disk (no file_get_contents() of a whole video into PHP memory)
+        // and answers HTTP Range requests, so audio / video can seek and start playing before the download ends.
+        $name = (string) $attachment->original_name;
+        return response()->file($path, [
+            'Content-Type'           => $attachment->mime_type ?: 'application/octet-stream',
+            'Content-Disposition'    => 'inline; filename="' . addcslashes(preg_replace('/[^\x20-\x7E]/', '_', $name), '"\\') . '"; filename*=UTF-8\'\'' . rawurlencode($name),
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control'          => 'private, max-age=3600',
         ]);
     }
 
-    private function classifyKind(string $extension): string
+    private function classifyKind(string $extension, ?string $originalName = null, ?string $mime = null): string
     {
+        // A recorded voice note is an audio-only .webm: by extension alone it would be classed as video.
+        if (($originalName !== null && preg_match('/^voice-message-/i', $originalName)) || ($mime !== null && str_starts_with(strtolower($mime), 'audio/'))) {
+            return 'audio';
+        }
         $map = [
             'image'    => ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'svg'],
             'video'    => ['mp4', 'webm', 'mov', 'avi', 'mkv'],
-            'audio'    => ['mp3', 'wav', 'ogg', 'm4a'],
+            'audio'    => ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'opus', 'weba'],
             'archive'  => ['zip', 'rar', '7z'],
             'code'     => ['php', 'js', 'ts', 'py', 'java', 'c', 'cpp', 'cs', 'go', 'rb', 'html', 'css', 'sql', 'sh', 'yml', 'yaml'],
             'document' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'json', 'xml', 'txt', 'md', 'log'],
