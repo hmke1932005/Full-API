@@ -93,6 +93,7 @@ class StudentExamService
         $last = $mine[0] ?? null;
         $override = $studentId !== null ? $this->attempts->overrideFor($exam->id, $studentId) : null;
         $extra = $override ? (int) $override->extra_attempts : 0;
+        $resultVisible = $this->resultVisibleFor($exam, $last);
 
         return [
             'id'                 => $exam->id,
@@ -138,12 +139,30 @@ class StudentExamService
             // الامتحان محمي بباسورد؟ (الباسورد نفسه عمره ما بيترجع).
             'requires_password'       => (bool) $exam->has_access_password,
             'attempts_used'      => count($mine),
+            // نفس قاعدة result_visibility اللي بتحكم صفحة النتيجة: الدرجة ما تتبعتش للطالب قبل ما تبقى ظاهرة له.
+            'result_visible'     => $resultVisible,
+            'results_published_at' => $exam->results_published_at,
             'last_attempt'       => $last ? [
                 'id'         => $last->id,
                 'status'     => $last->status,
-                'score'      => $last->score !== null ? (float) $last->score : null,
-                'percentage' => $last->percentage !== null ? (float) $last->percentage : null,
+                'score'      => $resultVisible && $last->score !== null ? (float) $last->score : null,
+                'percentage' => $resultVisible && $last->percentage !== null ? (float) $last->percentage : null,
             ] : null,
         ];
+    }
+
+    /** نفس منطق ExamGradingService::isResultVisibleTo() على آخر محاولة للطالب. */
+    private function resultVisibleFor(Exam $exam, $attempt): bool
+    {
+        if (!$attempt || $attempt->status !== 'graded') {
+            return false;
+        }
+
+        return match ($exam->result_visibility) {
+            'immediate'   => true,
+            'after_close' => $exam->end_at === null || now()->greaterThanOrEqualTo($exam->end_at),
+            'manual'      => $exam->results_published_at !== null && now()->greaterThanOrEqualTo($exam->results_published_at),
+            default       => false,
+        };
     }
 }
