@@ -108,12 +108,14 @@ class ApiTokenRepository
                 (SELECT r.slug FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id ORDER BY ur.assigned_at ASC LIMIT 1) AS role")
             ->groupBy('u.id', 'u.full_name', 'u.email')->orderByDesc('n')->limit(100)->get()->map(fn ($r) => (array) $r)->all();
 
-        $ips = $base()->whereNotNull('ip')->selectRaw('ip, COUNT(*) AS n, MIN(created_at) AS first_at, MAX(created_at) AS last_at, COUNT(DISTINCT user_id) AS users')
+        $ips = $base()->whereNotNull('ip')->selectRaw('ip, COUNT(*) AS n, MIN(created_at) AS first_at, MAX(created_at) AS last_at, COUNT(DISTINCT user_id) AS users, SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors')
             ->groupBy('ip')->orderByDesc('n')->limit(50)->get()->map(fn ($r) => (array) $r)->all();
 
-        $devices = $base()->selectRaw("user_agent, COALESCE(device_id, '') AS device_id, MAX(client) AS client, COUNT(*) AS n,
-                MIN(created_at) AS first_at, MAX(created_at) AS last_at, COUNT(DISTINCT user_id) AS users")
-            ->groupBy('user_agent', DB::raw("COALESCE(device_id, '')"))->orderByDesc('n')->limit(50)->get()->map(fn ($r) => (array) $r)->all();
+        // نفس تعريف عدّاد "الأجهزة": device_id لو موجود، وإلا الـ user_agent.
+        $devices = $base()->selectRaw("MAX(user_agent) AS ua, MAX(NULLIF(device_id, '')) AS dev, MAX(client) AS client, COUNT(*) AS n,
+                MIN(created_at) AS first_at, MAX(created_at) AS last_at, COUNT(DISTINCT user_id) AS users,
+                SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors")
+            ->groupBy(DB::raw("COALESCE(NULLIF(device_id, ''), user_agent)"))->orderByDesc('n')->limit(50)->get()->map(fn ($r) => (array) $r)->all();
 
         return [
             'totals'    => array_map(fn ($v) => is_numeric($v) ? (int) $v : $v, $t),
@@ -147,6 +149,9 @@ class ApiTokenRepository
         }
         if (!empty($f['endpoint'])) {
             $q->whereRaw('COALESCE(a.route, a.path) = ?', [(string) $f['endpoint']]);
+        }
+        if (!empty($f['device'])) {
+            $q->whereRaw("COALESCE(NULLIF(a.device_id, ''), a.user_agent) = ?", [(string) $f['device']]);
         }
         if (!empty($f['method'])) {
             $q->where('a.method', strtoupper((string) $f['method']));
