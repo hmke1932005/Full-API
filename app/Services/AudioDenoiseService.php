@@ -82,7 +82,12 @@ class AudioDenoiseService
         $out .= '.' . $ext;
 
         $ok = $this->run($in, $out, $ext, true);
-        if (!$ok && $this->modelPath() !== null) {
+        if ($ok && $this->modelPath() !== null && $this->lostTooMuch($in, $out)) {
+            // موديل RNNoise متدرّب على الكلام: على موسيقى / أصوات مش كلام بيمسحها. لو الصوت وقع أكتر من 6dB
+            // نرجع لفلتر الضوضاء الثابتة (afftdn) اللي بيسيب الموسيقى سليمة.
+            @unlink($out);
+            $ok = $this->run($in, $out, $ext, false);
+        } elseif (!$ok && $this->modelPath() !== null) {
             // arnndn ممكن يكون مش متضمّن في build الـ ffmpeg أو الموديل مش شغال → نجرب فلتر afftdn العادي قبل ما نستسلم.
             @unlink($out);
             $ok = $this->run($in, $out, $ext, false);
@@ -103,9 +108,11 @@ class AudioDenoiseService
         [$codec, $bitrate] = self::CODECS[$ext];
         $model = $useModel ? $this->modelPath() : null;
 
+        // كل فلتر بيأخّر الصوت (arnndn ≈ 10ms، afftdn ≈ 25ms): بنقصّ التأخير ده عشان الصوت يفضل متزامن مع الصورة
+        // (الفيديو بيتنسخ -c:v copy). arnndn بيقلّل مستوى الصوت ~2dB فبنرجّعه مع limiter يمنع الكليبينج.
         $filter = $model
-            ? 'highpass=f=70,arnndn=m=' . basename($model) . ':mix=1'
-            : 'highpass=f=70,afftdn=nf=-30:nr=20:tn=1,lowpass=f=14000';
+            ? 'highpass=f=60,arnndn=m=' . basename($model) . ':mix=1,atrim=start=0.010,asetpts=PTS-STARTPTS,volume=2dB,alimiter=limit=0.97'
+            : 'highpass=f=60,afftdn=nf=-35:nr=18:tn=1,atrim=start=0.025,asetpts=PTS-STARTPTS,alimiter=limit=0.97';
 
         $cmd = [$this->ffmpegBinary(), '-nostdin', '-y', '-v', 'error', '-i', $in];
         if (in_array($ext, self::VIDEO_EXT, true)) {
@@ -159,6 +166,27 @@ class AudioDenoiseService
         }
         @unlink($log);
         return $good && $exit === 0;
+    }
+
+    /** هل الصوت بعد المعالجة أقل من الأصلي بأكتر من 6dB؟ (علامة إن الموديل مسح موسيقى / صوت مش كلام). */
+    private function lostTooMuch(string $in, string $out): bool
+    {
+        $a = $this->meanVolume($in);
+        $b = $this->meanVolume($out);
+        return $a !== null && $b !== null && ($a - $b) > 6.0;
+    }
+
+    private function meanVolume(string $path): ?float
+    {
+        $cmd = escapeshellarg($this->ffmpegBinary()) . ' -nostdin -v info -t 90 -i ' . escapeshellarg($path)
+            . ' -vn -map 0:a:0 -af volumedetect -f null - 2>&1';
+        @exec($cmd, $lines, $code);
+        foreach ((array) $lines as $line) {
+            if (preg_match('/mean_volume:\s*(-?[0-9.]+)\s*dB/', (string) $line, $m)) {
+                return (float) $m[1];
+            }
+        }
+        return null;
     }
 
     private function commandExists(string $binary): bool
