@@ -46,7 +46,8 @@ class AIStartupPotentialService
             . 'Respond as JSON: {"potential_score": number (0-100), '
             . '"market_size_estimate": string (short phrase for the intended audience/scope, e.g. "Academic / learning" or "Small businesses" or "Public / large user base"), '
             . '"competitive_edge": string (2-3 sentences: what is actually strong or distinctive in THIS project, citing concrete evidence from the code/README), '
-            . '"risk_factors": string[] (3-5 concrete limitations or gaps that reduce its practical value, each specific to this project)}.';
+            . '"risk_factors": string[] (3-5 concrete limitations or gaps that reduce its practical value, each specific to this project)}.'
+            . $this->languageDirective();
 
         $user = $this->projectContext($project);
 

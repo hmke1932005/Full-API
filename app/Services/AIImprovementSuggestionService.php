@@ -50,7 +50,8 @@ class AIImprovementSuggestionService
             . 'Never give generic advice that would fit any project, and never suggest something the repository already has. '
             . 'Respond as JSON: {"suggestions": [{"suggestion": string (1-2 sentences, max 400 chars: the problem found + the exact fix), '
             . '"category": string (one of: technical, presentation, market_fit, documentation, other), '
-            . '"priority": string (one of: low, medium, high — high only for real security issues, broken/missing core functionality, or missing basics like tests/README)}]}.';
+            . '"priority": string (one of: low, medium, high — high only for real security issues, broken/missing core functionality, or missing basics like tests/README)}]}.'
+            . $this->languageDirective();
 
         $user = $this->projectContext($project);
 

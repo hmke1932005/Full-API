@@ -750,7 +750,7 @@ class ProjectsApiController extends Controller
         }
 
         try {
-            $locale = (string) ($request->input('locale') ?: 'en');
+            $locale = (string) ($request->input('locale') ?: app()->getLocale());
             $outcomes = $this->aiAnalysis->runFullAnalysis($project, (int) $request->attributes->get('uip_user_id'), $locale);
         } catch (\RuntimeException $e) {
             return $this->apiError($e->getMessage(), null, 403);

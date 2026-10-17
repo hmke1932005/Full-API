@@ -38,8 +38,8 @@ class GithubCodeReviewService
     use ConfiguresAIClient;
 
     /** ميزانية اختيار الملفات لخطوة تحليل الـ AI — مفصح عنها في الواجهة، مش حد مخفي. */
-    private const MAX_FILES = 15;
-    private const MAX_TOTAL_BYTES = 50_000;
+    private const MAX_FILES = 20;
+    private const MAX_TOTAL_BYTES = 70_000;
     private const MAX_CHARS_PER_FILE = 8_000;
     private const MAX_ISSUES_STORED = 60;
 
@@ -68,8 +68,7 @@ class GithubCodeReviewService
     ) {
         $this->aiClient = $aiClient;
         $this->applySettingsOverrides($this->aiClient, $settings);
-        $envToken = getenv('GITHUB_TOKEN');
-        $this->githubToken = $envToken !== false && $envToken !== '' ? $envToken : null;
+        $this->githubToken = GithubHttp::platformToken();
     }
 
     public function latestReview($projectId): ?array
@@ -250,6 +249,9 @@ class GithubCodeReviewService
             'size_kb'          => $heuristic['size_kb'],
             'default_branch'   => $heuristic['default_branch'],
             'files_analyzed'   => $aiResult['files_analyzed'] ?? [],
+            'strengths'        => $aiResult['strengths'] ?? [],
+            'structure'        => $aiResult['structure'] ?? null,
+            'snippets'         => $aiResult['snippets'] ?? [],
             'heuristic_issues' => $analysisMethod === 'heuristic' ? $heuristic['issues'] : [],
         ];
 
@@ -364,7 +366,51 @@ class GithubCodeReviewService
             $normalizedIssues[] = $issue;
         }
 
+        // مقتطفات الكود الحقيقية (±3 سطور حوالين السطر المُبلَّغ عنه) من الملف اللي اتجاب فعلًا — مش من تأليف الـ AI.
+        $snippets = [];
+        foreach ($normalizedIssues as $issue) {
+            $file = (string) ($issue['file'] ?? '');
+            $line = isset($issue['line']) && is_numeric($issue['line']) ? (int) $issue['line'] : 0;
+            if ($file === '' || $line < 1 || !isset($files[$file])) {
+                continue;
+            }
+            $all = preg_split('/\R/', $files[$file]);
+            if ($line > count($all)) {
+                continue;
+            }
+            $start = max(1, $line - 3);
+            $end = min(count($all), $line + 3);
+            $out = [];
+            for ($i = $start; $i <= $end; $i++) {
+                $out[] = str_pad((string) $i, 4, ' ', STR_PAD_LEFT) . '| ' . mb_substr($all[$i - 1], 0, 220);
+            }
+            $snippets[$file . '|' . $line] = ['start' => $start, 'focus' => $line, 'code' => implode("\n", $out)];
+        }
+
+        $strengths = [];
+        foreach ((array) ($data['strengths'] ?? []) as $st) {
+            if (is_array($st) && !empty($st['text'])) {
+                $strengths[] = ['file' => (string) ($st['file'] ?? ''), 'text' => mb_substr((string) $st['text'], 0, 400)];
+            }
+        }
+        $layers = [];
+        foreach ((array) ($data['structure']['layers'] ?? []) as $ly) {
+            if (is_array($ly) && !empty($ly['name'])) {
+                $assess = strtolower((string) ($ly['assessment'] ?? 'ok'));
+                $layers[] = [
+                    'name'       => mb_substr((string) $ly['name'], 0, 80),
+                    'files'      => array_values(array_filter(array_map('strval', (array) ($ly['files'] ?? [])), fn ($f) => isset($files[$f]))),
+                    'purpose'    => mb_substr((string) ($ly['purpose'] ?? ''), 0, 200),
+                    'assessment' => in_array($assess, ['good', 'ok', 'weak'], true) ? $assess : 'ok',
+                    'note'       => mb_substr((string) ($ly['note'] ?? ''), 0, 250),
+                ];
+            }
+        }
+
         return [
+            'strengths'             => array_slice($strengths, 0, 8),
+            'structure'             => ['summary' => mb_substr((string) ($data['structure']['summary'] ?? ''), 0, 500), 'layers' => array_slice($layers, 0, 10)],
+            'snippets'              => $snippets,
             'overall_score'         => $clamp($data['overall_score'] ?? null),
             'security_score'        => $clamp($data['security_score'] ?? null),
             'performance_score'     => $clamp($data['performance_score'] ?? null),
@@ -417,7 +463,31 @@ class GithubCodeReviewService
             $candidates[] = ['path' => $path, 'size' => (int) ($entry['size'] ?? 0)];
         }
 
-        usort($candidates, fn ($a, $b) => $a['size'] <=> $b['size']);
+        // الأهم الأول (نقاط دخول/كنترولرز/خدمات/موديلات/أمان/اختبارات)، وبعدين الأصغر — بدل "الأصغر فقط" اللي كان بيختار
+        // ملفات تافهة ويسيب قلب المشروع. الملفات الأصغر من 120 بايت (غالبًا فاضية/تجميعية) بتتأجل لآخر الطابور.
+        $weight = function (string $path): int {
+            $l = strtolower($path);
+            $w = 0;
+            foreach (['program.', 'startup', 'main.', 'app.', 'server.', 'index.', 'controller', 'service', 'repository', 'handler', 'route', 'auth', 'login', 'middleware', 'model', 'entity', 'dbcontext', 'config', 'upload', 'security'] as $k) {
+                if (str_contains($l, $k)) {
+                    $w += 3;
+                }
+            }
+            foreach (['test', 'spec'] as $k) {
+                if (str_contains($l, $k)) {
+                    $w += 2;
+                }
+            }
+            return $w;
+        };
+        usort($candidates, function ($a, $b) use ($weight) {
+            $tiny = ($a['size'] < 120) <=> ($b['size'] < 120);
+            if ($tiny !== 0) {
+                return $tiny;
+            }
+            $w = $weight($b['path']) <=> $weight($a['path']);
+            return $w !== 0 ? $w : ($a['size'] <=> $b['size']);
+        });
 
         $selected = [];
         $totalBytes = 0;
@@ -452,13 +522,19 @@ class GithubCodeReviewService
             . 'category (one of: security, performance, maintainability, architecture, quality, general), '
             . 'severity (one of: critical, high, medium, low, info), description (what is wrong, specific to the code shown), '
             . 'recommendation (what to do about it), suggested_fix (a short concrete fix, code-level where useful). '
+            . 'Each file is shown with line numbers in the form "  12| code": use EXACTLY those numbers for the "line" field (the first line of the problem). '
+            . 'Also report what is done WELL and how the code is organised: '
+            . '"strengths" = 3-6 items {file, text} naming specific good practices you actually see (e.g. parameterised queries, input validation, clear layering, DI, error handling, tests); '
+            . '"structure" = {"summary": 1-2 sentences on the architecture, "layers": [{"name": layer/module (e.g. Controllers, Services, Models, Views, Data access), "files": [exact paths from the files given], '
+            . '"purpose": short, "assessment": one of good|ok|weak, "note": short reason}]}. '
             . 'Respond as JSON: {"overall_score":number,"security_score":number,"performance_score":number,'
-            . '"maintainability_score":number,"architecture_score":number,"quality_score":number,"summary":"1-3 sentence overview",'
+            . '"maintainability_score":number,"architecture_score":number,"quality_score":number,"summary":"3-5 sentence overview covering correctness, structure and the main risks",'
+            . '"strengths":[{"file":"...","text":"..."}],"structure":{"summary":"...","layers":[{"name":"...","files":["..."],"purpose":"...","assessment":"good|ok|weak","note":"..."}]},'
             . '"issues":[{"file":"...","line":number,"category":"...","severity":"...","description":"...","recommendation":"...","suggested_fix":"..."}]}';
 
         // لغة المنصة (X-Locale → UipLocaleMiddleware → app()->getLocale()): لو عربي، النص الحر بالعربي.
         if (app()->getLocale() === 'ar') {
-            $system .= ' IMPORTANT — LANGUAGE: write every human-readable text value (summary, description, recommendation, and any explanatory text in suggested_fix) in clear Modern Standard Arabic. '
+            $system .= ' IMPORTANT — LANGUAGE: write every human-readable text value (summary, strengths text, structure summary/purpose/note, description, recommendation, and any explanatory text in suggested_fix) in clear Modern Standard Arabic. '
                 . 'Keep the JSON keys, the enum values of category and severity (security, performance, ..., critical, high, ...), file paths, '
                 . 'identifiers, API/class/method names, and code snippets exactly as they are in English/original form — do not translate them. '
                 . 'Code inside suggested_fix stays as code; only add short Arabic explanation around it if needed.';
@@ -466,7 +542,11 @@ class GithubCodeReviewService
 
         $parts = [];
         foreach ($files as $path => $content) {
-            $parts[] = "=== File: {$path} ===\n{$content}";
+            $numbered = [];
+            foreach (preg_split('/\R/', $content) as $n => $line) {
+                $numbered[] = str_pad((string) ($n + 1), 4, ' ', STR_PAD_LEFT) . '| ' . $line;
+            }
+            $parts[] = "=== File: {$path} ===\n" . implode("\n", $numbered);
         }
         $user = "Review the following " . count($files) . " file(s):\n\n" . implode("\n\n", $parts);
 
@@ -556,60 +636,15 @@ class GithubCodeReviewService
         return [$m[1], $m[2]];
     }
 
-    /** بيسحب ويفك base64 لمحتوى ملف واحد عبر GitHub contents API. بيرجع null (مش throw) عند فشل ملف واحد عشان ملف سيء واحد مايوقفش التحليل كله. */
+    /** محتوى ملف واحد: raw.githubusercontent.com للعام (من غير استهلاك حد الـ API)، وcontents API بالتوكن للخاص. null عند الفشل. */
     private function fetchFileContent(string $owner, string $repo, string $path, string $branch): ?string
     {
-        $encodedPath = implode('/', array_map('rawurlencode', explode('/', $path)));
-        try {
-            $data = $this->fetchJson("https://api.github.com/repos/{$owner}/{$repo}/contents/{$encodedPath}?ref=" . rawurlencode($branch));
-        } catch (\RuntimeException $e) {
-            return null;
-        }
-        if (!is_array($data) || ($data['encoding'] ?? '') !== 'base64' || !isset($data['content'])) {
-            return null;
-        }
-        $decoded = base64_decode(str_replace("\n", '', (string) $data['content']), true);
-        return $decoded === false ? null : $decoded;
+        return GithubHttp::file($owner, $repo, $branch, $path, $this->githubToken);
     }
 
-    /** @throws \RuntimeException عند أي رد غير 2xx أو فشل شبكة */
+    /** @throws \RuntimeException عند أي رد غير 2xx أو فشل شبكة أو تجاوز حد المعدل */
     private function fetchJson(string $url): ?array
     {
-        if (!function_exists('curl_init')) {
-            throw new \RuntimeException('The cURL PHP extension is required for GitHub integration.');
-        }
-
-        $headers = ['User-Agent: UIP-Platform', 'Accept: application/vnd.github+json'];
-        if ($this->githubToken) {
-            $headers[] = 'Authorization: Bearer ' . $this->githubToken;
-        }
-
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_TIMEOUT        => 12,
-            CURLOPT_FOLLOWLOCATION => true,
-        ]);
-        $body = curl_exec($ch);
-        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $error = curl_error($ch);
-        curl_close($ch);
-
-        if ($body === false) {
-            throw new \RuntimeException('Could not reach GitHub (' . $error . ').');
-        }
-        if ($status === 404) {
-            throw new \RuntimeException('Repository not found — check the URL is correct. For a private repository, connect your GitHub account first.');
-        }
-        if ($status === 403) {
-            throw new \RuntimeException('GitHub rate-limited this request. Please try again in a few minutes.');
-        }
-        if ($status < 200 || $status >= 300) {
-            throw new \RuntimeException("GitHub API returned HTTP {$status}.");
-        }
-
-        $decoded = json_decode($body, true);
-        return is_array($decoded) ? $decoded : null;
+        return GithubHttp::json($url, $this->githubToken);
     }
 }

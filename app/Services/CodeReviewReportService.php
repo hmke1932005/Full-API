@@ -91,6 +91,7 @@ class CodeReviewReportService
             'text'           => (string) $i->description,
             'recommendation' => (string) ($i->ai_recommendation ?? ''),
             'fix'            => (string) ($i->suggested_fix ?? ''),
+            'snippet'        => (is_array($result['snippets'] ?? null) && $i->file_name !== null && $i->line_number !== null) ? ($result['snippets'][$i->file_name . '|' . (int) $i->line_number] ?? null) : null,
         ], $issueRows);
 
         if (!$issues) { // وضع heuristic: الملاحظات في raw_result مش في جدول الـ issues
@@ -121,6 +122,8 @@ class CodeReviewReportService
                 'issues_found'    => (int) $latest->issues_found,
                 'language_mix'    => is_array($result['language_mix'] ?? null) ? $result['language_mix'] : [],
                 'files_analyzed'  => is_array($result['files_analyzed'] ?? null) ? $result['files_analyzed'] : [],
+                'strengths'       => is_array($result['strengths'] ?? null) ? $result['strengths'] : [],
+                'structure'       => is_array($result['structure'] ?? null) ? $result['structure'] : null,
                 'admin_notes'     => $latest->admin_notes,
                 'approved_at'     => $latest->approved_at,
                 'score_overridden' => (bool) $latest->score_overridden,
@@ -228,6 +231,26 @@ class CodeReviewReportService
             'rows' => array_map(fn ($i) => [
                 $sev($i['severity']), $i['category'] ?: '-', $i['file'] ?: '-', $i['line'] ?? '-', $i['text'], $i['recommendation'] ?: '-', $i['fix'] ?: '-',
             ], $report['issues'])];
+        if (!empty($r['strengths'])) {
+            $sections[] = ['title' => 'Strengths (Done Well)', 'header' => ['File', 'Strength'],
+                'rows' => array_map(fn ($x) => [$x['file'] ?: '-', $x['text']], $r['strengths'])];
+        }
+        if (!empty($r['structure']['layers'])) {
+            if (!empty($r['structure']['summary'])) {
+                $sections[] = ['title' => 'Code Structure Overview', 'header' => ['Overview'], 'rows' => [[$r['structure']['summary']]]];
+            }
+            $sections[] = ['title' => 'Code Structure Breakdown', 'header' => ['Layer / Module', 'Assessment', 'Purpose', 'Files', 'Note'],
+                'rows' => array_map(fn ($ly) => [$ly['name'], $t(ucfirst($ly['assessment'])), $ly['purpose'] ?: '-', implode(', ', $ly['files']) ?: '-', $ly['note'] ?: '-'], $r['structure']['layers'])];
+        }
+        $evidence = [];
+        foreach ($report['issues'] as $i) {
+            if (!empty($i['snippet']['code'])) {
+                $evidence[] = [$i['file'] . ':' . $i['line'], $i['snippet']['code'], $i['fix'] ?: '-'];
+            }
+        }
+        if ($evidence) {
+            $sections[] = ['title' => 'Code Evidence (Problem Code vs Suggested Fix)', 'header' => ['Location', 'Code in Repository', 'Suggested Fix'], 'rows' => $evidence];
+        }
         if ($r['language_mix']) {
             $sections[] = ['title' => 'Language Mix', 'header' => ['Language', 'Share %'],
                 'rows' => array_map(fn ($k, $v) => [$k, $v], array_keys($r['language_mix']), array_values($r['language_mix']))];

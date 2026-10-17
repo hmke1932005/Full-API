@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Project;
 use App\Repositories\AIAnalysisRepository;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -41,7 +42,8 @@ class AIAnalysisService
         private AIClassificationService $classification,
         private AIStartupPotentialService $startupPotential,
         private AIImprovementSuggestionService $suggestions,
-        private AIProjectSummaryService $summary
+        private AIProjectSummaryService $summary,
+        private GithubCodeReviewService $codeReview
     ) {
     }
 
@@ -110,6 +112,11 @@ class AIAnalysisService
         // (زي CLI) أو لو الـ SAPI بيتجاهل set_time_limit() (بعض FPM pools).
         set_time_limit(0);
 
+        // لغة التقرير = لغة المنصة وقت التشغيل (الكود-ريفيو والملخص والاقتراحات والقيمة العملية كلهم بنفس اللغة).
+        if (in_array($locale, ['ar', 'en'], true)) {
+            app()->setLocale($locale);
+        }
+
         $projectId = (int) $project->id;
         $outcomes = [];
 
@@ -125,6 +132,19 @@ class AIAnalysisService
                 $outcomes[$type] = ['ok' => false, 'error' => $e->getMessage()];
             }
         };
+
+        // مراجعة الكود الحقيقية الأول (لو فيه لينك GitHub): نتايجها (ملاحظات بملف/سطر، نقاط قوة، هيكل) بتتغذى لباقي
+        // التحليلات كدليل، وبتظهر في صفحة التحليل. فشلها مش بيوقف الباقي.
+        if (DB::table('project_links')->where('project_id', $projectId)->where('type', 'github')->exists()) {
+            try {
+                $review = $this->codeReview->run((string) $project->uuid, $project->owner_id);
+                $ok = is_array($review) && ($review['status'] ?? '') === 'completed';
+                $outcomes['code_review'] = $ok ? ['ok' => true] : ['ok' => false, 'error' => (string) ($review['summary'] ?? 'Code review did not complete.')];
+            } catch (\Throwable $e) {
+                Log::warning('AI analysis: code review step failed', ['project_id' => $projectId, 'error' => $e->getMessage()]);
+                $outcomes['code_review'] = ['ok' => false, 'error' => $e->getMessage()];
+            }
+        }
 
         $run('readiness_score', fn () => $this->readiness->analyze($project));
         $run('classification', fn () => $this->classification->classify($project));

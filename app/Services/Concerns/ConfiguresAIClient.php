@@ -85,6 +85,16 @@ trait ConfiguresAIClient
         return null;
     }
 
+    /** لو لغة المنصة عربي: كل النصوص البشرية في رد الـ AI بالعربي (مفاتيح JSON والـ enums والمسارات والكود تفضل إنجليزي). */
+    private function languageDirective(): string
+    {
+        if (app()->getLocale() !== 'ar') {
+            return ' Write every human-readable text value in clear, natural English.';
+        }
+        return ' IMPORTANT — LANGUAGE: write every human-readable text value (summaries, explanations, suggestions, strengths, risks, audience/scope phrases) in clear Modern Standard Arabic. '
+            . 'Keep the JSON keys, enum values (e.g. categories, priorities, severities), file paths, identifiers, API/class/method names and code snippets exactly in their original English form — do not translate them.';
+    }
+
     /** سياق مشروع مختصر يتغذى في كل prompt تحليل-AI. */
     private function projectContext(\App\Models\Project $project): string
     {
@@ -111,6 +121,10 @@ trait ConfiguresAIClient
         }
         $lines[] = "\n--- REAL REPOSITORY EVIDENCE (fetched from GitHub; base your judgement on this, not just the description) ---";
         $lines[] = app(\App\Services\ProjectRepoContextService::class)->snapshot($project);
+        $review = app(\App\Services\ProjectRepoContextService::class)->codeReviewEvidence($project);
+        if ($review !== '') {
+            $lines[] = $review;
+        }
         return implode("\n", $lines);
     }
 }

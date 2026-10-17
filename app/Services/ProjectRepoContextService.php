@@ -49,13 +49,14 @@ class ProjectRepoContextService
     {
         $token = null;
         try { $token = app(GithubOAuthService::class)->tokenFor($project->owner_id); } catch (\Throwable) {}
-        $token = $token ?: (getenv('GITHUB_TOKEN') ?: null);
+        $token = $token ?: GithubHttp::platformToken();
 
         $get = function (string $path, array $q = []) use ($token, $owner, $repo) {
-            $req = Http::withHeaders(['User-Agent' => 'UIP-Platform', 'Accept' => 'application/vnd.github+json'])->timeout(12);
-            if ($token) { $req = $req->withToken($token); }
-            $res = $req->get("https://api.github.com/repos/{$owner}/{$repo}{$path}", $q);
-            return $res->successful() ? $res->json() : null;
+            try {
+                return GithubHttp::json("https://api.github.com/repos/{$owner}/{$repo}{$path}" . ($q ? '?' . http_build_query($q) : ''), $token);
+            } catch (\Throwable) {
+                return null;
+            }
         };
 
         $meta = $get('');
@@ -108,13 +109,7 @@ class ProjectRepoContextService
             $out[] = 'README: none found';
         }
 
-        $fetch = function (string $path) use ($get, $branch) {
-            $enc = implode('/', array_map('rawurlencode', explode('/', $path)));
-            $d = $get('/contents/' . $enc, ['ref' => $branch]);
-            if (!is_array($d) || ($d['encoding'] ?? '') !== 'base64') { return null; }
-            $c = base64_decode(str_replace("\n", '', (string) $d['content']), true);
-            return $c === false ? null : $c;
-        };
+        $fetch = fn (string $path) => GithubHttp::file($owner, $repo, $branch, $path, $token);
 
         // manifest (dependencies reveal the real stack)
         foreach ($paths as $p) {
@@ -147,5 +142,38 @@ class ProjectRepoContextService
         }
 
         return implode("\n", $out);
+    }
+
+    /** أحدث مراجعة كود مكتملة (درجات + أهم الملاحظات بملف/سطر + نقاط القوة) كدليل إضافي للـ AI. */
+    public function codeReviewEvidence(Project $project): string
+    {
+        try {
+            $r = DB::table('ai_code_review_results')->where('project_id', $project->id)->where('status', 'completed')->orderByDesc('id')->first();
+            if (!$r) {
+                return '';
+            }
+            $res = json_decode((string) ($r->raw_result ?? ''), true) ?: [];
+            $out = ["--- LATEST CODE REVIEW (v{$r->version}; scores 0-100) ---"];
+            $out[] = 'Scores: overall=' . ($r->overall_score ?? 'n/a') . ', security=' . ($r->security_score ?? 'n/a') . ', performance=' . ($r->performance_score ?? 'n/a')
+                . ', maintainability=' . ($r->maintainability_score ?? 'n/a') . ', architecture=' . ($r->architecture_score ?? 'n/a') . ', quality=' . ($r->quality_score ?? 'n/a');
+            if (!empty($r->summary)) {
+                $out[] = 'Review summary: ' . mb_substr((string) $r->summary, 0, 600);
+            }
+            $issues = DB::table('ai_code_review_issues')->where('review_id', $r->id)
+                ->orderByRaw("FIELD(severity, 'critical','high','medium','low','info')")->limit(12)->get();
+            foreach ($issues as $i) {
+                $out[] = "- [{$i->severity}/{$i->category}] {$i->file_name}:{$i->line_number} " . mb_substr((string) $i->description, 0, 220);
+            }
+            foreach (array_slice((array) ($res['strengths'] ?? []), 0, 5) as $st) {
+                $out[] = '+ Strength: ' . mb_substr((string) ($st['text'] ?? ''), 0, 200);
+            }
+            if (!empty($res['structure']['summary'])) {
+                $out[] = 'Structure: ' . mb_substr((string) $res['structure']['summary'], 0, 300);
+            }
+            $out[] = 'Use these verified findings as ground truth; do not contradict them.';
+            return implode("\n", $out);
+        } catch (\Throwable) {
+            return '';
+        }
     }
 }

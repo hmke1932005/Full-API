@@ -31,7 +31,8 @@ class AIAnalysisReportService
         $potential = $a['startup_potential'];
         $suggestions = $a['suggestions']->all();
         $summary = $a['summary'];
-        if (!$readiness && !$classification && !$potential && !$suggestions && !$summary) {
+        $codeReview = app(CodeReviewReportService::class)->build($project, ExportLocalizer::isArabic());
+        if (!$readiness && !$classification && !$potential && !$suggestions && !$summary && !$codeReview) {
             return null;
         }
         return [
@@ -46,6 +47,7 @@ class AIAnalysisReportService
             'potential'      => $potential ? array_merge($potential->toArray(), ['risks' => $potential->risks()]) : null,
             'suggestions'    => array_map(fn ($s) => $s->toArray(), $suggestions),
             'summary'        => $summary,
+            'code_review'    => $codeReview,
         ];
     }
 
@@ -99,6 +101,18 @@ class AIAnalysisReportService
             usort($list, fn ($a, $b) => ($rank[$a['priority'] ?? 'medium'] ?? 1) <=> ($rank[$b['priority'] ?? 'medium'] ?? 1));
             $sections[] = ['title' => 'Improvement Suggestions', 'header' => ['Priority', 'Category', 'Suggestion'],
                 'rows' => array_map(fn ($x) => [$t(ucfirst((string) ($x['priority'] ?? 'medium'))), $t(ucfirst(str_replace('_', ' ', (string) ($x['category'] ?? 'other')))), (string) $x['suggestion']], $list)];
+        }
+
+        // + تقرير مراجعة الكود الكامل (ملاحظات بملف/سطر، كود المشكلة والإصلاح، نقاط القوة، تقسيم الهيكل، اللغات) لو موجود
+        if (!empty($r['code_review'])) {
+            [, , $crSections, $crChart] = app(CodeReviewReportService::class)->toExportParts($r['code_review'], $ar);
+            foreach ($crSections as $sec) {
+                $sec['title'] = 'Code Review - ' . $sec['title'];
+                $sections[] = $sec;
+            }
+            if (!$chart['labels']) {
+                $chart = $crChart;
+            }
         }
 
         return [$title, $meta, $sections, $chart];

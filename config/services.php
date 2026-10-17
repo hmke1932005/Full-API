@@ -41,6 +41,8 @@ return [
         'client_secret' => env('GITHUB_CLIENT_SECRET', ''),
         'redirect'      => env('GITHUB_OAUTH_REDIRECT', ''),   // https://<api-domain>/api/v1/github/callback
         'scope'         => env('GITHUB_OAUTH_SCOPE', 'repo read:user'),
+        // توكن المنصة (Personal Access Token بدون صلاحيات، للريبوز العامة بس) — بيرفع حد GitHub من 60 لـ 5000 طلب/ساعة
+        'token'         => env('GITHUB_TOKEN', ''),
     ],
 
     'slack' => [
