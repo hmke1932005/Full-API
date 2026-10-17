@@ -98,12 +98,13 @@ class ApiTokenRepository
                 SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors")
             ->groupBy('method', DB::raw('COALESCE(route, path)'))->orderByDesc('n')->limit(25)->get()->map(fn ($r) => (array) $r)->all();
 
-        $statuses = $base()->selectRaw('status, COUNT(*) AS n')->groupBy('status')->orderByDesc('n')->get()->map(fn ($r) => (array) $r)->all();
+        $statuses = $base()->selectRaw('status, COUNT(*) AS n, MAX(created_at) AS last_at')->groupBy('status')->orderByDesc('n')->get()->map(fn ($r) => (array) $r)->all();
 
         $users = DB::table('api_token_usages as a')
             ->join('users as u', 'u.id', '=', 'a.user_id')
             ->where('a.api_token_id', $id)
             ->selectRaw("u.id, u.full_name, u.email, COUNT(*) AS n, MIN(a.created_at) AS first_at, MAX(a.created_at) AS last_at,
+                SUM(CASE WHEN a.status >= 400 THEN 1 ELSE 0 END) AS errors,
                 (SELECT r.slug FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id ORDER BY ur.assigned_at ASC LIMIT 1) AS role")
             ->groupBy('u.id', 'u.full_name', 'u.email')->orderByDesc('n')->limit(100)->get()->map(fn ($r) => (array) $r)->all();
 
@@ -141,6 +142,15 @@ class ApiTokenRepository
         if (!empty($f['ip'])) {
             $q->where('a.ip', $f['ip']);
         }
+        if (!empty($f['status_code'])) {
+            $q->where('a.status', (int) $f['status_code']);
+        }
+        if (!empty($f['endpoint'])) {
+            $q->whereRaw('COALESCE(a.route, a.path) = ?', [(string) $f['endpoint']]);
+        }
+        if (!empty($f['method'])) {
+            $q->where('a.method', strtoupper((string) $f['method']));
+        }
         if (($f['status'] ?? '') === 'error') {
             $q->where('a.status', '>=', 400);
         } elseif (($f['status'] ?? '') === 'ok') {
@@ -151,13 +161,14 @@ class ApiTokenRepository
         if (($needle = trim((string) ($f['q'] ?? ''))) !== '') {
             $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $needle) . '%';
             $q->where(function ($w) use ($like) {
-                $w->where('a.path', 'like', $like)->orWhere('a.ip', 'like', $like)
+                $w->where('a.path', 'like', $like)->orWhere('a.ip', 'like', $like)->orWhere('a.error_message', 'like', $like)
                   ->orWhere('u.full_name', 'like', $like)->orWhere('u.email', 'like', $like);
             });
         }
 
         $total = (clone $q)->count();
         $rows = $q->select('a.id', 'a.method', 'a.path', 'a.route', 'a.status', 'a.outcome', 'a.ip', 'a.user_agent', 'a.client', 'a.device_id', 'a.created_at',
+                'a.error_code', 'a.error_message', 'a.error_detail',
                 'a.user_id', 'u.full_name AS user_name', 'u.email AS user_email')
             ->orderByDesc('a.id')->offset(max(0, ($page - 1) * $perPage))->limit($perPage)->get()->map(fn ($r) => (array) $r)->all();
 

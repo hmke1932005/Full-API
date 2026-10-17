@@ -115,6 +115,7 @@ class UipAppTokenMiddleware
                 'route'        => ($uri = $request->route()?->uri()) ? substr('/' . ltrim($uri, '/'), 0, 255) : null,
                 'status'       => (int) $response->getStatusCode(),
                 'outcome'      => $outcome,
+                ...$this->errorInfo($response),
                 'ip'           => substr((string) $request->ip(), 0, 45) ?: null,
                 'user_agent'   => substr((string) $request->userAgent(), 0, 255) ?: null,
                 'client'       => substr((string) $request->header('X-UIP-Client', ''), 0, 40) ?: null,
@@ -130,5 +131,62 @@ class UipAppTokenMiddleware
         } catch (\Throwable $e) {
             // التسجيل ثانوي: لو الجدول لسه ما اتعملوش (migration) أو حصل خطأ، الطلب يكمل عادي.
         }
+    }
+
+    /**
+     * سبب الفشل لطلبات status >= 400: message/code من الـ JSON، وللـ 5xx اسم الـ exception ومكانه.
+     * (الـ response هنا لسه ما اتشفّرتش — UipResponseEncryptionMiddleware أبعد منّنا.)
+     * مفيش قيم حساسة: QueryException بنسجّل رسالة الـ driver بس (من غير الـ SQL والـ bindings).
+     *
+     * @return array{error_code:?string,error_message:?string,error_detail:?string}
+     */
+    private function errorInfo($response): array
+    {
+        $out = ['error_code' => null, 'error_message' => null, 'error_detail' => null];
+        if ((int) $response->getStatusCode() < 400) {
+            return $out;
+        }
+        try {
+            $ct = (string) $response->headers->get('Content-Type', '');
+            $raw = str_contains($ct, 'json') ? $response->getContent() : null;
+            if (is_string($raw) && $raw !== '' && strlen($raw) < 100000) {
+                $j = json_decode($raw, true);
+                if (is_array($j)) {
+                    $out['error_code'] = isset($j['code']) && is_scalar($j['code']) ? (string) $j['code'] : null;
+                    $msg = isset($j['message']) && is_scalar($j['message']) ? (string) $j['message'] : null;
+                    if (!empty($j['errors']) && is_array($j['errors'])) {
+                        $flat = [];
+                        array_walk_recursive($j['errors'], function ($v, $k) use (&$flat) {
+                            if (is_scalar($v)) {
+                                $flat[] = (is_string($k) ? $k . ': ' : '') . $v;
+                            }
+                        });
+                        if ($flat) {
+                            $msg = trim(($msg ?? '') . ' — ' . implode(' | ', array_slice($flat, 0, 5)), ' —');
+                        }
+                    }
+                    $out['error_message'] = $msg;
+                }
+            }
+
+            $ex = $response->exception ?? null;
+            if ($ex instanceof \Throwable) {
+                $file = str_replace(base_path() . DIRECTORY_SEPARATOR, '', $ex->getFile());
+                $out['error_detail'] = get_class($ex) . ' @ ' . $file . ':' . $ex->getLine();
+                $exMsg = $ex instanceof \Illuminate\Database\QueryException
+                    ? (string) ($ex->errorInfo[2] ?? 'Database error')
+                    : $ex->getMessage();
+                if ($exMsg !== '' && (!$out['error_message'] || $out['error_message'] === 'Server Error')) {
+                    $out['error_message'] = $exMsg;
+                }
+            }
+        } catch (\Throwable $e) {
+            // استخراج السبب ثانوي.
+        }
+
+        foreach (['error_code' => 60, 'error_message' => 500, 'error_detail' => 255] as $k => $max) {
+            $out[$k] = ($out[$k] !== null && $out[$k] !== '') ? mb_substr((string) $out[$k], 0, $max) : null;
+        }
+        return $out;
     }
 }

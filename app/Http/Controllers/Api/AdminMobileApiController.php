@@ -126,7 +126,7 @@ class AdminMobileApiController extends Controller
         ], 'Token details retrieved successfully.');
     }
 
-    /** GET /api/v1/admin/mobile-tokens/{id}/requests?page=&per_page=&status=ok|error|rejected&user_id=&ip=&q= */
+    /** GET /api/v1/admin/mobile-tokens/{id}/requests?page=&per_page=&status=ok|error|rejected&status_code=&endpoint=&method=&user_id=&ip=&q= */
     public function requests(Request $request, string $id)
     {
         if ($err = $this->requireAdmin($request)) {
@@ -141,6 +141,9 @@ class AdminMobileApiController extends Controller
         $per = min(100, max(10, (int) $request->query('per_page', 50)));
         $res = $this->tokens->usageLog((int) $id, $page, $per, [
             'status'  => (string) $request->query('status', ''),
+            'status_code' => (int) $request->query('status_code', 0),
+            'endpoint'    => (string) $request->query('endpoint', ''),
+            'method'      => (string) $request->query('method', ''),
             'user_id' => $request->query('user_id'),
             'ip'      => (string) $request->query('ip', ''),
             'q'       => (string) $request->query('q', ''),
