@@ -790,6 +790,35 @@ class ProjectsApiController extends Controller
         ], 'Latest AI analysis retrieved successfully.');
     }
 
+    /** GET /{id}/ai-analysis/export?format=csv|xlsx|pdf|json|docx|html|md|txt|xml&lang=ar|en — المالك أو عضو فريق مقبول. */
+    public function exportAiAnalysis(Request $request, $id)
+    {
+        $project = $this->findAccessibleOr404($request, $id);
+        if (!$project instanceof Project) {
+            return $project;
+        }
+        $format = strtolower((string) $request->input('format', 'pdf'));
+        try {
+            $file = app(\App\Services\AIAnalysisReportService::class)
+                ->render($project, $format, \App\Services\Export\ExportLocalizer::isArabic());
+        } catch (\RuntimeException $e) {
+            return $this->apiError($e->getMessage(), null, 422);
+        }
+        if (!$file) {
+            return $this->apiError('No AI analysis has been run for this project yet.', null, 404);
+        }
+        [$content, $mime, $name] = $file;
+        $this->auditLog->record(
+            $request->attributes->get('uip_user_id'), 'ai_analysis.export_report', 'Project', $project->id, null,
+            ['format' => $format], $request->ip()
+        );
+        return response($content, 200, [
+            'Content-Type'        => $mime,
+            'Content-Disposition' => 'attachment; filename="' . $name . '"',
+            'Content-Length'      => (string) strlen($content),
+        ]);
+    }
+
     /**
      * GET /{id}/ai-analysis/similar — مشاريع منشورة قريبة بالمعنى. مالك
      * المشروع بس، نداء حي عند الطلب — مش متخزّنة (شوف docblock

@@ -826,6 +826,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/ai-analysis/consent', [ProjectsApiController::class, 'grantAiConsent'])->middleware('uip.can:ai.request_analysis');
         Route::post('/{id}/ai-analysis/run', [ProjectsApiController::class, 'runAiAnalysis'])->middleware('uip.can:ai.request_analysis');
         Route::get('/{id}/ai-analysis', [ProjectsApiController::class, 'latestAiAnalysis'])->middleware('uip.can:ai.request_analysis');
+        Route::get('/{id}/ai-analysis/export', [ProjectsApiController::class, 'exportAiAnalysis'])->middleware('uip.can:ai.request_analysis');
         Route::get('/{id}/ai-analysis/similar', [ProjectsApiController::class, 'similarProjects'])->middleware('uip.can:ai.request_analysis');
         Route::get('/{id}/ai-analysis/duplicates', [ProjectsApiController::class, 'duplicateCheck'])->middleware('uip.can:ai.request_analysis');
     });
