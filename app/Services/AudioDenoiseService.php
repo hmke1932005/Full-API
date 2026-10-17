@@ -111,8 +111,8 @@ class AudioDenoiseService
         // كل فلتر بيأخّر الصوت (arnndn ≈ 10ms، afftdn ≈ 25ms): بنقصّ التأخير ده عشان الصوت يفضل متزامن مع الصورة
         // (الفيديو بيتنسخ -c:v copy). arnndn بيقلّل مستوى الصوت ~2dB فبنرجّعه مع limiter يمنع الكليبينج.
         $filter = $model
-            ? 'highpass=f=60,arnndn=m=' . basename($model) . ':mix=1,atrim=start=0.010,asetpts=PTS-STARTPTS,volume=2dB,alimiter=limit=0.97'
-            : 'highpass=f=60,afftdn=nf=-35:nr=18:tn=1,atrim=start=0.025,asetpts=PTS-STARTPTS,alimiter=limit=0.97';
+            ? 'highpass=f=60,arnndn=m=' . basename($model) . ':mix=1,atrim=start=0.010,asetpts=PTS-STARTPTS,volume=2dB,alimiter=limit=0.97,aresample=async=1'
+            : 'highpass=f=60,afftdn=nf=-35:nr=18:tn=1,atrim=start=0.025,asetpts=PTS-STARTPTS,alimiter=limit=0.97,aresample=async=1';
 
         $cmd = [$this->ffmpegBinary(), '-nostdin', '-y', '-v', 'error', '-i', $in];
         if (in_array($ext, self::VIDEO_EXT, true)) {
