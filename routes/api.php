@@ -1093,6 +1093,12 @@ Route::prefix('v1')->group(function () {
         Route::get('/', [CourseApiController::class, 'index']);
         Route::post('/', [CourseApiController::class, 'store']);
         Route::get('/meta', [CourseApiController::class, 'meta']);
+        // Enrol / drop requests (student -> university + faculty + course staff; first approval applies it).
+        Route::get('/requests', [CourseApiController::class, 'requestsIndex']);
+        Route::post('/requests/{rid}/approve', [CourseApiController::class, 'requestApprove'])->where('rid', '[0-9]+');
+        Route::post('/requests/{rid}/reject', [CourseApiController::class, 'requestReject'])->where('rid', '[0-9]+');
+        Route::post('/requests/{rid}/cancel', [CourseApiController::class, 'requestCancel'])->where('rid', '[0-9]+');
+        Route::get('/requests/{rid}/attachment', [CourseApiController::class, 'requestAttachment'])->where('rid', '[0-9]+');
         Route::get('/{id}', [CourseApiController::class, 'show'])->where('id', '[0-9]+');
         Route::patch('/{id}', [CourseApiController::class, 'update'])->where('id', '[0-9]+');
         Route::post('/{id}/archive', [CourseApiController::class, 'archive'])->where('id', '[0-9]+');
@@ -1104,6 +1110,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/students', [CourseApiController::class, 'addStudents'])->where('id', '[0-9]+');
         Route::delete('/{id}/students/{studentId}', [CourseApiController::class, 'removeStudent'])->where(['id' => '[0-9]+', 'studentId' => '[0-9]+']);
         Route::post('/{id}/enroll', [CourseApiController::class, 'enroll'])->where('id', '[0-9]+');
+        Route::post('/{id}/unenroll', [CourseApiController::class, 'unenroll'])->where('id', '[0-9]+');
         Route::delete('/{id}/enroll', [CourseApiController::class, 'unenroll'])->where('id', '[0-9]+');
 
         // بند 12 — دفتر درجات المقرر (أوزان الامتحانات → درجة المقرر). المدرس/الكلية/الجامعة اللي بيديروا المقرر؛ الطالب درجته هو بس.

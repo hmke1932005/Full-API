@@ -8,6 +8,7 @@ use App\Repositories\AcademicStaffRepository;
 use App\Repositories\FacultyRepository;
 use App\Repositories\StudentRepository;
 use App\Repositories\UniversityRepository;
+use App\Services\CourseRequestService;
 use App\Services\CourseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -20,6 +21,7 @@ class CourseApiController extends Controller
 {
     public function __construct(
         private CourseService $courses,
+        private CourseRequestService $requests,
         private UniversityRepository $universities,
         private FacultyRepository $faculties,
         private AcademicStaffRepository $staff,
@@ -214,15 +216,72 @@ class CourseApiController extends Controller
         return $scope ? $this->respond($this->courses->removeStudent($scope, $id, $studentId, $this->locale($request))) : $this->denied();
     }
 
-    public function enroll(Request $request, $id)
+    // ---- enrol / drop REQUESTS (students no longer enrol or drop directly)
+
+    private function sendRequest(Request $request, $id, string $type)
     {
         $scope = $this->scope($request);
-        return $scope ? $this->respond($this->courses->enroll($scope, $id, $this->locale($request))) : $this->denied();
+        if (!$scope) {
+            return $this->denied();
+        }
+        $v = Validator::make($request->all(), [
+            'message'    => 'nullable|string|max:2000',
+            'attachment' => 'nullable|file|max:10240',
+        ]);
+        if ($v->fails()) {
+            return $this->apiError($v->errors()->first(), $v->errors()->toArray(), 422);
+        }
+        return $this->respond($this->requests->create($scope, $id, $type, $request->input('message'), $request->file('attachment'), $this->locale($request)), 201);
     }
 
+    /** POST /courses/{id}/enroll — sends an enrol request (multipart: message, attachment). */
+    public function enroll(Request $request, $id)
+    {
+        return $this->sendRequest($request, $id, 'enroll');
+    }
+
+    /** POST|DELETE /courses/{id}/unenroll|enroll — sends a drop request. */
     public function unenroll(Request $request, $id)
     {
+        return $this->sendRequest($request, $id, 'drop');
+    }
+
+    /** GET /courses/requests — student: my requests; university / faculty / staff: requests addressed to me. */
+    public function requestsIndex(Request $request)
+    {
         $scope = $this->scope($request);
-        return $scope ? $this->respond($this->courses->unenroll($scope, $id, $this->locale($request))) : $this->denied();
+        return $scope ? $this->apiSuccess($this->requests->list($scope, $request->only(['status', 'course_id']), $this->locale($request))) : $this->denied();
+    }
+
+    public function requestApprove(Request $request, $rid)
+    {
+        $scope = $this->scope($request);
+        return $scope ? $this->respond($this->requests->approve($scope, $rid, $request->input('note'), $this->locale($request))) : $this->denied();
+    }
+
+    public function requestReject(Request $request, $rid)
+    {
+        $scope = $this->scope($request);
+        return $scope ? $this->respond($this->requests->reject($scope, $rid, $request->input('note'), $this->locale($request))) : $this->denied();
+    }
+
+    public function requestCancel(Request $request, $rid)
+    {
+        $scope = $this->scope($request);
+        return $scope ? $this->respond($this->requests->cancel($scope, $rid, $this->locale($request))) : $this->denied();
+    }
+
+    public function requestAttachment(Request $request, $rid)
+    {
+        $scope = $this->scope($request);
+        if (!$scope) {
+            return $this->denied();
+        }
+        $a = $this->requests->attachmentFor($scope, $rid);
+        $full = $a ? public_path(ltrim($a['path'], '/')) : null;
+        if (!$a || !is_file($full)) {
+            return $this->apiError('File not found.', null, 404);
+        }
+        return response()->download($full, basename($a['name']), ['Content-Type' => $a['mime'], 'X-Content-Type-Options' => 'nosniff']);
     }
 }

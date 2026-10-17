@@ -49,6 +49,7 @@ class NotificationService
         'system'       => 'system',
         'student_affiliation' => 'university',
         'student_academic'    => 'university',
+        'course_request'      => 'university',
     ];
 
     private const VALID_PRIORITIES = ['low', 'normal', 'high', 'urgent'];

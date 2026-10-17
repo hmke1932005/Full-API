@@ -157,9 +157,12 @@ class CourseService
             $enrolled = array_flip(DB::table('course_enrollments')->where('student_id', $scope['studentId'])->whereIn('course_id', $ids)->pluck('course_id')->all());
         }
 
+        $pending = $scope['role'] === 'student' && $ids ? app(CourseRequestService::class)->pendingByCourse((int) $scope['studentId'], $ids) : [];
         $out = [];
         foreach ($rows as $c) {
-            $out[] = $this->present($c, $scope, $staff, $enrolled, $locale);
+            $row = $this->present($c, $scope, $staff, $enrolled, $locale);
+            $row['pending_request'] = $pending[(int) $c->id] ?? null;
+            $out[] = $row;
         }
         if (!empty($f['enrolled_only'])) {
             $out = array_values(array_filter($out, fn ($r) => $r['enrolled']));
@@ -177,7 +180,9 @@ class CourseService
         $enrolled = $scope['role'] === 'student'
             ? array_flip(DB::table('course_enrollments')->where('student_id', $scope['studentId'])->where('course_id', $c->id)->pluck('course_id')->all())
             : [];
-        return $this->present($c, $scope, $staff, $enrolled, $locale);
+        $row = $this->present($c, $scope, $staff, $enrolled, $locale);
+        $row['pending_request'] = $scope['role'] === 'student' ? (app(CourseRequestService::class)->pendingByCourse((int) $scope['studentId'], [(int) $c->id])[(int) $c->id] ?? null) : null;
+        return $row;
     }
 
     // ---------------------------------------------------------------- create / update
@@ -423,28 +428,6 @@ class CourseService
     }
 
     // ---------------------------------------------------------------- student self-service
-
-    public function enroll(array $scope, $id, string $locale): array
-    {
-        if ($scope['role'] !== 'student' || !$scope['studentId']) {
-            return $this->fail($locale, 'للطلاب فقط.', 'Students only.', 403);
-        }
-        $c = $this->baseQuery($scope)->where('c.id', (int) $id)->first();
-        if (!$c) {
-            return $this->fail($locale, 'هذه المادة غير متاحة لك.', 'This course is not available to you.', 404);
-        }
-        if (!DB::table('course_enrollments')->where('course_id', $c->id)->where('student_id', $scope['studentId'])->exists()) {
-            DB::table('course_enrollments')->insert(['course_id' => $c->id, 'student_id' => $scope['studentId'], 'source' => 'self', 'enrolled_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
-        }
-        return ['success' => true, 'message' => $this->ar($locale) ? 'تم تسجيلك في المادة.' : 'You are now enrolled in this course.'];
-    }
-
-    public function unenroll(array $scope, $id, string $locale): array
-    {
-        if ($scope['role'] !== 'student' || !$scope['studentId']) {
-            return $this->fail($locale, 'للطلاب فقط.', 'Students only.', 403);
-        }
-        DB::table('course_enrollments')->where('course_id', (int) $id)->where('student_id', $scope['studentId'])->delete();
-        return ['success' => true, 'message' => $this->ar($locale) ? 'تم إلغاء تسجيلك من المادة.' : 'You have left the course.'];
-    }
+    // Students no longer enrol / drop directly: see CourseRequestService (request -> approval by
+    // the university / faculty / course staff, the first approval applies the change).
 }

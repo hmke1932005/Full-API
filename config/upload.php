@@ -110,6 +110,8 @@ return [
             'mp4', 'webm', 'mov',
             'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'zip',
         ],
+        // Course enrol / drop requests: the student's supporting document (medical note, form, screenshot...).
+        'course_requests' => ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'webp', 'zip'],
         'group_files' => [
             'jpg', 'jpeg', 'png', 'gif', 'webp',
             'mp4', 'webm', 'mov',
@@ -165,6 +167,7 @@ return [
         'ai_assistant' => 'uploads/ai_assistant',
         'feed'      => 'uploads/feed',
         'group_files' => 'uploads/group-files',
+        'course_requests' => 'uploads/course-requests',
         'announcements' => 'uploads/announcements',
         'meetings'  => 'uploads/meetings',
         // Round 9 (بند 18 — Recording storage). فئة منفصلة عن 'meetings'
