@@ -179,4 +179,39 @@ class ApiTokenRepository
 
         return ['rows' => $rows, 'total' => $total];
     }
+
+    /**
+     * Requests per day for the "Requests per day" chart, with the same filters as the request log.
+     * @param array{status?:string,user_id?:mixed,device?:string,endpoint?:string,ip?:string} $f
+     * @return array<string,int> 'YYYY-MM-DD' => count (days with no requests are left out)
+     */
+    public function dailyCounts(int $id, int $days, array $f = []): array
+    {
+        $q = DB::table('api_token_usages as a')
+            ->where('a.api_token_id', $id)
+            ->where('a.created_at', '>=', now()->subDays(max(1, $days) - 1)->startOfDay());
+
+        if (!empty($f['user_id'])) {
+            $q->where('a.user_id', (int) $f['user_id']);
+        }
+        if (!empty($f['ip'])) {
+            $q->where('a.ip', $f['ip']);
+        }
+        if (!empty($f['endpoint'])) {
+            $q->whereRaw('COALESCE(a.route, a.path) = ?', [(string) $f['endpoint']]);
+        }
+        if (!empty($f['device'])) {
+            $q->whereRaw("COALESCE(NULLIF(a.device_id, ''), a.user_agent) = ?", [(string) $f['device']]);
+        }
+        if (($f['status'] ?? '') === 'error') {
+            $q->where('a.status', '>=', 400);
+        } elseif (($f['status'] ?? '') === 'ok') {
+            $q->where('a.status', '<', 400);
+        } elseif (($f['status'] ?? '') === 'rejected') {
+            $q->where('a.outcome', 'revoked');
+        }
+
+        return $q->selectRaw('DATE(a.created_at) AS day, COUNT(*) AS n')->groupBy('day')->orderBy('day')->get()
+            ->pluck('n', 'day')->map(fn ($n) => (int) $n)->all();
+    }
 }

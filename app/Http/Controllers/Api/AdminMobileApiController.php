@@ -163,6 +163,29 @@ class AdminMobileApiController extends Controller
         ]);
     }
 
+    /** GET /api/v1/admin/mobile-tokens/{id}/daily?days=7|14|30|60&status=ok|error|rejected&user_id=&device=&endpoint=&ip= — data for the "Requests per day" chart. */
+    public function daily(Request $request, string $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        if (!$this->tokens->findWithCreator((int) $id)) {
+            return $this->apiError('Token not found.', null, 404);
+        }
+
+        $retention = max(1, (int) config('site.app_token_log_days', 60));
+        $days = min($retention, max(1, (int) $request->query('days', 30)));
+        $by = $this->tokens->dailyCounts((int) $id, $days, [
+            'status'   => (string) $request->query('status', ''),
+            'user_id'  => $request->query('user_id'),
+            'device'   => (string) $request->query('device', ''),
+            'endpoint' => (string) $request->query('endpoint', ''),
+            'ip'       => (string) $request->query('ip', ''),
+        ]);
+
+        return $this->apiSuccess(['days' => $days, 'by_day' => $by], 'Daily request counts retrieved successfully.');
+    }
+
     /** GET /api/v1/admin/mobile-tokens/blocked-devices — every manually blocked device. */
     public function blockedDevices(Request $request)
     {

@@ -904,6 +904,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/revoke', [AdminMobileApiController::class, 'revoke']);
         Route::get('/{id}', [AdminMobileApiController::class, 'show'])->where('id', '[0-9]+');
         Route::get('/{id}/requests', [AdminMobileApiController::class, 'requests'])->where('id', '[0-9]+');
+        Route::get('/{id}/daily', [AdminMobileApiController::class, 'daily'])->where('id', '[0-9]+');
         Route::delete('/{id}', [AdminMobileApiController::class, 'destroy'])->where('id', '[0-9]+');
     });
 
