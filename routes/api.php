@@ -899,6 +899,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/', [AdminMobileApiController::class, 'index']);
         Route::post('/', [AdminMobileApiController::class, 'store']);
         Route::post('/{id}/revoke', [AdminMobileApiController::class, 'revoke']);
+        Route::delete('/{id}', [AdminMobileApiController::class, 'destroy'])->where('id', '[0-9]+');
     });
 
     // Admin → Platform Policy: حظر إيميلات/دومينات، قفل التسجيل، تشغيل/إيقاف تشفير الـ response.

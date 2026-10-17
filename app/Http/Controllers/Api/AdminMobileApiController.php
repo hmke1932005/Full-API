@@ -90,4 +90,21 @@ class AdminMobileApiController extends Controller
             ? $this->apiSuccess(null, 'Token revoked.')
             : $this->apiError('Token not found or already revoked.', null, 404);
     }
+
+    /** DELETE /api/v1/admin/mobile-tokens/{id} — permanently removes a token that was already revoked. */
+    public function destroy(Request $request, string $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+
+        $ok = $this->tokens->deleteRevoked((int) $id);
+
+        if ($ok) {
+            $this->auditLog->record($request->attributes->get('uip_user_id'), 'api_token.delete', 'ApiToken', (int) $id);
+            return $this->apiSuccess(null, 'Token deleted.');
+        }
+
+        return $this->apiError('Token not found, or it is still active — revoke it first.', null, 404);
+    }
 }

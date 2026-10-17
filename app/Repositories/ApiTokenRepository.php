@@ -40,6 +40,16 @@ class ApiTokenRepository
         return true;
     }
 
+    /** حذف نهائي لتوكن **ملغي** بس (التوكن الفعال لازم يتلغي الأول). false = مش موجود أو لسه فعال. */
+    public function deleteRevoked($id): bool
+    {
+        $token = ApiToken::find($id);
+        if (!$token || !$token->revoked_at) {
+            return false;
+        }
+        return (bool) $token->delete();
+    }
+
     public function activeCount(): int
     {
         return ApiToken::whereNull('revoked_at')->count();
