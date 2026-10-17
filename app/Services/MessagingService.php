@@ -70,7 +70,7 @@ class MessagingService
         $rows = $this->conversations->inboxForUser($userId, $trashed);
         $blockedSet = array_flip($this->safety->blockedIds((int) $userId));
 
-        return array_map(function ($row) use ($blockedSet) {
+        return array_map(function ($row) use ($blockedSet, $userId) {
             $others = $this->flagDeleted($this->applyAvatarPrivacy($row['other_participants']));
             $displayName = $row['subject'] ?: ($row['is_group'] ? $row['group_name'] : null) ?: ($others[0]['full_name'] ?? '—');
             $peer = !$row['is_group'] ? ($others[0] ?? null) : null;
@@ -94,7 +94,13 @@ class MessagingService
                 'group_avatar'       => $row['group_avatar'] ?? null,
                 'preview_type'       => $row['last_message_type'] ?? 'text',
                 'preview_meta'       => ($row['last_message_type'] ?? '') === 'system' && !empty($row['last_message_meta']) ? json_decode($row['last_message_meta'], true) : null,
-                'preview'            => $row['last_message_deleted'] ? '(message deleted)' : ($row['last_message_body'] ? mb_substr($row['last_message_body'], 0, 120) : null),
+                // الرسالة اللي ملهاش نص (صورة/صوت/ملف/استطلاع) كان preview بتاعها null فالفرونت يكتب
+                // "لا توجد رسائل بعد" مع إن فيه رسايل. دلوقتي بنرجّع نوع المعاينة (preview_kind) والعدد
+                // والفرونت هو اللي بيترجم الليبل حسب اللغة.
+                'preview'            => $row['last_message_deleted'] ? null : (trim((string) ($row['last_message_body'] ?? '')) !== '' ? mb_substr($row['last_message_body'], 0, 120) : null),
+                'preview_kind'       => $this->previewKind($row),
+                'preview_count'      => (int) ($row['last_message_attach_count'] ?? 0),
+                'preview_from_me'    => isset($row['last_message_sender_id']) ? ((string) $row['last_message_sender_id'] === (string) $userId) : false,
                 'time'               => $row['last_message_at'] ?: $row['updated_at'],
                 'is_unread'          => (bool) $row['is_unread'],
                 'is_favorite'        => (bool) $row['is_favorite'],
@@ -108,6 +114,33 @@ class MessagingService
                 'days_left'          => !empty($row['deleted_at']) ? \App\Services\ConversationTrashService::daysLeft($row['deleted_at']) : null,
             ];
         }, $rows);
+    }
+
+    /**
+     * نوع معاينة آخر رسالة لما مفيش نص: deleted | image | video | audio | document | archive | code | file | poll | gif | sticker | null.
+     * null = رسالة نص عادية (أو مفيش رسايل أصلاً) — الفرونت يعرض body/الحالة الفاضية.
+     */
+    private function previewKind(array $row): ?string
+    {
+        if (!empty($row['last_message_deleted'])) {
+            return 'deleted';
+        }
+        if (empty($row['last_message_at'])) {
+            return null;
+        }
+        $hasText = trim((string) ($row['last_message_body'] ?? '')) !== '';
+        $kind = $row['last_message_attach_kind'] ?? null;
+        if ($kind) {
+            return (string) $kind;
+        }
+        $type = (string) ($row['last_message_type'] ?? 'text');
+        if ($type === 'system') {
+            return null; // رسائل النظام ليها preview_meta خاص
+        }
+        if (in_array($type, ['poll', 'gif', 'sticker', 'image', 'video', 'audio', 'file'], true)) {
+            return $type;
+        }
+        return $hasText ? null : 'file';
     }
 
     /** بحث نصي على قايمة الـ inbox نفسها (subject/participant name/email/org). */
