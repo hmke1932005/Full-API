@@ -67,6 +67,7 @@ use App\Http\Controllers\Api\MeetingsAttendanceApiController;
 use App\Http\Controllers\Api\MeetingsInvitationsApiController;
 use App\Http\Controllers\Api\MessagingController;
 use App\Http\Controllers\Api\GroupChatController;
+use App\Http\Controllers\Api\ChatSafetyApiController;
 use App\Http\Controllers\Api\AccountPrivacyApiController;
 use App\Http\Controllers\Api\AdminAiConversationsApiController;
 use App\Http\Controllers\Api\AiAssistantController;
@@ -1521,6 +1522,12 @@ Route::prefix('v1')->group(function () {
         Route::patch('/', [AccountPrivacyApiController::class, 'update']);
     });
 
+    // متابعة بلاغات الشات — admin (الكل) / university (جامعته) / faculty (كليته). الفحص جوّه ChatSafetyService::scopeFor.
+    Route::prefix('chat-reports')->middleware('uip.auth')->group(function () {
+        Route::get('/', [ChatSafetyApiController::class, 'index']);
+        Route::post('/{id}/status', [ChatSafetyApiController::class, 'updateStatus'])->where('id', '[0-9]+');
+    });
+
     Route::prefix('messaging')->middleware(['uip.auth', 'uip.can:messaging.use'])->group(function () {
         Route::get('/inbox', [MessagingController::class, 'inbox']);
         Route::get('/recipients', [MessagingController::class, 'recipients']);
@@ -1574,6 +1581,13 @@ Route::prefix('v1')->group(function () {
         Route::post('/messages/{id}/react', [MessagingController::class, 'react']);
         Route::get('/messages/{id}/receipts', [MessagingController::class, 'receipts']);
         Route::post('/messages/{id}/vote', [MessagingController::class, 'votePoll']);
+
+        // حظر المستخدمين + بلاغات الشات (ChatSafetyApiController).
+        Route::get('/blocks', [ChatSafetyApiController::class, 'blocks']);
+        Route::post('/blocks', [ChatSafetyApiController::class, 'block']);
+        Route::delete('/blocks/{userId}', [ChatSafetyApiController::class, 'unblock'])->where('userId', '[0-9]+');
+        Route::post('/reports', [ChatSafetyApiController::class, 'report']);
+        Route::get('/reports/mine', [ChatSafetyApiController::class, 'myReports']);
 
         Route::post('/presence/heartbeat', [MessagingController::class, 'heartbeat']);
         Route::post('/presence/typing', [MessagingController::class, 'typing']);

@@ -58,6 +58,7 @@ class MessagingService
         private RoleService $roles,
         private AudioDenoiseService $denoise,
         private GroupChatService $groups,
+        private ChatSafetyService $safety,
     ) {
     }
 
@@ -67,8 +68,9 @@ class MessagingService
     public function inboxForUser($userId): array
     {
         $rows = $this->conversations->inboxForUser($userId);
+        $blockedSet = array_flip($this->safety->blockedIds((int) $userId));
 
-        return array_map(function ($row) {
+        return array_map(function ($row) use ($blockedSet) {
             $others = $this->flagDeleted($this->applyAvatarPrivacy($row['other_participants']));
             $displayName = $row['subject'] ?: ($row['is_group'] ? $row['group_name'] : null) ?: ($others[0]['full_name'] ?? '—');
             $peer = !$row['is_group'] ? ($others[0] ?? null) : null;
@@ -86,6 +88,9 @@ class MessagingService
                 'peer_role'          => $peer['account_role'] ?? null,
                 // الطرف التاني حذف حسابه: المحادثة بتتقفل (قراءة بس) والفرونت بيغيّر شكلها.
                 'peer_deleted'       => (bool) ($peer['is_deleted'] ?? false),
+                'peer_id'            => $peer ? (int) $peer['id'] : null,
+                // حظرت الطرف ده؟ (الفرونت بيعرض "محظور" بدل المعاينة ويقفل الإرسال)
+                'peer_blocked_by_me' => $peer ? isset($blockedSet[(int) $peer['id']]) : false,
                 'group_avatar'       => $row['group_avatar'] ?? null,
                 'preview_type'       => $row['last_message_type'] ?? 'text',
                 'preview_meta'       => ($row['last_message_type'] ?? '') === 'system' && !empty($row['last_message_meta']) ? json_decode($row['last_message_meta'], true) : null,
@@ -185,9 +190,14 @@ class MessagingService
         if (!$conversation->is_group) {
             // محادثة مباشرة مع حساب محذوف: القراءة متاحة والإرسال لأ.
             $peerDeleted = (bool) ($others[0]['is_deleted'] ?? false);
+            $peerId = isset($others[0]['id']) ? (int) $others[0]['id'] : null;
+            $blockDir = $peerId ? $this->safety->blockDirection((int) $userId, $peerId) : null;
             $conversationOut['peer_deleted'] = $peerDeleted;
-            $conversationOut['can_send'] = !$peerDeleted;
-            $conversationOut['send_block'] = $peerDeleted ? 'peer_deleted' : null;
+            $conversationOut['peer_id'] = $peerId;
+            $conversationOut['blocked_by_me'] = $blockDir === 'me';
+            $conversationOut['can_send'] = !$peerDeleted && $blockDir === null;
+            // 'blocked_by_peer' بيتعرض للمحظور كرسالة عامة (مبنقولوش إن حد حظره صراحةً).
+            $conversationOut['send_block'] = $peerDeleted ? 'peer_deleted' : ($blockDir === 'me' ? 'blocked_by_me' : ($blockDir === 'peer' ? 'blocked_by_peer' : null));
         }
         if ($conversation->is_group) {
             $conversationOut = array_merge($conversationOut, $this->groups->threadExtras($conversationId, $userId));
@@ -236,6 +246,8 @@ class MessagingService
         if ($this->directPeerDeleted($conversationId)) {
             throw new \RuntimeException('This account was deleted, so you can no longer send messages in this conversation.');
         }
+
+        $this->assertNotBlocked($conversationId, (int) $userId);
 
         $maxLen = (int) config('messaging.max_message_length', 8000);
         if (mb_strlen($body) > $maxLen) {
@@ -343,9 +355,10 @@ class MessagingService
 
         $existing = $this->conversations->findDirectBetween($userId, $recipient->id);
         if ($existing) {
-            return (int) $existing->id;
+            return (int) $existing->id; // فتح محادثة قديمة مسموح حتى مع الحظر (القراءة/إلغاء الحظر)؛ الإرسال بيتمنع في sendMessage.
         }
 
+        $this->assertNotBlockedPair((int) $userId, (int) $recipient->id);
         $this->assertGroupMessagingAllowed($userId, $recipient->id);
 
         $conversation = $this->conversations->createWithParticipants(null, [$userId, $recipient->id]);
@@ -364,6 +377,7 @@ class MessagingService
         }
 
         $existing = $this->conversations->findDirectBetween($userId, $recipient->id);
+        $this->assertNotBlockedPair((int) $userId, (int) $recipient->id);
         if (!$existing) {
             $this->assertGroupMessagingAllowed($userId, $recipient->id);
         }
@@ -906,6 +920,26 @@ class MessagingService
         unset($p);
 
         return $participants;
+    }
+
+    /** @throws \RuntimeException لو المحادثة مباشرة وأي طرف حظر التاني. */
+    private function assertNotBlocked(int $conversationId, int $userId): void
+    {
+        $peerId = $this->safety->directPeerId($conversationId, $userId);
+        if ($peerId !== null) {
+            $this->assertNotBlockedPair($userId, $peerId);
+        }
+    }
+
+    private function assertNotBlockedPair(int $userId, int $peerId): void
+    {
+        $dir = $this->safety->blockDirection($userId, $peerId);
+        if ($dir === 'me') {
+            throw new \RuntimeException('You blocked this user. Unblock them to send messages.');
+        }
+        if ($dir === 'peer') {
+            throw new \RuntimeException('You cannot send messages to this user.');
+        }
     }
 
     /** محادثة مباشرة (مش جروب) والطرف التاني فيها حسابه محذوف؟ */
