@@ -5,12 +5,15 @@ namespace App\Services\Push;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Support\PlatformPolicy;
 
 /**
  * عميل Firebase Cloud Messaging (HTTP v1) من غير أي مكتبة خارجية: بيوقّع JWT بالـ service account
  * (RS256) ويبدّله بـ OAuth access token (بيتخزّن في الكاش) ويبعت الرسالة.
  *
- * الإعداد (.env):
+ * الإعداد — الأولوية:
+ *   1) من الداشبورد: Admin → Platform Policy → Push notifications (بيتخزّن مشفّر في جدول settings)
+ *   2) من الـ .env:
  *   FCM_CREDENTIALS_PATH=/مسار/كامل/firebase-service-account.json     (أو)
  *   FCM_CREDENTIALS_JSON=<محتوى الملف نفسه، أو base64 له>
  *   FCM_PROJECT_ID=uip-v1            (اختياري — بياخده من الملف لو فاضي)
@@ -24,6 +27,7 @@ class FcmClient
 
     private ?array $creds = null;
     private bool $credsLoaded = false;
+    private int $credsAt = 0;
 
     public function isConfigured(): bool
     {
@@ -33,16 +37,25 @@ class FcmClient
     /** @return array{client_email:string,private_key:string,project_id:string}|null */
     private function credentials(): ?array
     {
-        if ($this->credsLoaded) {
+        // الـ memo لثواني بس (مش لحد آخر الـ process) عشان تغيير الإعداد من الداشبورد يتطبّق من غير restart.
+        if ($this->credsLoaded && (time() - $this->credsAt) < 15) {
             return $this->creds;
         }
         $this->credsLoaded = true;
+        $this->credsAt = time();
 
         $raw = '';
+        // 1) الداشبورد (لو الأدمن حفظ قيمة)
+        if (PlatformPolicy::isValueOverridden('fcm_credentials_json')) {
+            $raw = trim((string) PlatformPolicy::value('fcm_credentials_json'));
+        }
+        // 2) .env: مسار ملف
         $path = (string) config('services.fcm.credentials_path', '');
-        if ($path !== '' && is_readable($path)) {
+        if ($raw === '' && $path !== '' && is_readable($path)) {
             $raw = (string) file_get_contents($path);
-        } else {
+        }
+        // 3) .env: المحتوى نفسه (JSON أو base64)
+        if ($raw === '') {
             $inline = trim((string) config('services.fcm.credentials_json', ''));
             if ($inline !== '') {
                 $raw = $inline[0] === '{' ? $inline : (string) base64_decode($inline, true);
@@ -52,7 +65,7 @@ class FcmClient
         if (!is_array($json) || empty($json['client_email']) || empty($json['private_key'])) {
             return $this->creds = null;
         }
-        $project = (string) (config('services.fcm.project_id') ?: ($json['project_id'] ?? ''));
+        $project = trim((string) PlatformPolicy::value('fcm_project_id')) ?: (string) ($json['project_id'] ?? '');
         if ($project === '') {
             return $this->creds = null;
         }

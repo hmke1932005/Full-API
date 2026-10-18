@@ -64,6 +64,9 @@ final class PlatformPolicy
         'github_client_id'     => ['type' => 'string', 'min' => 0,  'max' => 100],  // GITHUB_CLIENT_ID
         'github_client_secret' => ['type' => 'string', 'min' => 0,  'max' => 200, 'secret' => true], // GITHUB_CLIENT_SECRET
         'github_oauth_redirect' => ['type' => 'string', 'min' => 0, 'max' => 300], // GITHUB_OAUTH_REDIRECT
+        // Mobile push (Firebase Cloud Messaging). The service-account JSON is stored ENCRYPTED and never echoed back (see maskedFor()).
+        'fcm_credentials_json' => ['type' => 'string', 'min' => 0, 'max' => 8000, 'secret' => true], // FCM_CREDENTIALS_JSON / FCM_CREDENTIALS_PATH
+        'fcm_project_id'       => ['type' => 'string', 'min' => 0, 'max' => 100],                    // FCM_PROJECT_ID
         // حماية رموز OTP (OtpGuard): غلطات متراكمة => حظر، وحد إرسال في النافذة.
         'otp_max_wrong'           => ['type' => 'int', 'min' => 1, 'max' => 20],   // OTP_MAX_WRONG
         'otp_block_minutes'       => ['type' => 'int', 'min' => 1, 'max' => 1440], // OTP_BLOCK_MINUTES
@@ -203,6 +206,8 @@ final class PlatformPolicy
             'github_client_id'     => (string) config('services.github.client_id', ''),
             'github_client_secret' => (string) config('services.github.client_secret', ''),
             'github_oauth_redirect' => (string) config('services.github.redirect', ''),
+            'fcm_credentials_json' => (string) config('services.fcm.credentials_json', ''),
+            'fcm_project_id'       => (string) config('services.fcm.project_id', ''),
             'otp_max_wrong'           => max(1, (int) config('security.otp.max_wrong', 5)),
             'otp_block_minutes'       => max(1, (int) config('security.otp.block_minutes', 10)),
             'otp_max_sends'           => max(1, (int) config('security.otp.max_sends', 5)),
@@ -249,13 +254,26 @@ final class PlatformPolicy
         return $n <= 12 ? str_repeat('•', $n) : mb_substr($secret, 0, 4) . str_repeat('•', 8) . mb_substr($secret, -4);
     }
 
+    /** Masked preview of a secret for the dashboard / audit log. The Firebase key shows which service account is saved (its e-mail is not a secret). */
+    public static function maskedFor(string $key, string $secret): string
+    {
+        if ($key === 'fcm_credentials_json' && $secret !== '') {
+            $j = json_decode($secret, true);
+            if (is_array($j) && !empty($j['client_email'])) {
+                return $j['client_email'] . ' (' . ($j['project_id'] ?? '?') . ')';
+            }
+        }
+
+        return self::mask($secret);
+    }
+
     /** @return array<string,string|int> effective values; secrets are masked (use value() for the real one). */
     public static function values(): array
     {
         $out = [];
         foreach (array_keys(self::VALUES) as $k) {
             $v = self::value($k);
-            $out[$k] = !empty(self::VALUES[$k]['secret']) ? self::mask((string) $v) : $v;
+            $out[$k] = !empty(self::VALUES[$k]['secret']) ? self::maskedFor($k, (string) $v) : $v;
         }
 
         return $out;
@@ -282,6 +300,9 @@ final class PlatformPolicy
 
             return [$n, null];
         }
+        if ($key === 'fcm_credentials_json') {
+            return self::normalizeFcmCredentials((string) $raw);
+        }
         $v = trim((string) $raw);
         if (preg_match('/[\x00-\x1F\x7F<>]/u', $v)) {
             return [null, "{$key} contains characters that are not allowed."];
@@ -301,6 +322,9 @@ final class PlatformPolicy
         }
         if (in_array($key, ['github_client_id', 'github_client_secret'], true) && $v !== '' && !preg_match('/^[A-Za-z0-9._-]+$/', $v)) {
             return [null, 'The GitHub value has characters that are not allowed (letters, digits, . _ - only).'];
+        }
+        if ($key === 'fcm_project_id' && $v !== '' && !preg_match('/^[a-z0-9][a-z0-9-]{3,98}[a-z0-9]$/', $v)) {
+            return [null, 'The Firebase project ID may only contain lowercase letters, digits and hyphens (for example uip-nub).'];
         }
         if ($key === 'github_oauth_redirect' && $v !== '') {
             if (!filter_var($v, FILTER_VALIDATE_URL) || !preg_match('#^https://#i', $v) && !preg_match('#^http://(localhost|127\.0\.0\.1)#i', $v)) {
@@ -324,6 +348,40 @@ final class PlatformPolicy
         }
 
         return [$v, null];
+    }
+
+    /**
+     * Accepts the Firebase service-account file pasted as JSON (or its base64) and stores one compact JSON line.
+     * @return array{0:?string,1:?string}
+     */
+    private static function normalizeFcmCredentials(string $raw): array
+    {
+        $v = trim($raw);
+        if ($v === '') {
+            return ['', null];
+        }
+        if ($v[0] !== '{') {
+            $dec = base64_decode((string) preg_replace('/\s+/', '', $v), true);
+            if ($dec === false) {
+                return [null, 'Paste the contents of the Firebase service-account .json file (or its base64).'];
+            }
+            $v = trim($dec);
+        }
+        $json = json_decode($v, true);
+        if (!is_array($json) || ($json['type'] ?? '') !== 'service_account'
+            || empty($json['client_email']) || empty($json['private_key']) || empty($json['project_id'])) {
+            return [null, 'This is not a Firebase service-account key. Download it from Firebase Console → Project settings → Service accounts → Generate new private key.'];
+        }
+        if (!is_string($json['private_key']) || !str_contains($json['private_key'], 'BEGIN PRIVATE KEY')) {
+            return [null, 'The private_key inside the file is not valid.'];
+        }
+        $keep = array_intersect_key($json, array_flip(['type', 'project_id', 'private_key_id', 'private_key', 'client_email', 'client_id', 'token_uri']));
+        $compact = json_encode($keep, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($compact === false || strlen($compact) > self::VALUES['fcm_credentials_json']['max']) {
+            return [null, 'The file is too large to be a service-account key.'];
+        }
+
+        return [$compact, null];
     }
 
     public static function setValue(string $key, string|int $value): void

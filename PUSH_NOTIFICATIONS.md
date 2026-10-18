@@ -5,6 +5,10 @@
 بيحترم كتم الفئات وساعات الهدوء من إعدادات الإشعارات؛ الأولوية `high`/`urgent` بتتخطاهم.
 
 ## الإعداد (مرة واحدة)
+
+**الطريقة الأسهل (من غير .env):** Admin ← Platform Policy ← **Push notifications (Firebase)** ← الصق محتوى ملف الـ service account كله ← Save. بيتخزّن مشفّر في الداتابيز ويشتغل فورًا من غير redeploy، وبياخد الأولوية على الـ `.env`. (الـ Project ID اختياري.)
+
+**أو من الـ .env:**
 1. Firebase Console → مشروع `uip-v1` → ⚙️ Project settings → **Service accounts** → **Generate new private key**.
 2. ارفع ملف الـ JSON على السيرفر **برّه** مجلد `public` (مثلًا `storage/app/firebase-service-account.json`) وماترفعوش على GitHub.
 3. في `.env`:

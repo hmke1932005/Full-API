@@ -180,7 +180,7 @@ class AdminPlatformPolicyApiController extends Controller
         foreach (PlatformPolicy::VALUES as $k => $def) {
             $out[$k] = [
                 // secrets are masked: the dashboard only learns that one is set
-                'value'      => !empty($def['secret']) ? PlatformPolicy::mask((string) PlatformPolicy::value($k)) : PlatformPolicy::value($k),
+                'value'      => !empty($def['secret']) ? PlatformPolicy::maskedFor($k, (string) PlatformPolicy::value($k)) : PlatformPolicy::value($k),
                 'secret'     => !empty($def['secret']),
                 'default'    => !empty($def['secret']) ? '' : PlatformPolicy::defaultValue($k),
                 'overridden' => PlatformPolicy::isValueOverridden($k),
