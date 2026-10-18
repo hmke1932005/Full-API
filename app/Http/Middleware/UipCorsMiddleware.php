@@ -22,6 +22,14 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class UipCorsMiddleware
 {
+    /** Origins بتاعة تطبيق الأندرويد/iOS (Capacitor). */
+    private const NATIVE_APP_ORIGINS = [
+        'https://localhost',
+        'http://localhost',
+        'capacitor://localhost',
+        'ionic://localhost',
+    ];
+
     public function handle(Request $request, Closure $next): Response
     {
         if ($request->isMethod('OPTIONS')) {
@@ -37,7 +45,8 @@ class UipCorsMiddleware
     {
         $response->headers->set('Access-Control-Allow-Origin', $this->resolveAllowedOrigin($request));
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-        $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Exam-Session, X-Device-Id, X-Enc-Kid, X-App-Token, X-UIP-Client');
+        $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-CSRF-Token, X-Exam-Session, X-Device-Id, X-Enc-Kid, X-App-Token, X-UIP-Client, X-Locale, Accept, Accept-Language');
+        $response->headers->set('Access-Control-Max-Age', '86400');
         $response->headers->set('Vary', 'Origin');
 
         // الكوكي HttpOnly محتاج Allow-Credentials لو الـ API على origin تاني (SameSite=None).
@@ -67,6 +76,13 @@ class UipCorsMiddleware
         }
 
         if (empty($allowList)) {
+            return $origin;
+        }
+
+        // تطبيق الأندرويد (Capacitor) بيشتغل على https://localhost جوه الـ WebView، ورفع الملفات (فيديو/ريكورد/صور)
+        // وستريم الـ AI بيروحوا مباشرة من الـ WebView للـ API (cross-origin) فلازم الـ origin ده يتسمح دايمًا
+        // حتى لو CORS_ALLOWED_ORIGINS متظبطة على دومين الموقع بس. الـ Credentials بتفضل مقصورة على الـ allowlist الصريحة.
+        if (in_array($origin, self::NATIVE_APP_ORIGINS, true)) {
             return $origin;
         }
 
