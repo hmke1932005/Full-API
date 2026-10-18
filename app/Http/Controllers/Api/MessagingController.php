@@ -380,6 +380,10 @@ class MessagingController extends Controller
     {
         try {
             return $action();
+        } catch (\Illuminate\Database\QueryException $e) {
+            // خطأ داتابيز (جدول/عمود ناقص مثلًا) مش "محادثة مش موجودة" — بنسجله ونرجّع 500 بدل 422.
+            \Illuminate\Support\Facades\Log::error('Messaging DB error: ' . $e->getMessage());
+            return $this->apiError('Server Error', null, 500);
         } catch (\RuntimeException | \InvalidArgumentException $e) {
             return $this->apiError($e->getMessage(), null, 422);
         }
