@@ -587,7 +587,11 @@ class MessagingService
 
     private function shapeMessage(array $m, $viewerId): array
     {
-        return [
+        $pollExtra = [];
+        if (($m['message_type'] ?? 'text') === 'poll' && empty($m['is_deleted'])) {
+            $pollExtra = $this->pollSummary((int) $m['id'], $viewerId);
+        }
+        return $pollExtra + [
             'id'                 => (int) $m['id'],
             'conversation_id'    => (int) $m['conversation_id'],
             'body'               => $m['is_deleted'] ? null : $m['body'],
@@ -1272,6 +1276,7 @@ class MessagingService
             'messages'    => array_map(fn ($m) => $this->shapeMessage($m, $userId), $rows),
             'updated'     => $updated,
             'reactions'   => (object) $this->recentReactionsMap($conversationId),
+            'polls'       => (object) $this->recentPollsMap($conversationId, $userId),
             'receipts'    => (object) $this->receiptStatusMap($conversationId, $recentMine),
             'server_time' => now()->format('Y-m-d H:i:s'),
             'typing'      => $this->typingIn($conversationId, $userId),
@@ -1429,6 +1434,10 @@ class MessagingService
         return $this->shapeMessage($this->messages->withRelations($messageId), $userId);
     }
 
+    /**
+     * تصويت (اختيار واحد). الضغط على نفس الخيار تاني بيشيل صوتك (زي الواتساب)،
+     * والضغط على خيار تاني بينقل صوتك. بيرجّع ملخص الاستفتاء كامل للمستخدم ده.
+     */
     public function votePoll(int $messageId, $userId, int $optionIndex): array
     {
         $message = $this->messages->find($messageId);
@@ -1441,22 +1450,94 @@ class MessagingService
         }
 
         DB::transaction(function () use ($messageId, $userId, $optionIndex) {
+            $current = DB::table('message_poll_votes')
+                ->where('message_id', $messageId)->where('user_id', $userId)
+                ->lockForUpdate()->pluck('option_index')->map(fn ($i) => (int) $i)->all();
             DB::table('message_poll_votes')->where('message_id', $messageId)->where('user_id', $userId)->delete();
-            MessagePollVote::create(['message_id' => $messageId, 'user_id' => $userId, 'option_index' => $optionIndex]);
+            if (!in_array($optionIndex, $current, true)) {
+                MessagePollVote::create(['message_id' => $messageId, 'user_id' => $userId, 'option_index' => $optionIndex]);
+            }
         });
 
-        return $this->pollResults($messageId);
+        return $this->pollSummary($messageId, $userId);
     }
 
+    /** @return array<int,int> option_index => عدد الأصوات */
     public function pollResults(int $messageId): array
+    {
+        return $this->pollSummary($messageId, 0)['pollResults'];
+    }
+
+    /**
+     * ملخص استفتاء لمستخدم معيّن: pollResults (index => count)، pollTotal، myVote (index أو null).
+     *
+     * @return array{pollResults: array<int,int>, pollTotal: int, myVote: ?int}
+     */
+    public function pollSummary(int $messageId, $viewerId): array
     {
         $rows = DB::table('message_poll_votes')->where('message_id', $messageId)
             ->select('option_index', DB::raw('COUNT(*) as votes'))->groupBy('option_index')->get();
         $results = [];
+        $total = 0;
         foreach ($rows as $row) {
             $results[(int) $row->option_index] = (int) $row->votes;
+            $total += (int) $row->votes;
         }
-        return $results;
+        $mine = DB::table('message_poll_votes')->where('message_id', $messageId)->where('user_id', $viewerId)->value('option_index');
+        return [
+            'pollResults' => (object) $results,
+            'pollTotal'   => $total,
+            'myVote'      => $mine !== null ? (int) $mine : null,
+        ];
+    }
+
+    /** ملخص آخر ~30 استفتاء في المحادثة (message_id => summary) — بيتبعت مع كل poll عشان الأصوات الجديدة تظهر عند الكل. */
+    private function recentPollsMap(int $conversationId, $viewerId): array
+    {
+        $ids = DB::table('messages')
+            ->where('conversation_id', $conversationId)->where('message_type', 'poll')->whereNull('deleted_at')
+            ->orderByDesc('id')->limit(30)->pluck('id')->map(fn ($i) => (int) $i)->all();
+        $out = [];
+        foreach ($ids as $id) {
+            $out[$id] = $this->pollSummary($id, $viewerId);
+        }
+        return $out;
+    }
+
+    /**
+     * مين صوّت على إيه (للقايمة اللي بتفتح تحت الاستفتاء).
+     *
+     * @return array{question: string, total: int, options: array<int,array{index:int,text:string,count:int,voters:array}>}
+     */
+    public function pollVoters(int $messageId, $userId): array
+    {
+        $message = $this->messages->find($messageId);
+        if (!$message || $message->message_type !== 'poll' || !$this->conversations->isParticipant((int) $message->conversation_id, $userId)) {
+            throw new \RuntimeException('Poll not found.');
+        }
+        $meta = $message->metadata ? json_decode($message->metadata, true) : ['question' => '', 'options' => []];
+        $rows = DB::table('message_poll_votes as v')
+            ->join('users as u', 'u.id', '=', 'v.user_id')
+            ->where('v.message_id', $messageId)
+            ->orderBy('v.created_at')
+            ->select('v.option_index', 'u.id', 'u.full_name', 'u.avatar_path', 'v.created_at')
+            ->get();
+        $by = [];
+        foreach ($rows as $r) {
+            $by[(int) $r->option_index][] = [
+                'id'         => (int) $r->id,
+                'full_name'  => $r->full_name,
+                'avatar'     => $this->isAvatarHidden((int) $r->id, $userId) ? null : ($r->avatar_path ?: null),
+                'is_me'      => (string) $r->id === (string) $userId,
+                'voted_at'   => $r->created_at,
+            ];
+        }
+        $options = [];
+        foreach (($meta['options'] ?? []) as $i => $text) {
+            $voters = $by[$i] ?? [];
+            $options[] = ['index' => (int) $i, 'text' => $text, 'count' => count($voters), 'voters' => $voters];
+        }
+        return ['question' => $meta['question'] ?? '', 'total' => count($rows), 'options' => $options];
     }
 
     // -- Attachments -----------------------------------------------------

@@ -369,6 +369,14 @@ class MessagingController extends Controller
         });
     }
 
+    /** GET /api/v1/messaging/messages/{id}/poll-voters — مين صوّت على كل خيار */
+    public function pollVoters(Request $request, $id)
+    {
+        return $this->handle(function () use ($request, $id) {
+            return $this->apiSuccess($this->messaging->pollVoters((int) $id, $this->uid($request)), 'Poll voters retrieved successfully.');
+        });
+    }
+
     /** POST /api/v1/messaging/presence/heartbeat */
     public function heartbeat(Request $request)
     {

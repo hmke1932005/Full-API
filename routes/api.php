@@ -1616,6 +1616,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/messages/{id}/react', [MessagingController::class, 'react']);
         Route::get('/messages/{id}/receipts', [MessagingController::class, 'receipts']);
         Route::post('/messages/{id}/vote', [MessagingController::class, 'votePoll']);
+        Route::get('/messages/{id}/poll-voters', [MessagingController::class, 'pollVoters']);
 
         // حظر المستخدمين + بلاغات الشات (ChatSafetyApiController).
         Route::get('/blocks', [ChatSafetyApiController::class, 'blocks']);
