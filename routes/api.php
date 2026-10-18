@@ -66,6 +66,7 @@ use App\Http\Controllers\Api\MeetingsRecordingsApiController;
 use App\Http\Controllers\Api\MeetingsAttendanceApiController;
 use App\Http\Controllers\Api\MeetingsInvitationsApiController;
 use App\Http\Controllers\Api\MessagingController;
+use App\Http\Controllers\Api\ChunkedUploadController;
 use App\Http\Controllers\Api\GroupChatController;
 use App\Http\Controllers\Api\ChatSafetyApiController;
 use App\Http\Controllers\Api\ConversationTrashController;
@@ -1589,6 +1590,11 @@ Route::prefix('v1')->group(function () {
         Route::post('/conversations/{id}/flags/{flag}', [MessagingController::class, 'setFlag']);
         Route::post('/conversations/{id}/category', [MessagingController::class, 'setCategory']);
         Route::post('/conversations/{id}/messages', [MessagingController::class, 'send']);
+        // رفع الملفات الكبيرة على أجزاء (فيديو لحد MESSAGING_MAX_UPLOAD_MB) — الرسالة نفسها بتتبعت بعدها بـ uploaded_ids[].
+        Route::post('/uploads', [ChunkedUploadController::class, 'init']);
+        Route::get('/uploads/{id}', [ChunkedUploadController::class, 'status'])->where('id', '[a-f0-9]{32}');
+        Route::post('/uploads/{id}/chunk', [ChunkedUploadController::class, 'chunk'])->where('id', '[a-f0-9]{32}');
+        Route::delete('/uploads/{id}', [ChunkedUploadController::class, 'cancel'])->where('id', '[a-f0-9]{32}');
         Route::get('/conversations/{id}/pinned', [MessagingController::class, 'pinned']);
         Route::post('/conversations/{id}/read', [MessagingController::class, 'markRead']);
         Route::get('/conversations/{id}/poll', [MessagingController::class, 'poll']);

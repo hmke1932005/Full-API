@@ -612,25 +612,40 @@ class MessagingService
     /** بيخزّن ملف واحد مرفوع (UploadedFile) عبر FileUploadService (فئة 'messages')، وبيسجّله كصف message_attachments. */
     private function storeAttachment(int $messageId, $uploaderId, int $conversationId, UploadedFile $file): void
     {
-        $stored = $this->uploads->store($file, 'messages', 'conv_' . $conversationId);
+        // ملف اترفع بالأجزاء له سقفه الخاص (messaging.chunked.max_bytes) بدل سقف السياسة العام.
+        $absoluteMaxKb = $file instanceof \App\Support\ChunkedUploadedFile ? (int) floor((int) config('messaging.chunked.max_bytes') / 1024) : null;
+        $stored = $this->uploads->store($file, 'messages', 'conv_' . $conversationId, null, null, $absoluteMaxKb);
         $kind = $this->classifyKind($stored['extension'], $file->getClientOriginalName(), $file->getClientMimeType());
         $absolutePath = public_path($stored['stored_path']);
 
         [$width, $height] = $kind === 'image' ? $this->imageDimensions($absolutePath) : [null, null];
+
+        // فيديو: صورة مصغّرة (فريم) + المدة — من غيرها الشات بيعرض أيقونة الـ WebView الرمادية بدل صورة الفيديو. ffmpeg اختياري (fail-open).
+        $thumbnailPath = null;
+        $duration = null;
+        if ($kind === 'video') {
+            try {
+                $probe = app(\App\Services\MediaProbeService::class);
+                $thumbnailPath = $probe->videoThumbnail($absolutePath, dirname($stored['stored_path']));
+                $duration = $probe->duration($absolutePath);
+            } catch (\Throwable $e) {
+                \Log::warning('Video thumbnail/duration failed for chat attachment', ['error' => $e->getMessage()]);
+            }
+        }
 
         DB::table('message_attachments')->insert([
             'message_id'       => $messageId,
             'uploader_id'      => $uploaderId,
             'kind'             => $kind,
             'stored_path'      => $stored['stored_path'],
-            'thumbnail_path'   => null,
+            'thumbnail_path'   => $thumbnailPath,
             'original_name'    => $stored['original_name'],
             'mime_type'        => $stored['mime_type'],
             'extension'        => $stored['extension'],
             'size_bytes'       => $stored['size_bytes'],
             'width'            => $width,
             'height'           => $height,
-            'duration_seconds' => null,
+            'duration_seconds' => $duration,
             'created_at'       => now(),
         ]);
     }

@@ -10,6 +10,14 @@ return [
     'max_message_length' => 8000,
     'max_attachments_per_message' => 10,
 
+    // رفع الملفات الكبيرة على أجزاء (زي تيليجرام): الفيديو بيتقسّم لقطع 3MB (أقل من حد 4.5MB بتاع Vercel)، كل قطعة بتتعاد لوحدها
+    // لو النت قطع، والرفع بيكمّل من آخر قطعة. MESSAGING_MAX_UPLOAD_MB = أقصى حجم للملف الواحد (الافتراضي 2GB).
+    'chunked' => [
+        'max_bytes'   => (int) env('MESSAGING_MAX_UPLOAD_MB', 2048) * 1024 * 1024,
+        'chunk_bytes' => 3 * 1024 * 1024,
+        'ttl_hours'   => 24,
+    ],
+
     'rate_limit' => [
         'max_messages'    => 30,
         'window_seconds'  => 60,

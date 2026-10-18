@@ -38,7 +38,8 @@ class FileUploadService
         string $category,
         string $subfolder = '',
         ?int $maxKbOverride = null,
-        ?array $allowedOverride = null
+        ?array $allowedOverride = null,
+        ?int $absoluteMaxKb = null
     ): array {
         if (!$file) {
             throw new \RuntimeException('No file was uploaded.');
@@ -51,6 +52,10 @@ class FileUploadService
         // السياسة سقف عام: الـ override الخاص بكل فئة ممكن يضيّق بس مش يوسّع فوق سقف الأدمن.
         $policyMaxKb = $this->uploadPolicy->defaultMaxKb();
         $maxKb = $maxKbOverride !== null ? min($maxKbOverride, $policyMaxKb) : $policyMaxKb;
+        // ملفات الرفع بالأجزاء ليها سقفها الخاص (config messaging.chunked.max_bytes) بدل سقف السياسة العام.
+        if ($absoluteMaxKb !== null) {
+            $maxKb = $absoluteMaxKb;
+        }
         $maxBytes = $maxKb * 1024;
         // مُتسجّل هنا قبل move() — UploadedFile::move() بينقل ملف الـ tmp
         // فعليًا (rename) وبيرجّع كائن File جديد للمسار الجديد، من غير ما

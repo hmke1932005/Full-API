@@ -16,7 +16,7 @@ use Illuminate\Http\Request;
  */
 class MessagingController extends Controller
 {
-    public function __construct(private MessagingService $messaging)
+    public function __construct(private MessagingService $messaging, private \App\Services\ChunkedUploadService $chunks)
     {
     }
 
@@ -175,14 +175,24 @@ class MessagingController extends Controller
     public function send(Request $request, $id)
     {
         return $this->handle(function () use ($request, $id) {
-            $message = $this->messaging->sendMessage((int) $id, $this->uid($request), (string) $request->input('body', ''), [
+            $uid = $this->uid($request);
+            // ملفات كبيرة اترفعت بالأجزاء (uploaded_ids[]) بتتضاف بعد الملفات العادية؛ denoise[] بيمشي بنفس الترتيب ده.
+            $files = array_values((array) $request->file('attachments', []));
+            $uploadedIds = array_values(array_unique(array_filter((array) $request->input('uploaded_ids', []), 'is_string')));
+            foreach ($uploadedIds as $uploadedId) {
+                $files[] = $this->chunks->open($uid, $uploadedId);
+            }
+            $message = $this->messaging->sendMessage((int) $id, $uid, (string) $request->input('body', ''), [
                 'parent_message_id'   => $request->filled('parent_message_id') ? (int) $request->input('parent_message_id') : null,
                 'forwarded_from_id'   => $request->filled('forwarded_from_id') ? (int) $request->input('forwarded_from_id') : null,
                 'mentioned_user_ids'  => (array) $request->input('mentioned_user_ids', []),
-                'attachments'         => $request->file('attachments', []),
+                'attachments'         => $files,
                 // denoise[] = '1'/'0' لكل ملف بنفس ترتيب attachments[] (عزل الضوضاء بعد الرفع).
                 'denoise'             => array_map(fn ($v) => filter_var($v, FILTER_VALIDATE_BOOLEAN), array_values((array) $request->input('denoise', []))),
             ]);
+            foreach ($uploadedIds as $uploadedId) {
+                $this->chunks->discard($uid, $uploadedId);
+            }
             return $this->apiSuccess($message, 'Message sent successfully.', 201);
         });
     }
