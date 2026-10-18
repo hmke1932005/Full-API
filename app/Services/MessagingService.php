@@ -216,6 +216,15 @@ class MessagingService
             fn ($m) => $this->shapeMessage($m, $userId),
             $this->messages->forConversation($conversationId, $userId, $beforeId)
         );
+        // ✓ / ✓✓ (sent / delivered / read) على رسايلي
+        $myIds = array_values(array_map(fn ($m) => $m['id'], array_filter($messages, fn ($m) => $m['is_mine'])));
+        $receiptMap = $this->receiptStatusMap($conversationId, $myIds);
+        foreach ($messages as &$msgRow) {
+            if ($msgRow['is_mine']) {
+                $msgRow['receipt_status'] = $receiptMap[$msgRow['id']] ?? 'sent';
+            }
+        }
+        unset($msgRow);
 
         $conversationOut = [
             'id'       => (int) $conversation->id,
@@ -536,6 +545,39 @@ class MessagingService
             ? explode('/', trim($home, '/'))[0]
             : str_replace('_', '-', $role);
         return "/{$prefix}/messages/{$conversationId}";
+    }
+
+
+    /**
+     * حالة التسليم/القراءة لمجموعة رسايل أنا مرسلها: sent | delivered | read.
+     * read = كل المستلمين قروها (ومفعّلين read receipts)، delivered = كلهم استلموها.
+     * استعلامين بس مهما كان عدد الرسايل.
+     *
+     * @param  array<int,int> $messageIds
+     * @return array<int,string> message_id => status
+     */
+    private function receiptStatusMap(int $conversationId, array $messageIds): array
+    {
+        if (!$messageIds) {
+            return [];
+        }
+        $senderId = DB::table('messages')->where('id', $messageIds[0])->value('sender_id');
+        $recipients = DB::table('conversation_participants')
+            ->where('conversation_id', $conversationId)->where('user_id', '!=', $senderId)->count();
+        if ($recipients === 0) {
+            return array_fill_keys($messageIds, 'sent');
+        }
+        $rows = DB::table('message_read_receipts')->whereIn('message_id', $messageIds)
+            ->selectRaw('message_id, COUNT(delivered_at) AS delivered, COUNT(read_at) AS reads')
+            ->groupBy('message_id')->get()->keyBy('message_id');
+
+        $out = [];
+        foreach ($messageIds as $id) {
+            $r = $rows[$id] ?? null;
+            $out[$id] = !$r ? 'sent'
+                : ((int) $r->reads >= $recipients ? 'read' : ((int) $r->delivered >= $recipients ? 'delivered' : 'sent'));
+        }
+        return $out;
     }
 
     // -- Shaping -------------------------------------------------------------
@@ -1219,9 +1261,14 @@ class MessagingService
             $updated = array_map(fn ($m) => $this->shapeMessage($m, $userId), $changed);
         }
 
+        $recentMine = DB::table('messages')
+            ->where('conversation_id', $conversationId)->where('sender_id', $userId)
+            ->orderByDesc('id')->limit(100)->pluck('id')->map(fn ($i) => (int) $i)->all();
+
         return [
             'messages'    => array_map(fn ($m) => $this->shapeMessage($m, $userId), $rows),
             'updated'     => $updated,
+            'receipts'    => (object) $this->receiptStatusMap($conversationId, $recentMine),
             'server_time' => now()->format('Y-m-d H:i:s'),
             'typing'      => $this->typingIn($conversationId, $userId),
         ];
