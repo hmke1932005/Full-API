@@ -84,6 +84,9 @@ class ExamGradingService
 
             if (in_array($question->type, ['mcq', 'multi_select', 'true_false'], true)) {
                 $this->gradeAutomatic($attempt, $pivot, $question, $answer, $maxMarks);
+            } elseif (!$existing && $this->isBlankAnswer($answer)) {
+                // Blank written answer: nothing for the AI (or the instructor) to evaluate — it scores 0 right away.
+                $this->gradeUnanswered($attempt, $pivot, $answer, $maxMarks);
             } elseif (!$existing) {
                 // Subjective question, no grade yet — placeholder row so it shows up as "pending" for the instructor.
                 $grade = $this->grades->upsert($attempt->id, $pivot->id, [
@@ -144,7 +147,7 @@ class ExamGradingService
         $summary = [
             'objective' => $this->autoGradeAttempt($attempt),
             'ai_graded' => 0, 'ai_failed' => 0,
-            'ai_skipped_disabled' => 0, 'ai_skipped_empty' => 0, 'ai_skipped_instructor' => 0,
+            'ai_skipped_disabled' => 0, 'ai_skipped_empty' => 0, 'ai_skipped_instructor' => 0, 'zeroed_empty' => 0,
             'errors' => [],
         ];
 
@@ -165,8 +168,14 @@ class ExamGradingService
             // خيار ai_grading_enabled مش متفعّل على السؤال (الخيار ده بيتحكم
             // بس في التصحيح التلقائي وقت التسليم).
             $answer = $answers[$pivot->id] ?? null;
-            if (!$answer || trim((string) $answer->answer_text) === '') {
-                $summary['ai_skipped_empty']++;
+            if ($this->isBlankAnswer($answer)) {
+                // لو لسه من غير درجة (أو درجة تلقائية قديمة) → صفر. أي درجة تانية (AI/مدرس) مبتتلمسش.
+                if (!$existing || $existing->marks_awarded === null || $existing->source === 'automatic') {
+                    $this->gradeUnanswered($attempt, $pivot, $answer, (float) ($pivot->marks_override ?? $question->marks));
+                    $summary['zeroed_empty']++;
+                } else {
+                    $summary['ai_skipped_empty']++;
+                }
                 continue;
             }
 
@@ -188,8 +197,39 @@ class ExamGradingService
         }
 
         $attempt->refresh();
+        $this->recomputeAttemptTotals($attempt);
         $summary['errors'] = array_values(array_unique($summary['errors']));
         return $summary;
+    }
+
+    private function isBlankAnswer($answer): bool
+    {
+        return !$answer || trim((string) $answer->answer_text) === '';
+    }
+
+    /** إجابة كتابية فاضية = صفر تلقائي (source=automatic، is_correct=false). المدرس لسه يقدر يعدّلها. */
+    private function gradeUnanswered(ExamAttempt $attempt, $pivot, $answer, float $maxMarks): ExamGrade
+    {
+        $previous = $this->grades->findForQuestion($attempt->id, $pivot->id);
+        $grade = $this->grades->upsert($attempt->id, $pivot->id, [
+            'exam_answer_id' => $answer?->id,
+            'marks_awarded'  => 0.0,
+            'max_marks'      => $maxMarks,
+            'is_correct'     => false,
+            'source'         => 'automatic',
+            'graded_by_academic_staff_id' => null,
+            'graded_at'      => now(),
+        ]);
+        $this->grades->logHistory([
+            'exam_grade_id'  => $grade->id,
+            'previous_score' => $previous && $previous->marks_awarded !== null ? (float) $previous->marks_awarded : null,
+            'new_score'      => 0.0,
+            'source'         => 'automatic',
+            'changed_by_academic_staff_id' => null,
+            'reason'         => 'No answer submitted',
+            'changed_at'     => now(),
+        ]);
+        return $grade;
     }
 
     private function gradeAutomatic(ExamAttempt $attempt, $pivot, $question, $answer, float $maxMarks): ExamGrade
