@@ -18,10 +18,73 @@ use Illuminate\Support\Facades\DB;
  */
 class NotificationRepository
 {
+    private const PORTALS = ['admin', 'student', 'university', 'security', 'data-analysis', 'supervisor', 'academic-staff', 'faculty', 'company', 'investor', 'researcher', 'designer'];
+
+    /** @var array<string,?array> per-request memo: "uid:role" => portals the viewer may see (null = no restriction) */
+    private array $portalMemo = [];
+
+    /** Which portal a notification belongs to, from its link (/student/...) or type (system_*). null = unknown. */
+    public static function portalFor(string $type, ?string $linkUrl): ?string
+    {
+        $path = trim((string) $linkUrl);
+        if ($path !== '' && preg_match('#^https?://[^/]+(/.*)$#i', $path, $m)) {
+            $path = $m[1];
+        }
+        if ($path !== '' && $path[0] === '/' && preg_match('#^/([a-z-]+)(?:[/?\#]|$)#', $path, $m) && in_array($m[1], self::PORTALS, true)) {
+            return $m[1];
+        }
+        return str_starts_with($type, 'system_') ? 'admin' : null;
+    }
+
+    /** Portals whose notifications a user acting as $role may see. Admin also works inside the security / data-analysis / academic-staff portals. */
+    public static function portalsForRole(string $role): array
+    {
+        return match ($role) {
+            'admin'                              => ['admin', 'security', 'data-analysis', 'academic-staff'],
+            'security_admin', 'security_officer' => ['security'],
+            'data_analyst'                       => ['data-analysis'],
+            'academic_staff'                     => ['academic-staff'],
+            default                              => [str_replace('_', '-', $role)],
+        };
+    }
+
+    /**
+     * Joker accounts hold every role on ONE user_id: only the notifications of the role they are currently acting as
+     * (plus unclassified ones) are visible. Everyone else is unaffected. Applies only when the owner is the one asking.
+     */
+    private function visiblePortals($userId): ?array
+    {
+        if (!app()->bound('request')) {
+            return null;
+        }
+        $req = request();
+        $role = (string) $req->attributes->get('uip_role', '');
+        $uid = (int) $req->attributes->get('uip_user_id', 0);
+        if ($role === '' || $uid === 0 || $uid !== (int) $userId) {
+            return null;
+        }
+        $key = $uid . ':' . $role;
+        if (!array_key_exists($key, $this->portalMemo)) {
+            $this->portalMemo[$key] = app(\App\Services\RoleService::class)->isJoker($uid) ? self::portalsForRole($role) : null;
+        }
+        return $this->portalMemo[$key];
+    }
+
+    /** Base query: this user's notifications, narrowed to the active role's portal for joker accounts. */
+    private function base($userId)
+    {
+        $q = Notification::where('user_id', $userId);
+        $portals = $this->visiblePortals($userId);
+        if ($portals !== null) {
+            $q->where(fn ($w) => $w->whereNull('portal')->orWhereIn('portal', $portals));
+        }
+        return $q;
+    }
+
     /** @return Notification[] newest first, active (مش archived/deleted) بس */
     public function forUser($userId, int $limit = 50): array
     {
-        return Notification::where('user_id', $userId)
+        return $this->base($userId)
             ->where('is_archived', 0)
             ->where('is_deleted', 0)
             ->orderByDesc('created_at')
@@ -32,7 +95,7 @@ class NotificationRepository
 
     public function unreadCount($userId): int
     {
-        return Notification::where('user_id', $userId)
+        return $this->base($userId)
             ->where('is_read', 0)
             ->where('is_archived', 0)
             ->where('is_deleted', 0)
@@ -46,6 +109,9 @@ class NotificationRepository
      */
     public function counts($userId): array
     {
+        $portals = $this->visiblePortals($userId);
+        $portalSql = $portals !== null ? ' AND (portal IS NULL OR portal IN (' . implode(',', array_fill(0, count($portals), '?')) . '))' : '';
+        $portalArgs = $portals ?? [];
         $row = DB::selectOne(
             'SELECT
                 SUM(CASE WHEN is_deleted = 0 AND is_archived = 0 AND is_read = 0 THEN 1 ELSE 0 END) AS unread,
@@ -55,8 +121,8 @@ class NotificationRepository
                 SUM(CASE WHEN is_deleted = 0 AND is_archived = 1 THEN 1 ELSE 0 END) AS archived,
                 SUM(CASE WHEN is_deleted = 1 THEN 1 ELSE 0 END) AS deleted,
                 SUM(CASE WHEN is_deleted = 0 AND is_archived = 0 THEN 1 ELSE 0 END) AS total
-             FROM notifications WHERE user_id = ?',
-            [$userId]
+             FROM notifications WHERE user_id = ?' . $portalSql,
+            array_merge([$userId], $portalArgs)
         );
 
         $zeroed = ['unread' => 0, 'read' => 0, 'pinned' => 0, 'important' => 0, 'archived' => 0, 'deleted' => 0, 'total' => 0];
@@ -99,7 +165,7 @@ class NotificationRepository
         $page = max(1, (int) ($filters['page'] ?? 1));
         $perPage = min(100, max(1, (int) ($filters['per_page'] ?? 20)));
 
-        $query = $this->applyFilters(Notification::where('user_id', $userId), $filters);
+        $query = $this->applyFilters($this->base($userId), $filters);
 
         $total = (clone $query)->count();
 
@@ -185,7 +251,7 @@ class NotificationRepository
 
     public function markConversationNotificationsRead($userId, int $conversationId): int
     {
-        return Notification::where('user_id', $userId)
+        return $this->base($userId)
             ->where('type', 'new_message')
             ->where('is_read', 0)
             ->where('link_url', 'like', '%/messages/' . $conversationId)
@@ -194,7 +260,7 @@ class NotificationRepository
 
     public function markAllRead($userId): void
     {
-        Notification::where('user_id', $userId)
+        $this->base($userId)
             ->where('is_read', 0)->where('is_archived', 0)->where('is_deleted', 0)
             ->update(['is_read' => 1, 'read_at' => now()]);
     }
@@ -253,7 +319,7 @@ class NotificationRepository
     public function deleteAllRead($userId): void
     {
         // Soft delete برضو، اتساقًا مع delete() المفردة فوق.
-        Notification::where('user_id', $userId)
+        $this->base($userId)
             ->where('is_read', 1)->where('is_archived', 0)->where('is_deleted', 0)
             ->update(['is_deleted' => 1, 'deleted_at' => now()]);
     }
@@ -299,7 +365,7 @@ class NotificationRepository
             return 0;
         }
 
-        return Notification::where('user_id', $userId)->whereIn('id', $ids)->update($columns);
+        return $this->base($userId)->whereIn('id', $ids)->update($columns);
     }
 
     // -- Retention (auto-archive / auto-delete بعد X يوم) ------------------

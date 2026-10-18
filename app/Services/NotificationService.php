@@ -98,6 +98,7 @@ class NotificationService
             'title'    => $title,
             'body'     => $body,
             'link_url' => $linkUrl,
+            'portal'   => \App\Repositories\NotificationRepository::portalFor($type, $linkUrl),
         ]);
 
         // Push للموبايل — بعد ما الرد يتبعت (مفيش تأخير)، وأي فشل مبيكسرش الإشعار الداخلي.

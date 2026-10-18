@@ -18,7 +18,7 @@ class Notification extends Model
 
     protected $fillable = [
         'user_id', 'type', 'priority', 'category', 'occurrence_count',
-        'title', 'body', 'link_url',
+        'title', 'body', 'link_url', 'portal',
         'is_read', 'read_at', 'is_pinned', 'is_important',
         'is_archived', 'archived_at', 'is_deleted', 'deleted_at',
     ];
