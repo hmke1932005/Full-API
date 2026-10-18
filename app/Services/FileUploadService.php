@@ -307,6 +307,58 @@ class FileUploadService
         throw new \RuntimeException('This PDF contains scripts or active content (' . implode(', ', array_slice($findings, 0, 3)) . ') and was rejected for security reasons.');
     }
 
+    /**
+     * فحص ملف متخزّن فعلًا (مش tmp upload) لحظة ما حد يفتحه/ينزّله — طبقة حماية تانية بعد فحص الرفع.
+     * النتيجة بتتكاش 12 ساعة بمفتاح (المسار + حجم + وقت التعديل) فمفيش إعادة فحص تقيل في كل فتح.
+     *
+     * @return array{status:string, findings:array<int,string>}
+     *   status: clean | infected (ClamAV لقى فيروس) | active_content (PDF فيه سكربتات) | unscanned (الماسح مش متاح/فشل)
+     */
+    public function inspectStoredFile(string $path, string $displayName): array
+    {
+        $mtime = @filemtime($path) ?: 0;
+        $size = @filesize($path) ?: 0;
+        $cacheKey = 'file_inspect:' . md5($path . '|' . $mtime . '|' . $size);
+
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, now()->addHours(12), function () use ($path, $displayName) {
+            $findings = [];
+
+            if (strtolower(pathinfo($displayName, PATHINFO_EXTENSION)) === 'pdf') {
+                $findings = \App\Support\PdfActiveContentScanner::findings($path);
+            }
+
+            if (config('upload.antivirus.enabled', true) && function_exists('exec')) {
+                $binary = (string) config('upload.antivirus.binary', 'clamscan');
+                if ($this->commandExists($binary)) {
+                    $timeout = max(1, (int) config('upload.antivirus.timeout', 30));
+                    $out = [];
+                    $code = 0;
+                    exec(sprintf('timeout %d %s --no-summary %s 2>&1', $timeout, escapeshellcmd($binary), escapeshellarg($path)), $out, $code);
+                    if ($code === 1) {
+                        SecurityLog::write("Malware detected when opening stored file: {$displayName} — access blocked", [
+                            'file' => $displayName, 'scanner_output' => implode(' | ', $out),
+                        ]);
+                        return ['status' => 'infected', 'findings' => array_slice($out, 0, 3)];
+                    }
+                    if ($code !== 0) {
+                        return $findings !== []
+                            ? ['status' => 'active_content', 'findings' => $findings]
+                            : ['status' => 'unscanned', 'findings' => []];
+                    }
+                } elseif ($findings === []) {
+                    return ['status' => 'unscanned', 'findings' => []];
+                }
+            }
+
+            if ($findings !== []) {
+                SecurityLog::write("PDF with active content blocked when opening: {$displayName}", ['file' => $displayName, 'findings' => implode(',', $findings)]);
+                return ['status' => 'active_content', 'findings' => $findings];
+            }
+
+            return ['status' => 'clean', 'findings' => []];
+        });
+    }
+
     /** @return array{enabled:bool, binary:string, available:bool, required:bool} */
     public static function scannerStatus(): array
     {

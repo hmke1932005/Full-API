@@ -402,7 +402,18 @@ class MessagingController extends Controller
         if (!is_file($path)) {
             return $this->apiError('File not found on server.', null, 404);
         }
-        return response()->download($path, $row['original_name']);
+
+        // حماية: الملف بيتفحص (ClamAV + محتوى PDF النشط) قبل ما أي حد يفتحه أو ينزّله.
+        // فيروس = ممنوع تمامًا. PDF فيه سكربتات = ممنوع إلا لو الواجهة بعتت force=1 بعد تحذيرين متتاليين.
+        $inspection = app(\App\Services\FileUploadService::class)->inspectStoredFile($path, (string) $row['original_name']);
+        if ($inspection['status'] === 'infected') {
+            return $this->apiError('This file was flagged as infected and is blocked.', ['blocked' => ['malware']], 423);
+        }
+        if ($inspection['status'] === 'active_content' && !$request->boolean('force')) {
+            return $this->apiError('This file contains scripts or active content and was not opened.', ['blocked' => ['active_content'], 'findings' => $inspection['findings']], 423);
+        }
+
+        return response()->download($path, $row['original_name'], ['X-Content-Type-Options' => 'nosniff']);
     }
 
     /** DELETE /api/v1/messaging/attachments/{id} */
