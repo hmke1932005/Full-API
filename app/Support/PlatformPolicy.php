@@ -64,6 +64,9 @@ final class PlatformPolicy
         'github_client_id'     => ['type' => 'string', 'min' => 0,  'max' => 100],  // GITHUB_CLIENT_ID
         'github_client_secret' => ['type' => 'string', 'min' => 0,  'max' => 200, 'secret' => true], // GITHUB_CLIENT_SECRET
         'github_oauth_redirect' => ['type' => 'string', 'min' => 0, 'max' => 300], // GITHUB_OAUTH_REDIRECT
+        // Android app download (shown on the landing page / footer). Empty = the "Get the app" buttons are hidden.
+        'app_download_url'     => ['type' => 'string', 'min' => 0, 'max' => 500],
+        'app_download_version' => ['type' => 'string', 'min' => 0, 'max' => 30],
         // Mobile push (Firebase Cloud Messaging). The service-account JSON is stored ENCRYPTED and never echoed back (see maskedFor()).
         'fcm_credentials_json' => ['type' => 'string', 'min' => 0, 'max' => 8000, 'secret' => true], // FCM_CREDENTIALS_JSON / FCM_CREDENTIALS_PATH
         'fcm_project_id'       => ['type' => 'string', 'min' => 0, 'max' => 100],                    // FCM_PROJECT_ID
@@ -322,6 +325,14 @@ final class PlatformPolicy
         }
         if (in_array($key, ['github_client_id', 'github_client_secret'], true) && $v !== '' && !preg_match('/^[A-Za-z0-9._-]+$/', $v)) {
             return [null, 'The GitHub value has characters that are not allowed (letters, digits, . _ - only).'];
+        }
+        if ($key === 'app_download_url' && $v !== '') {
+            if (!filter_var($v, FILTER_VALIDATE_URL) || !preg_match('#^https://#i', $v)) {
+                return [null, 'The download link must be a full https:// address.'];
+            }
+        }
+        if ($key === 'app_download_version' && $v !== '' && !preg_match('/^[A-Za-z0-9][A-Za-z0-9._ -]{0,29}$/', $v)) {
+            return [null, 'The version may only contain letters, digits, dots, dashes and spaces (for example 1.4.0).'];
         }
         if ($key === 'fcm_project_id' && $v !== '' && !preg_match('/^[a-z0-9][a-z0-9-]{3,98}[a-z0-9]$/', $v)) {
             return [null, 'The Firebase project ID may only contain lowercase letters, digits and hyphens (for example uip-nub).'];

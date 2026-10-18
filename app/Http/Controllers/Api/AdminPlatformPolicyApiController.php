@@ -558,6 +558,8 @@ class AdminPlatformPolicyApiController extends Controller
             'registration_enabled' => PlatformPolicy::registrationOpen(),
             'response_encryption'  => PlatformPolicy::encryptionOn(),
             'animations_enabled'   => PlatformPolicy::flag('animations_enabled'),
+            'app_download_url'     => (string) PlatformPolicy::value('app_download_url'),
+            'app_download_version' => (string) PlatformPolicy::value('app_download_version'),
         ], 'OK')->header('Cache-Control', 'no-store');
     }
 }
