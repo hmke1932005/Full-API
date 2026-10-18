@@ -384,9 +384,9 @@ class MessagingController extends Controller
     private function dbError(\Illuminate\Database\QueryException $e)
     {
         \Illuminate\Support\Facades\Log::error('Messaging DB error: ' . $e->getMessage());
-        $req = request();
-        $show = config('app.debug') || $req->attributes->get('uip_role') === 'admin';
-        return $this->apiError('Server Error', $show ? ['db' => [$e->getMessage()]] : null, 500);
+        // مؤقت للتشخيص: رسالة الدرايفر بس (من غير الـ SQL ولا الـ bindings) — شيله بعد ما نعرف السبب.
+        $driverMsg = $e->errorInfo[2] ?? 'database error';
+        return $this->apiError('Server Error', ['db' => [(string) $driverMsg]], 500);
     }
 
     private function handle(\Closure $action)
