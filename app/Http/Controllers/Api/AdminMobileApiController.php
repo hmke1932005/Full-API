@@ -134,7 +134,7 @@ class AdminMobileApiController extends Controller
         ], 'Token details retrieved successfully.');
     }
 
-    /** GET /api/v1/admin/mobile-tokens/{id}/requests?page=&per_page=&status=ok|error|rejected&status_code=&endpoint=&method=&device=&user_id=&ip=&q= */
+    /** GET /api/v1/admin/mobile-tokens/{id}/requests?page=&per_page=&status=ok|error|rejected|client&kind=&status_code=&endpoint=&method=&device=&user_id=&ip=&q= */
     public function requests(Request $request, string $id)
     {
         if ($err = $this->requireAdmin($request)) {
@@ -156,6 +156,7 @@ class AdminMobileApiController extends Controller
             'user_id' => $request->query('user_id'),
             'ip'      => (string) $request->query('ip', ''),
             'q'       => (string) $request->query('q', ''),
+            'kind'    => preg_replace('/[^a-z0-9_]/', '', strtolower((string) $request->query('kind', ''))),
         ]);
 
         return $this->apiSuccess($res['rows'], 'Token requests retrieved successfully.', 200, [

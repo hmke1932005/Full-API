@@ -150,6 +150,8 @@ Route::prefix('v1')->group(function () {
     Route::post('/secure/handshake', [\App\Http\Controllers\Api\SecureHandshakeController::class, 'submit'])->middleware('throttle:60,1');
     Route::get('/secure/selftest', [\App\Http\Controllers\Api\SecureHandshakeController::class, 'selftest'])->middleware('throttle:20,1');
     Route::get('/app-config', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'appConfig'])->middleware('throttle:30,1');
+    // App-side failure reports (uploads that died on the phone) → shown in Admin → Mobile → token → Request log.
+    Route::post('/app/client-report', [\App\Http\Controllers\Api\AppClientReportController::class, 'store'])->middleware(['uip.auth.optional', 'throttle:30,1']);
     Route::get('/platform/status', [\App\Http\Controllers\Api\AdminPlatformPolicyApiController::class, 'publicStatus'])->middleware('throttle:60,1');
 
     Route::prefix('auth')->group(function () {

@@ -44,6 +44,7 @@ class UipAppTokenMiddleware
             return $next($request); // this is where the app GETS its token, so it cannot require one
         }
 
+        $startedAt = microtime(true);
         $raw = trim((string) $request->header('X-App-Token', ''));
         $tokenId = $raw !== '' ? $this->activeId($raw) : 0;
         $valid = $tokenId > 0;
@@ -70,8 +71,9 @@ class UipAppTokenMiddleware
         $response ??= $next($request);
 
         // بعد الرد: وقتها uip.auth يكون خلّص وعارفين مين المستخدم.
-        if ($tokenId || $revokedId) {
-            $this->logUsage($request, $response, $tokenId ?: $revokedId, $valid ? 'ok' : 'revoked');
+        // تقارير التطبيق نفسها (client-report) بيسجّلها الـ controller كصف source=client، فمنكرّرهاش هنا.
+        if (($tokenId || $revokedId) && !$request->is('api/v1/app/client-report')) {
+            $this->logUsage($request, $response, $tokenId ?: $revokedId, $valid ? 'ok' : 'revoked', $startedAt);
         }
 
         return $response;
@@ -104,10 +106,10 @@ class UipAppTokenMiddleware
     }
 
     /** صف في api_token_usages — فشله ما يوقّفش الطلب أبدًا. بدون query string (ممكن فيها أسرار). */
-    private function logUsage(Request $request, $response, int $tokenId, string $outcome): void
+    private function logUsage(Request $request, $response, int $tokenId, string $outcome, float $startedAt = 0): void
     {
         try {
-            DB::table('api_token_usages')->insert([
+            $row = [
                 'api_token_id' => $tokenId,
                 'user_id'      => $request->attributes->get('uip_user_id') ?: null,
                 'method'       => substr($request->method(), 0, 10),
@@ -121,7 +123,20 @@ class UipAppTokenMiddleware
                 'client'       => substr((string) $request->header('X-UIP-Client', ''), 0, 40) ?: null,
                 'device_id'    => substr((string) $request->header('X-Device-Id', ''), 0, 64) ?: null,
                 'created_at'   => now(),
-            ]);
+        ];
+
+        // تشخيص: حجم الطلب + مدة المعالجة + نوع المحتوى (من غير الـ boundary).
+            $diag = [
+                'request_bytes' => ($len = $request->header('Content-Length')) !== null && ctype_digit((string) $len) ? (int) $len : null,
+                'duration_ms'   => $startedAt > 0 ? (int) round((microtime(true) - $startedAt) * 1000) : null,
+                'content_type'  => ($ct = strtolower(trim(explode(';', (string) $request->header('Content-Type', ''))[0]))) !== '' ? substr($ct, 0, 80) : null,
+                'source'        => 'server',
+            ];
+            try {
+                DB::table('api_token_usages')->insert($row + $diag);
+            } catch (\Throwable $e) {
+                DB::table('api_token_usages')->insert($row); // الأعمدة الجديدة لسه ما اتعملتش (php artisan migrate)
+            }
 
             // تنضيف تلقائي: 1% من الطلبات بتمسح السجل الأقدم من المدة المحددة.
             if (random_int(1, 100) === 1) {

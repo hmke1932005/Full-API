@@ -74,10 +74,29 @@ class ApiTokenRepository
         return $row ? (array) $row : null;
     }
 
+    private static ?bool $hasDiag = null;
+
+    /** هل migration التشخيص (source/meta/...) اتعملت؟ */
+    private static function hasDiag(): bool
+    {
+        return self::$hasDiag ??= \Illuminate\Support\Facades\Schema::hasColumn('api_token_usages', 'source');
+    }
+
+    /** شرط "فشل": status >= 400 أو بلاغ من التطبيق (source=client). */
+    private static function errExpr(string $a = ''): string
+    {
+        $p = $a !== '' ? $a . '.' : '';
+        return self::hasDiag() ? "({$p}status >= 400 OR {$p}source = 'client')" : "({$p}status >= 400)";
+    }
+
     /** @return array<string,mixed> ملخص كامل لاستخدام التوكن. */
     public function usageSummary(int $id): array
     {
-        $base = fn () => DB::table('api_token_usages')->where('api_token_id', $id);
+        // صفوف source=client = بلاغات من الموبايل (طلبات ماوصلتش للسيرفر): بعيدة عن عدّادات الطلبات.
+        $base = fn () => DB::table('api_token_usages')->where('api_token_id', $id)
+            ->when(self::hasDiag(), fn ($q) => $q->where('source', 'server'));
+        $clientFailures = self::hasDiag()
+            ? DB::table('api_token_usages')->where('api_token_id', $id)->where('source', 'client')->count() : 0;
 
         $t = (array) $base()->selectRaw(
             "COUNT(*) AS total, MIN(created_at) AS first_seen, MAX(created_at) AS last_seen,
@@ -103,6 +122,7 @@ class ApiTokenRepository
         $users = DB::table('api_token_usages as a')
             ->join('users as u', 'u.id', '=', 'a.user_id')
             ->where('a.api_token_id', $id)
+            ->when(self::hasDiag(), fn ($q) => $q->where('a.source', 'server'))
             ->selectRaw("u.id, u.full_name, u.email, COUNT(*) AS n, MIN(a.created_at) AS first_at, MAX(a.created_at) AS last_at,
                 SUM(CASE WHEN a.status >= 400 THEN 1 ELSE 0 END) AS errors,
                 (SELECT r.slug FROM user_roles ur INNER JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id ORDER BY ur.assigned_at ASC LIMIT 1) AS role")
@@ -118,7 +138,7 @@ class ApiTokenRepository
             ->groupBy(DB::raw("COALESCE(NULLIF(device_id, ''), user_agent)"))->orderByDesc('n')->limit(50)->get()->map(fn ($r) => (array) $r)->all();
 
         return [
-            'totals'    => array_map(fn ($v) => is_numeric($v) ? (int) $v : $v, $t),
+            'totals'    => array_map(fn ($v) => is_numeric($v) ? (int) $v : $v, $t) + ['client_failures' => $clientFailures],
             'retention_days' => max(1, (int) config('site.app_token_log_days', 60)),
             'last_24h'  => $since(24),
             'last_7d'   => $since(24 * 7),
@@ -156,25 +176,38 @@ class ApiTokenRepository
         if (!empty($f['method'])) {
             $q->where('a.method', strtoupper((string) $f['method']));
         }
+        $diag = self::hasDiag();
         if (($f['status'] ?? '') === 'error') {
-            $q->where('a.status', '>=', 400);
+            $q->whereRaw(self::errExpr('a'));
         } elseif (($f['status'] ?? '') === 'ok') {
             $q->where('a.status', '<', 400);
+            if ($diag) {
+                $q->where('a.source', 'server');
+            }
         } elseif (($f['status'] ?? '') === 'rejected') {
             $q->where('a.outcome', 'revoked');
+        } elseif ($diag && ($f['status'] ?? '') === 'client') {
+            $q->where('a.source', 'client');
+        }
+        if (($f['kind'] ?? '') !== '' && $diag) {
+            $q->where('a.error_code', (string) $f['kind']);
         }
         if (($needle = trim((string) ($f['q'] ?? ''))) !== '') {
             $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $needle) . '%';
             $q->where(function ($w) use ($like) {
-                $w->where('a.path', 'like', $like)->orWhere('a.ip', 'like', $like)->orWhere('a.error_message', 'like', $like)
+                $w->where('a.path', 'like', $like)->orWhere('a.ip', 'like', $like)->orWhere('a.error_message', 'like', $like)->orWhere('a.error_code', 'like', $like)
                   ->orWhere('u.full_name', 'like', $like)->orWhere('u.email', 'like', $like);
             });
         }
 
         $total = (clone $q)->count();
-        $rows = $q->select('a.id', 'a.method', 'a.path', 'a.route', 'a.status', 'a.outcome', 'a.ip', 'a.user_agent', 'a.client', 'a.device_id', 'a.created_at',
+        $cols = ['a.id', 'a.method', 'a.path', 'a.route', 'a.status', 'a.outcome', 'a.ip', 'a.user_agent', 'a.client', 'a.device_id', 'a.created_at',
                 'a.error_code', 'a.error_message', 'a.error_detail',
-                'a.user_id', 'u.full_name AS user_name', 'u.email AS user_email')
+                'a.user_id', 'u.full_name AS user_name', 'u.email AS user_email'];
+        if ($diag) {
+            array_push($cols, 'a.source', 'a.request_bytes', 'a.duration_ms', 'a.content_type', 'a.meta');
+        }
+        $rows = $q->select($cols)
             ->orderByDesc('a.id')->offset(max(0, ($page - 1) * $perPage))->limit($perPage)->get()->map(fn ($r) => (array) $r)->all();
 
         return ['rows' => $rows, 'total' => $total];
@@ -202,6 +235,9 @@ class ApiTokenRepository
         }
         if (!empty($f['device'])) {
             $q->whereRaw("COALESCE(NULLIF(a.device_id, ''), a.user_agent) = ?", [(string) $f['device']]);
+        }
+        if (self::hasDiag()) {
+            $q->where('a.source', ($f['status'] ?? '') === 'client' ? 'client' : 'server');
         }
         if (($f['status'] ?? '') === 'error') {
             $q->where('a.status', '>=', 400);
