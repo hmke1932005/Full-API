@@ -140,6 +140,9 @@ class MessagingService
         if (in_array($type, ['poll', 'gif', 'sticker', 'image', 'video', 'audio', 'file'], true)) {
             return $type;
         }
+        if ($type === 'location' || $type === 'live_location') {
+            return $type;
+        }
         return $hasText ? null : 'file';
     }
 
@@ -1319,6 +1322,111 @@ class MessagingService
             'message_type' => 'poll',
             'metadata'     => ['question' => trim($question), 'options' => $options],
         ]);
+    }
+
+    // -- Location sharing (current + live, WhatsApp style) ----------------
+
+    /** Allowed live-share durations in minutes: 15 min / 1 hour / 8 hours. */
+    private const LIVE_LOCATION_MINUTES = [15, 60, 480];
+
+    /** @return array{0: float, 1: float, 2: ?int} lat, lng, accuracy(m) */
+    private function validLocation($lat, $lng, $accuracy = null): array
+    {
+        if (!is_numeric($lat) || !is_numeric($lng)) {
+            throw new \RuntimeException('Invalid location.');
+        }
+        $lat = (float) $lat;
+        $lng = (float) $lng;
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            throw new \RuntimeException('Invalid location.');
+        }
+        $acc = is_numeric($accuracy) ? (int) max(0, min(100000, round((float) $accuracy))) : null;
+        return [round($lat, 6), round($lng, 6), $acc];
+    }
+
+    /** One-off "current location" message. */
+    public function sendLocation(int $conversationId, $userId, $lat, $lng, $accuracy = null): array
+    {
+        [$lat, $lng, $acc] = $this->validLocation($lat, $lng, $accuracy);
+        // The body is a plain Maps link so older clients (and notifications) still show something useful.
+        return $this->sendMessage($conversationId, $userId, "📍 https://www.google.com/maps?q={$lat},{$lng}", [
+            'message_type' => 'location',
+            'metadata'     => ['lat' => $lat, 'lng' => $lng, 'accuracy' => $acc],
+        ]);
+    }
+
+    /** Starts a live-location share. A new share ends any earlier live share of the same user in this chat. */
+    public function startLiveLocation(int $conversationId, $userId, $lat, $lng, $accuracy = null, int $minutes = 15): array
+    {
+        [$lat, $lng, $acc] = $this->validLocation($lat, $lng, $accuracy);
+        if (!in_array($minutes, self::LIVE_LOCATION_MINUTES, true)) {
+            throw new \RuntimeException('Invalid live location duration.');
+        }
+        $now = time();
+        $message = $this->sendMessage($conversationId, $userId, '📍 Live location', [
+            'message_type' => 'live_location',
+            'metadata'     => [
+                'lat' => $lat, 'lng' => $lng, 'accuracy' => $acc,
+                'started_ts' => $now, 'expires_ts' => $now + $minutes * 60, 'updated_ts' => $now,
+                'duration_min' => $minutes, 'ended' => false,
+            ],
+        ]);
+        $newId = (int) ($message['id'] ?? 0);
+        $older = DB::table('messages')
+            ->where('conversation_id', $conversationId)->where('sender_id', $userId)
+            ->where('message_type', 'live_location')->where('is_deleted', 0)->where('id', '<', $newId)
+            ->orderByDesc('id')->limit(20)->get(['id', 'metadata']);
+        foreach ($older as $row) {
+            $meta = $row->metadata ? json_decode($row->metadata, true) : null;
+            if (is_array($meta) && empty($meta['ended'])) {
+                $meta['ended'] = true;
+                $meta['ended_ts'] = $now;
+                DB::table('messages')->where('id', $row->id)->update(['metadata' => json_encode($meta), 'edited_at' => now()]);
+            }
+        }
+        return $message;
+    }
+
+    /** Sender pushes a fresh position. Returns the updated message (metadata.ended = true once finished). */
+    public function updateLiveLocation(int $messageId, $userId, $lat, $lng, $accuracy = null): array
+    {
+        [$lat, $lng, $acc] = $this->validLocation($lat, $lng, $accuracy);
+        $row = $this->messages->find($messageId);
+        if (!$row || $row->message_type !== 'live_location' || (string) $row->sender_id !== (string) $userId) {
+            throw new \RuntimeException('Live location not found.');
+        }
+        $meta = $row->metadata ? json_decode($row->metadata, true) : [];
+        $now = time();
+        if (!empty($row->is_deleted) || !empty($meta['ended']) || $now >= (int) ($meta['expires_ts'] ?? 0)) {
+            if (empty($meta['ended'])) {
+                $meta['ended'] = true;
+                $meta['ended_ts'] = $now;
+                DB::table('messages')->where('id', $messageId)->update(['metadata' => json_encode($meta), 'edited_at' => now()]);
+            }
+        } else {
+            $meta['lat'] = $lat;
+            $meta['lng'] = $lng;
+            $meta['accuracy'] = $acc;
+            $meta['updated_ts'] = $now;
+            // edited_at (not is_edited) is what makes poll() hand this row to the other side again.
+            DB::table('messages')->where('id', $messageId)->update(['metadata' => json_encode($meta), 'edited_at' => now()]);
+        }
+        return $this->shapeMessage($this->messages->withRelations($messageId), $userId);
+    }
+
+    public function stopLiveLocation(int $messageId, $userId): array
+    {
+        $row = $this->messages->find($messageId);
+        if (!$row || $row->message_type !== 'live_location' || (string) $row->sender_id !== (string) $userId) {
+            throw new \RuntimeException('Live location not found.');
+        }
+        $meta = $row->metadata ? json_decode($row->metadata, true) : [];
+        if (empty($meta['ended'])) {
+            $meta['ended'] = true;
+            $meta['ended_ts'] = time();
+            DB::table('messages')->where('id', $messageId)->update(['metadata' => json_encode($meta), 'edited_at' => now()]);
+        }
+        return $this->shapeMessage($this->messages->withRelations($messageId), $userId);
     }
 
     public function votePoll(int $messageId, $userId, int $optionIndex): array

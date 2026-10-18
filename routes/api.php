@@ -1599,6 +1599,11 @@ Route::prefix('v1')->group(function () {
         Route::post('/conversations/{id}/read', [MessagingController::class, 'markRead']);
         Route::get('/conversations/{id}/poll', [MessagingController::class, 'poll']);
         Route::post('/conversations/{id}/poll-message', [MessagingController::class, 'createPoll']);
+        // Location sharing: one-off current location + live location (sender keeps posting positions until it ends).
+        Route::post('/conversations/{id}/location-message', [MessagingController::class, 'sendLocation']);
+        Route::post('/conversations/{id}/live-location', [MessagingController::class, 'startLiveLocation']);
+        Route::post('/messages/{id}/live-location', [MessagingController::class, 'updateLiveLocation']);
+        Route::delete('/messages/{id}/live-location', [MessagingController::class, 'stopLiveLocation']);
 
         Route::post('/messages/{id}/edit', [MessagingController::class, 'edit']);
         Route::delete('/messages/{id}/for-me', [MessagingController::class, 'deleteForMe']);

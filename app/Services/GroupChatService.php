@@ -247,6 +247,8 @@ class GroupChatService
             $needed[] = 'gif';
         } elseif ($messageType === 'sticker') {
             $needed[] = 'sticker';
+        } elseif (in_array($messageType, ['location', 'live_location'], true)) {
+            $needed[] = 'text'; // location sharing follows the "text messages" rule of the group
         } elseif ($messageType === 'text' && trim($body) !== '') {
             $needed[] = 'text';
         }

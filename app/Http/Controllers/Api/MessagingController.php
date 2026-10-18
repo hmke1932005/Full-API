@@ -237,6 +237,41 @@ class MessagingController extends Controller
         });
     }
 
+    /** POST /api/v1/messaging/conversations/{id}/location-message — body: lat, lng, accuracy? */
+    public function sendLocation(Request $request, $id)
+    {
+        return $this->handle(function () use ($request, $id) {
+            $message = $this->messaging->sendLocation((int) $id, $this->uid($request), $request->input('lat'), $request->input('lng'), $request->input('accuracy'));
+            return $this->apiSuccess($message, 'Location sent successfully.', 201);
+        });
+    }
+
+    /** POST /api/v1/messaging/conversations/{id}/live-location — body: lat, lng, accuracy?, minutes (15|60|480) */
+    public function startLiveLocation(Request $request, $id)
+    {
+        return $this->handle(function () use ($request, $id) {
+            $message = $this->messaging->startLiveLocation((int) $id, $this->uid($request), $request->input('lat'), $request->input('lng'), $request->input('accuracy'), (int) $request->input('minutes', 15));
+            return $this->apiSuccess($message, 'Live location started.', 201);
+        });
+    }
+
+    /** POST /api/v1/messaging/messages/{id}/live-location — body: lat, lng, accuracy? */
+    public function updateLiveLocation(Request $request, $id)
+    {
+        return $this->handle(function () use ($request, $id) {
+            $message = $this->messaging->updateLiveLocation((int) $id, $this->uid($request), $request->input('lat'), $request->input('lng'), $request->input('accuracy'));
+            return $this->apiSuccess($message, 'Live location updated.');
+        });
+    }
+
+    /** DELETE /api/v1/messaging/messages/{id}/live-location */
+    public function stopLiveLocation(Request $request, $id)
+    {
+        return $this->handle(function () use ($request, $id) {
+            return $this->apiSuccess($this->messaging->stopLiveLocation((int) $id, $this->uid($request)), 'Live location stopped.');
+        });
+    }
+
     /** POST /api/v1/messaging/messages/{id}/edit — body: body */
     public function edit(Request $request, $id)
     {
