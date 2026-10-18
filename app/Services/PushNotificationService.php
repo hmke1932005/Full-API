@@ -100,13 +100,33 @@ class PushNotificationService
                 $opts = ['channel_id' => 'uip-alerts', 'color' => '#E5484D', 'tag' => 'uip-appfail-' . substr(md5((string) $n->link_url), 0, 8)];
             }
 
-            // رسائل الشات بشكل الواتساب: العنوان اسم المرسل، المتن نص الرسالة، وتاج لكل محادثة (الرسالة الجديدة
-            // بتحل محل القديمة من نفس المحادثة بدل ما الإشعارات تتكدّس)، وصلاحية 7 أيام عشان تتسلّم لما الموبايل يرجع أونلاين.
-            if ((string) $n->type === 'new_message') {
+            // شكل الإشعار حسب نوعه: أيقونة شريط الحالة + لون + (للشات) اسم المرسل كعنوان وتاج لكل محادثة.
+            $ar = (DB::table('users')->where('id', $userId)->value('preferred_language') ?? 'ar') === 'ar';
+            $type = (string) $n->type;
+            if ($type === 'new_message') {
                 if (preg_match('/^New message from\s+(.+)$/u', $title, $mm)) {
                     $title = trim($mm[1]);
                 }
-                $opts = ['tag' => 'uip-msg-' . substr(md5((string) $n->link_url), 0, 12), 'ttl' => '604800s'];
+                if ($body === '' || $body === '(attachment)') {
+                    $body = $ar ? '📎 مرفق' : '📎 Attachment';
+                }
+                // الرسالة الجديدة بتحل محل القديمة من نفس المحادثة، وصلاحية 7 أيام عشان تتسلّم لما الموبايل يرجع أونلاين.
+                $opts = ['icon' => 'ic_stat_uip_message', 'color' => '#4F5BE8', 'count' => $unread,
+                         'tag' => 'uip-msg-' . substr(md5((string) $n->link_url), 0, 12), 'ttl' => '604800s', 'ticker' => $title . ': ' . $body];
+            } elseif ($opts === []) {
+                if (str_contains($type, 'reject') || str_contains($type, 'fail') || str_contains($type, 'denied')) {
+                    $opts = ['icon' => 'ic_stat_uip_alert', 'color' => '#E5484D'];
+                    $title = '❌ ' . $title;
+                } elseif (str_contains($type, 'approv') || str_contains($type, 'accept') || str_contains($type, 'success') || str_contains($type, 'graded')) {
+                    $opts = ['icon' => 'ic_stat_uip_check', 'color' => '#1FA855'];
+                    $title = '✅ ' . $title;
+                } elseif (str_starts_with($type, 'ai_') || str_contains($type, '_ai_')) {
+                    $opts = ['icon' => 'ic_stat_uip_spark', 'color' => '#8B5CF6'];
+                    $title = '✨ ' . $title;
+                } else {
+                    $opts = ['icon' => 'ic_stat_uip', 'color' => '#4F5BE8'];
+                }
+                $opts['count'] = $unread;
             }
 
             $sent = 0;

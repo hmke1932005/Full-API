@@ -76,6 +76,25 @@ class FcmClient
         ];
     }
 
+    /** لون الـ LED + مدة الوميض (#RRGGBB → قيم 0..1 اللي FCM عايزها). */
+    private static function light(string $hex): array
+    {
+        $hex = ltrim($hex, '#');
+        if (!preg_match('/^[0-9a-fA-F]{6}$/', $hex)) {
+            $hex = '4F5BE8';
+        }
+        return [
+            'color' => [
+                'red'   => round(hexdec(substr($hex, 0, 2)) / 255, 3),
+                'green' => round(hexdec(substr($hex, 2, 2)) / 255, 3),
+                'blue'  => round(hexdec(substr($hex, 4, 2)) / 255, 3),
+                'alpha' => 1,
+            ],
+            'light_on_duration'  => '1s',
+            'light_off_duration' => '2s',
+        ];
+    }
+
     private static function b64u(string $s): string
     {
         return rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
@@ -118,7 +137,7 @@ class FcmClient
      * @param array<string,scalar|null> $data قيم نصية بس (شرط FCM)
      * @return string self::OK | self::INVALID_TOKEN (امسح التوكن) | self::FAILED
      */
-    /** @param array{channel_id?:string,tag?:string,color?:string,ttl?:string} $opts */
+    /** @param array{channel_id?:string,tag?:string,color?:string,ttl?:string,icon?:string,count?:int,ticker?:string} $opts */
     public function send(string $token, string $title, string $body, array $data = [], array $opts = []): string
     {
         $creds = $this->credentials();
@@ -137,12 +156,16 @@ class FcmClient
                 'ttl'          => ($opts['ttl'] ?? '86400s'),
                 'notification' => [
                     'channel_id' => $opts['channel_id'] ?? 'uip',   // نفس القناة اللي التطبيق بيعملها (native.js)
-                    'icon'       => 'ic_stat_uip',     // native/android/res/drawable/ic_stat_uip.xml
+                    'icon'       => $opts['icon'] ?? 'ic_stat_uip',     // native/android/res/drawable/ic_stat_uip*.xml
                     'color'      => $opts['color'] ?? '#4F5BE8',
                     'sound'      => 'default',
                     'notification_priority' => 'PRIORITY_HIGH',
                     'visibility' => 'PUBLIC',
+                    'default_vibrate_timings' => true,
+                    'light_settings' => self::light($opts['color'] ?? '#4F5BE8'),
                     ...(!empty($opts['tag']) ? ['tag' => (string) $opts['tag']] : []),
+                    ...(!empty($opts['count']) ? ['notification_count' => (int) $opts['count']] : []),
+                    ...(!empty($opts['ticker']) ? ['ticker' => mb_substr((string) $opts['ticker'], 0, 120)] : []),
                 ],
             ],
         ]];
