@@ -110,7 +110,11 @@ class MessagingController extends Controller
     public function thread(Request $request, $id)
     {
         $beforeId = $request->filled('before_id') ? (int) $request->input('before_id') : null;
-        $thread = $this->messaging->threadForUser((int) $id, $this->uid($request), $beforeId);
+        try {
+            $thread = $this->messaging->threadForUser((int) $id, $this->uid($request), $beforeId);
+        } catch (\Illuminate\Database\QueryException $e) {
+            return $this->dbError($e);
+        }
         if (!$thread) {
             return $this->apiError('Conversation not found.', null, 404);
         }
@@ -376,14 +380,22 @@ class MessagingController extends Controller
     }
 
     /** بيلف أي فعل بيرمي RuntimeException بشكل ودّي (400) بدل ما يبوظ الطلب — نفس اتفاقية try/catch في كل كنترولر تاني في المشروع. */
+    /** بيسجّل خطأ الداتابيز، ولأدمن (أو لو APP_DEBUG) بيرجّع نصه في errors.db عشان نعرف الجدول/العمود الناقص. */
+    private function dbError(\Illuminate\Database\QueryException $e)
+    {
+        \Illuminate\Support\Facades\Log::error('Messaging DB error: ' . $e->getMessage());
+        $req = request();
+        $show = config('app.debug') || $req->attributes->get('uip_role') === 'admin';
+        return $this->apiError('Server Error', $show ? ['db' => [$e->getMessage()]] : null, 500);
+    }
+
     private function handle(\Closure $action)
     {
         try {
             return $action();
         } catch (\Illuminate\Database\QueryException $e) {
             // خطأ داتابيز (جدول/عمود ناقص مثلًا) مش "محادثة مش موجودة" — بنسجله ونرجّع 500 بدل 422.
-            \Illuminate\Support\Facades\Log::error('Messaging DB error: ' . $e->getMessage());
-            return $this->apiError('Server Error', null, 500);
+            return $this->dbError($e);
         } catch (\RuntimeException | \InvalidArgumentException $e) {
             return $this->apiError($e->getMessage(), null, 422);
         }
