@@ -1268,10 +1268,42 @@ class MessagingService
         return [
             'messages'    => array_map(fn ($m) => $this->shapeMessage($m, $userId), $rows),
             'updated'     => $updated,
+            'reactions'   => (object) $this->recentReactionsMap($conversationId),
             'receipts'    => (object) $this->receiptStatusMap($conversationId, $recentMine),
             'server_time' => now()->format('Y-m-d H:i:s'),
             'typing'      => $this->typingIn($conversationId, $userId),
         ];
+    }
+
+    /**
+     * رياكشنات آخر ~80 رسالة في المحادثة (message_id => [{emoji,count,users}]) — بتتبعت مع كل poll
+     * عشان إضافة/إزالة رياكشن من الطرف التاني تظهر فورًا (الحذف مش بيسيب أثر يتتبّع بـ timestamp).
+     * الرسايل من غير رياكشن بترجع [] عشان الواجهة تمسح أي رياكشن اتشال.
+     */
+    private function recentReactionsMap(int $conversationId): array
+    {
+        $ids = DB::table('messages')->where('conversation_id', $conversationId)
+            ->orderByDesc('id')->limit(80)->pluck('id')->map(fn ($i) => (int) $i)->all();
+        if (!$ids) {
+            return [];
+        }
+        $out = array_fill_keys($ids, []);
+        $rows = DB::table('message_reactions as r')
+            ->join('users as u', 'u.id', '=', 'r.user_id')
+            ->whereIn('r.message_id', $ids)
+            ->orderBy('r.id')
+            ->select('r.message_id', 'r.emoji', 'r.user_id', 'u.full_name')
+            ->get();
+        $by = [];
+        foreach ($rows as $r) {
+            $by[$r->message_id][$r->emoji]['emoji'] = $r->emoji;
+            $by[$r->message_id][$r->emoji]['count'] = ($by[$r->message_id][$r->emoji]['count'] ?? 0) + 1;
+            $by[$r->message_id][$r->emoji]['users'][] = ['id' => $r->user_id, 'full_name' => $r->full_name];
+        }
+        foreach ($by as $mid => $list) {
+            $out[$mid] = array_values($list);
+        }
+        return $out;
     }
 
     // -- Polls -----------------------------------------------------------
