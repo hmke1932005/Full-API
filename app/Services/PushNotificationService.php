@@ -100,6 +100,15 @@ class PushNotificationService
                 $opts = ['channel_id' => 'uip-alerts', 'color' => '#E5484D', 'tag' => 'uip-appfail-' . substr(md5((string) $n->link_url), 0, 8)];
             }
 
+            // رسائل الشات بشكل الواتساب: العنوان اسم المرسل، المتن نص الرسالة، وتاج لكل محادثة (الرسالة الجديدة
+            // بتحل محل القديمة من نفس المحادثة بدل ما الإشعارات تتكدّس)، وصلاحية 7 أيام عشان تتسلّم لما الموبايل يرجع أونلاين.
+            if ((string) $n->type === 'new_message') {
+                if (preg_match('/^New message from\s+(.+)$/u', $title, $mm)) {
+                    $title = trim($mm[1]);
+                }
+                $opts = ['tag' => 'uip-msg-' . substr(md5((string) $n->link_url), 0, 12), 'ttl' => '604800s'];
+            }
+
             $sent = 0;
             foreach ($devices as $d) {
                 $r = $this->fcm->send($d->token, $title, $body !== '' ? $body : $title, $data, $opts);

@@ -118,7 +118,7 @@ class FcmClient
      * @param array<string,scalar|null> $data قيم نصية بس (شرط FCM)
      * @return string self::OK | self::INVALID_TOKEN (امسح التوكن) | self::FAILED
      */
-    /** @param array{channel_id?:string,tag?:string,color?:string} $opts */
+    /** @param array{channel_id?:string,tag?:string,color?:string,ttl?:string} $opts */
     public function send(string $token, string $title, string $body, array $data = [], array $opts = []): string
     {
         $creds = $this->credentials();
@@ -134,7 +134,7 @@ class FcmClient
             'data'         => array_map(fn ($v) => (string) $v, $data),
             'android'      => [
                 'priority'     => 'HIGH',
-                'ttl'          => '86400s',
+                'ttl'          => ($opts['ttl'] ?? '86400s'),
                 'notification' => [
                     'channel_id' => $opts['channel_id'] ?? 'uip',   // نفس القناة اللي التطبيق بيعملها (native.js)
                     'icon'       => 'ic_stat_uip',     // native/android/res/drawable/ic_stat_uip.xml
