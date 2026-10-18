@@ -68,7 +68,21 @@ class AppClientReportController extends Controller
             ]);
         } catch (\Throwable $e) {
             // الأعمدة الجديدة لسه ما اتعملتش (php artisan migrate): نتجاهل بهدوء.
+            return $this->apiSuccess(null, 'Reported.');
         }
+
+        // تنبيه الأدمنز (push) بعطل التطبيق نفسه — بنفس منع التكرار.
+        app(\App\Services\AppFailureAlertService::class)->alert((int) $token->id, 'app_failure', [
+            'failure_kind' => $kind,
+            'status'       => (int) $request->input('status', 0),
+            'method'       => $method,
+            'path'         => $path,
+            'user_id'      => $request->attributes->get('uip_user_id') ?: null,
+            'user_agent'   => (string) $request->userAgent(),
+            'bytes'        => is_numeric($bytes) ? (int) $bytes : null,
+            'message'      => (string) $request->input('message', ''),
+            'meta_hint'    => is_array($meta) ? (($meta['isVideo'] ?? false) ? 'video' : (string) ($meta['type'] ?? '')) : '',
+        ]);
 
         return $this->apiSuccess(null, 'Reported.');
     }

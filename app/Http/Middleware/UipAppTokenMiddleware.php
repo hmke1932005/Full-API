@@ -138,6 +138,11 @@ class UipAppTokenMiddleware
                 DB::table('api_token_usages')->insert($row); // الأعمدة الجديدة لسه ما اتعملتش (php artisan migrate)
             }
 
+            // تنبيه الأدمنز على الأعطال المهمة (5xx، أو رفع ملف/فيديو فاشل) — push على الموبايل. بيتعمل بعد ما الصف اتسجّل.
+            if ($outcome === 'ok' && (int) $response->getStatusCode() >= 400) {
+                $this->maybeAlert($request, $response, $tokenId, $row, $diag);
+            }
+
             // تنضيف تلقائي: 1% من الطلبات بتمسح السجل الأقدم من المدة المحددة.
             if (random_int(1, 100) === 1) {
                 $days = max(1, (int) config('site.app_token_log_days', 60));
@@ -145,6 +150,31 @@ class UipAppTokenMiddleware
             }
         } catch (\Throwable $e) {
             // التسجيل ثانوي: لو الجدول لسه ما اتعملوش (migration) أو حصل خطأ، الطلب يكمل عادي.
+        }
+    }
+
+    /** @param array<string,mixed> $row @param array<string,mixed> $diag */
+    private function maybeAlert(Request $request, $response, int $tokenId, array $row, array $diag): void
+    {
+        try {
+            $status = (int) $response->getStatusCode();
+            $multipart = str_contains((string) ($diag['content_type'] ?? ''), 'multipart');
+            $kind = $status >= 500 ? 'server_error' : ($multipart && !in_array($status, [401, 403, 404, 428, 429], true) ? 'upload_error' : null);
+            if (!$kind) {
+                return;
+            }
+            app(\App\Services\AppFailureAlertService::class)->alert($tokenId, $kind, [
+                'status'     => $status,
+                'method'     => $row['method'],
+                'path'       => $row['route'] ?? $row['path'],
+                'route'      => $row['route'],
+                'user_id'    => $row['user_id'],
+                'user_agent' => $row['user_agent'],
+                'bytes'      => $diag['request_bytes'] ?? null,
+                'message'    => $row['error_message'] ?? null,
+            ]);
+        } catch (\Throwable $e) {
+            // التنبيه ثانوي.
         }
     }
 

@@ -187,6 +187,35 @@ class AdminMobileApiController extends Controller
         return $this->apiSuccess(['days' => $days, 'by_day' => $by], 'Daily request counts retrieved successfully.');
     }
 
+    /** GET /api/v1/admin/mobile-tokens/alert-settings — إعدادات تنبيهات الأعطال (push للأدمنز). */
+    public function alertSettings(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        return $this->apiSuccess(app(\App\Services\AppFailureAlertService::class)->settings(), 'Alert settings retrieved successfully.');
+    }
+
+    /** PUT /api/v1/admin/mobile-tokens/alert-settings — {enabled?, server_errors?, upload_failures?, app_failures?, cooldown_minutes?} */
+    public function saveAlertSettings(Request $request)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        $saved = app(\App\Services\AppFailureAlertService::class)->save($request->only(['enabled', 'server_errors', 'upload_failures', 'app_failures', 'cooldown_minutes']));
+        return $this->apiSuccess($saved, 'Alert settings saved.');
+    }
+
+    /** POST /api/v1/admin/mobile-tokens/{id}/alert-test — يبعت إشعار تجريبي (push) للأدمن اللي ضغط. */
+    public function alertTest(Request $request, string $id)
+    {
+        if ($err = $this->requireAdmin($request)) {
+            return $err;
+        }
+        app(\App\Services\AppFailureAlertService::class)->sendTest((int) $request->attributes->get('uip_user_id'), (int) $id);
+        return $this->apiSuccess(null, 'Test alert sent.');
+    }
+
     /** GET /api/v1/admin/mobile-tokens/blocked-devices — every manually blocked device. */
     public function blockedDevices(Request $request)
     {

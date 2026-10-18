@@ -94,9 +94,15 @@ class PushNotificationService
             $title = (string) $n->title;
             $body = (string) ($n->body ?? '');
 
+            // تنبيهات أعطال التطبيق: قناة "alerts" (أهمية قصوى) ولون أحمر، ونفس الـ tag بيستبدل القديم بدل ما يتكدّس.
+            $opts = [];
+            if (str_starts_with((string) $n->type, 'system_app_failure')) {
+                $opts = ['channel_id' => 'uip-alerts', 'color' => '#E5484D', 'tag' => 'uip-appfail-' . substr(md5((string) $n->link_url), 0, 8)];
+            }
+
             $sent = 0;
             foreach ($devices as $d) {
-                $r = $this->fcm->send($d->token, $title, $body !== '' ? $body : $title, $data);
+                $r = $this->fcm->send($d->token, $title, $body !== '' ? $body : $title, $data, $opts);
                 if ($r === FcmClient::OK) {
                     $sent++;
                 } elseif ($r === FcmClient::INVALID_TOKEN) {
