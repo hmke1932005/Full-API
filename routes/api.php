@@ -1495,6 +1495,12 @@ Route::prefix('v1')->group(function () {
         Route::post('/', [PatentsApiController::class, 'store']);
     });
 
+    // Push للموبايل: تسجيل/إلغاء توكن الجهاز (أي يوزر مسجّل دخول؛ من غير uip.can لأنه مش إدارة إشعارات).
+    Route::prefix('push')->middleware('uip.auth')->group(function () {
+        Route::post('/devices', [\App\Http\Controllers\Api\PushDevicesApiController::class, 'register']);
+        Route::delete('/devices', [\App\Http\Controllers\Api\PushDevicesApiController::class, 'unregister']);
+    });
+
     // -- بند 19: Notifications — Notification Center الكامل لكل الأدوار
     // (كنترولر موحّد، نفس نمط messaging). ملحوظة ترتيب الراوتس: /read-all
     // و /read و /bulk لازم يتسجلوا قبل /{id} عشان Laravel ميحاولش يفسّر

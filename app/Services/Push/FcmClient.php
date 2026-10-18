@@ -1,0 +1,158 @@
+<?php
+
+namespace App\Services\Push;
+
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+
+/**
+ * عميل Firebase Cloud Messaging (HTTP v1) من غير أي مكتبة خارجية: بيوقّع JWT بالـ service account
+ * (RS256) ويبدّله بـ OAuth access token (بيتخزّن في الكاش) ويبعت الرسالة.
+ *
+ * الإعداد (.env):
+ *   FCM_CREDENTIALS_PATH=/مسار/كامل/firebase-service-account.json     (أو)
+ *   FCM_CREDENTIALS_JSON=<محتوى الملف نفسه، أو base64 له>
+ *   FCM_PROJECT_ID=uip-v1            (اختياري — بياخده من الملف لو فاضي)
+ * لو مفيش credentials: isConfigured() بترجع false وكل الإرسال بيتجاهل بهدوء.
+ */
+class FcmClient
+{
+    public const OK = 'ok';
+    public const INVALID_TOKEN = 'invalid_token';
+    public const FAILED = 'failed';
+
+    private ?array $creds = null;
+    private bool $credsLoaded = false;
+
+    public function isConfigured(): bool
+    {
+        return $this->credentials() !== null;
+    }
+
+    /** @return array{client_email:string,private_key:string,project_id:string}|null */
+    private function credentials(): ?array
+    {
+        if ($this->credsLoaded) {
+            return $this->creds;
+        }
+        $this->credsLoaded = true;
+
+        $raw = '';
+        $path = (string) config('services.fcm.credentials_path', '');
+        if ($path !== '' && is_readable($path)) {
+            $raw = (string) file_get_contents($path);
+        } else {
+            $inline = trim((string) config('services.fcm.credentials_json', ''));
+            if ($inline !== '') {
+                $raw = $inline[0] === '{' ? $inline : (string) base64_decode($inline, true);
+            }
+        }
+        $json = $raw !== '' ? json_decode($raw, true) : null;
+        if (!is_array($json) || empty($json['client_email']) || empty($json['private_key'])) {
+            return $this->creds = null;
+        }
+        $project = (string) (config('services.fcm.project_id') ?: ($json['project_id'] ?? ''));
+        if ($project === '') {
+            return $this->creds = null;
+        }
+        return $this->creds = [
+            'client_email' => (string) $json['client_email'],
+            'private_key'  => (string) $json['private_key'],
+            'project_id'   => $project,
+        ];
+    }
+
+    private static function b64u(string $s): string
+    {
+        return rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
+    }
+
+    private function accessToken(): ?string
+    {
+        $creds = $this->credentials();
+        if (!$creds) {
+            return null;
+        }
+        return Cache::remember('fcm_access_token:' . md5($creds['client_email']), 3000, function () use ($creds) {
+            $now = time();
+            $head = self::b64u(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+            $claims = self::b64u(json_encode([
+                'iss'   => $creds['client_email'],
+                'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
+                'aud'   => 'https://oauth2.googleapis.com/token',
+                'iat'   => $now,
+                'exp'   => $now + 3600,
+            ]));
+            $signature = '';
+            if (!openssl_sign("$head.$claims", $signature, $creds['private_key'], OPENSSL_ALGO_SHA256)) {
+                Log::warning('FCM: could not sign the service-account JWT (is the private_key valid?)');
+                return null;
+            }
+            $res = Http::asForm()->timeout(8)->connectTimeout(4)->post('https://oauth2.googleapis.com/token', [
+                'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                'assertion'  => "$head.$claims." . self::b64u($signature),
+            ]);
+            if (!$res->ok() || !$res->json('access_token')) {
+                Log::warning('FCM: token request failed', ['status' => $res->status(), 'body' => mb_substr($res->body(), 0, 300)]);
+                return null;
+            }
+            return (string) $res->json('access_token');
+        });
+    }
+
+    /**
+     * @param array<string,scalar|null> $data قيم نصية بس (شرط FCM)
+     * @return string self::OK | self::INVALID_TOKEN (امسح التوكن) | self::FAILED
+     */
+    public function send(string $token, string $title, string $body, array $data = []): string
+    {
+        $creds = $this->credentials();
+        $access = $this->accessToken();
+        if (!$creds || !$access) {
+            Cache::forget('fcm_access_token:' . md5($creds['client_email'] ?? ''));
+            return self::FAILED;
+        }
+
+        $payload = ['message' => [
+            'token'        => $token,
+            'notification' => ['title' => mb_substr($title, 0, 120), 'body' => mb_substr($body, 0, 240)],
+            'data'         => array_map(fn ($v) => (string) $v, $data),
+            'android'      => [
+                'priority'     => 'HIGH',
+                'ttl'          => '86400s',
+                'notification' => [
+                    'channel_id' => 'uip',            // نفس القناة اللي التطبيق بيعملها (native.js)
+                    'icon'       => 'ic_stat_uip',     // native/android/res/drawable/ic_stat_uip.xml
+                    'color'      => '#4F5BE8',
+                    'sound'      => 'default',
+                ],
+            ],
+        ]];
+
+        try {
+            $res = Http::withToken($access)->timeout(8)->connectTimeout(4)
+                ->post("https://fcm.googleapis.com/v1/projects/{$creds['project_id']}/messages:send", $payload);
+        } catch (\Throwable $e) {
+            Log::warning('FCM: send failed', ['error' => $e->getMessage()]);
+            return self::FAILED;
+        }
+
+        if ($res->successful()) {
+            return self::OK;
+        }
+        if ($res->status() === 401) {
+            Cache::forget('fcm_access_token:' . md5($creds['client_email']));
+        }
+        $status = (string) $res->json('error.status');
+        $code = '';
+        foreach ((array) $res->json('error.details', []) as $d) {
+            $code = (string) ($d['errorCode'] ?? $code);
+        }
+        if ($res->status() === 404 || $code === 'UNREGISTERED' || ($res->status() === 400 && $status === 'INVALID_ARGUMENT' && $code !== 'SENDER_ID_MISMATCH')) {
+            return self::INVALID_TOKEN;
+        }
+        Log::warning('FCM: send rejected', ['status' => $res->status(), 'body' => mb_substr($res->body(), 0, 300)]);
+        return self::FAILED;
+    }
+}

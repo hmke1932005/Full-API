@@ -45,6 +45,13 @@ return [
         'token'         => env('GITHUB_TOKEN', ''),
     ],
 
+    // Push للموبايل (Firebase Cloud Messaging HTTP v1). شوف PUSH_NOTIFICATIONS.md.
+    'fcm' => [
+        'credentials_path' => env('FCM_CREDENTIALS_PATH', ''),
+        'credentials_json' => env('FCM_CREDENTIALS_JSON', ''),
+        'project_id'       => env('FCM_PROJECT_ID', ''),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),

@@ -100,6 +100,13 @@ class NotificationService
             'link_url' => $linkUrl,
         ]);
 
+        // Push للموبايل — بعد ما الرد يتبعت (مفيش تأخير)، وأي فشل مبيكسرش الإشعار الداخلي.
+        try {
+            \App\Jobs\SendPushNotificationJob::dispatchAfterResponse((int) $notification->id);
+        } catch (\Throwable $e) {
+            // تجاهل عمدًا
+        }
+
         // إيميل لأحداث مشروع التخرج (بيدخل الطابور بس؛ الإرسال الفعلي في notifications:send-emails).
         // محاط بـ try/catch جوه الخدمة نفسها — أي مشكلة في الإيميل مبتكسرش الإشعار الداخلي.
         try {
