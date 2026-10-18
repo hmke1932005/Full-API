@@ -108,6 +108,7 @@ use App\Http\Controllers\Api\FacultyApprovalsApiController;
 use App\Http\Controllers\Api\FacultySettingsApiController;
 use App\Http\Controllers\Api\DashboardsApiController;
 use App\Http\Controllers\Api\ProjectsApiController;
+use App\Http\Controllers\Api\SandboxApiController;
 use App\Http\Controllers\Api\GithubConnectionApiController;
 use App\Http\Controllers\Api\AdminApprovalsApiController;
 use App\Http\Controllers\Api\AdminFeaturedProjectsApiController;
@@ -785,6 +786,9 @@ Route::prefix('v1')->group(function () {
         Route::post('/{id}/publish', [ProjectsApiController::class, 'publish']);
         Route::post('/{id}/archive', [ProjectsApiController::class, 'archive']);
         Route::post('/{id}/unarchive', [ProjectsApiController::class, 'unarchive']);
+
+        // Sandbox gateway token (real terminal / Laravel / Node / Python). Signs only — nothing runs here.
+        Route::post('/{id}/sandbox-token', [SandboxApiController::class, 'token'])->middleware('throttle:30,1');
 
         Route::get('/{id}/files', [ProjectsApiController::class, 'files']);
         Route::post('/{id}/files', [ProjectsApiController::class, 'storeFile']);

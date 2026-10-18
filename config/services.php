@@ -59,4 +59,11 @@ return [
         ],
     ],
 
+    // Project sandbox gateway (uip-sandbox — a SEPARATE service). SANDBOX_JWT_SECRET must be identical on both sides.
+    'sandbox' => [
+        'url'       => env('SANDBOX_URL', ''),
+        'secret'    => env('SANDBOX_JWT_SECRET', ''),
+        'token_ttl' => (int) env('SANDBOX_TOKEN_TTL', 120),
+    ],
+
 ];
