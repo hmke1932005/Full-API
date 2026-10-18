@@ -568,14 +568,14 @@ class MessagingService
             return array_fill_keys($messageIds, 'sent');
         }
         $rows = DB::table('message_read_receipts')->whereIn('message_id', $messageIds)
-            ->selectRaw('message_id, COUNT(delivered_at) AS delivered, COUNT(read_at) AS reads')
+            ->selectRaw('message_id, COUNT(delivered_at) AS delivered, COUNT(read_at) AS read_count')
             ->groupBy('message_id')->get()->keyBy('message_id');
 
         $out = [];
         foreach ($messageIds as $id) {
             $r = $rows[$id] ?? null;
             $out[$id] = !$r ? 'sent'
-                : ((int) $r->reads >= $recipients ? 'read' : ((int) $r->delivered >= $recipients ? 'delivered' : 'sent'));
+                : ((int) $r->read_count >= $recipients ? 'read' : ((int) $r->delivered >= $recipients ? 'delivered' : 'sent'));
         }
         return $out;
     }
