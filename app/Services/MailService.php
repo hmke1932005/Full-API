@@ -467,6 +467,31 @@ class MailService
         );
     }
 
+    /** رمز OTP لاسترجاع باسورد شاشة القفل بتاعة سطح مكتب "جهازي". */
+    public function sendDesktopLockOtp(string $toEmail, string $fullName, string $otp, int $minutes, ?string $ip, string $locale = 'ar'): bool
+    {
+        $ar = $locale === 'ar';
+        $from = $ip ? ($ar ? " (من IP: {$ip})" : " (from IP: {$ip})") : '';
+
+        return $this->deliver(
+            $toEmail,
+            $ar ? 'رمز استرجاع باسورد شاشة القفل' : 'Your lock screen password reset code',
+            $ar ? "أهلاً {$fullName}" : "Hi {$fullName}",
+            [
+                $ar
+                    ? "وصلنا طلب لاسترجاع باسورد شاشة القفل في سطح مكتب \"جهازي\"{$from}. اكتب الرمز التالي في شاشة القفل ثم اختر باسورد جديد."
+                    : "We received a request to reset your desktop lock screen password{$from}. Enter the code below on the lock screen, then choose a new password.",
+                $ar ? "الرمز صالح لمدة {$minutes} دقايق ويُستخدم مرة واحدة. متشاركوش مع حد." : "The code is valid for {$minutes} minutes and works once. Never share it with anyone.",
+                $ar ? 'لو ماكنتش أنت اللي طلبت ده، تجاهل هذه الرسالة — الباسورد مش هيتغير.' : "If you didn't request this, ignore this email — your lock password won't change.",
+            ],
+            null,
+            $locale,
+            [['label' => $ar ? 'رمز التحقق' : 'Verification code', 'value' => $otp, 'code' => true, 'copyUrl' => $this->copyCodeUrl($otp, '/student/my-pc')]],
+            'sendDesktopLockOtp',
+            'reset'
+        );
+    }
+
     /** لينك تأكيد تغيير الإيميل — بيتبعت للإيميل الجديد، والتغيير ما بيحصلش قبل الضغط عليه. */
     public function sendEmailChangeConfirmation(string $toEmail, string $fullName, string $confirmUrl, int $hours, string $locale = 'ar'): bool
     {

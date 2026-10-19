@@ -71,6 +71,7 @@ use App\Http\Controllers\Api\GroupChatController;
 use App\Http\Controllers\Api\ChatSafetyApiController;
 use App\Http\Controllers\Api\ConversationTrashController;
 use App\Http\Controllers\Api\AccountPrivacyApiController;
+use App\Http\Controllers\Api\DesktopSettingsApiController;
 use App\Http\Controllers\Api\AdminAiConversationsApiController;
 use App\Http\Controllers\Api\AiAssistantController;
 use App\Http\Controllers\Api\AiAssistantSettingsController;
@@ -1575,6 +1576,19 @@ Route::prefix('v1')->group(function () {
     Route::prefix('account/photo-privacy')->middleware('uip.auth')->group(function () {
         Route::get('/', [AccountPrivacyApiController::class, 'show']);
         Route::patch('/', [AccountPrivacyApiController::class, 'update']);
+    });
+
+    // إعدادات سطح المكتب ("جهازي") + باسورد شاشة القفل — بتتابع الطالب على أي جهاز. راجع DesktopSettingsApiController.
+    Route::prefix('desktop')->middleware('uip.auth')->group(function () {
+        Route::get('/settings', [DesktopSettingsApiController::class, 'show'])->middleware('throttle:120,1');
+        Route::put('/settings', [DesktopSettingsApiController::class, 'update'])->middleware('throttle:120,1');
+        Route::get('/wallpaper', [DesktopSettingsApiController::class, 'wallpaper'])->middleware('throttle:60,1');
+        Route::put('/wallpaper', [DesktopSettingsApiController::class, 'saveWallpaper'])->middleware('throttle:20,1');
+        Route::post('/lock/set', [DesktopSettingsApiController::class, 'lockSet'])->middleware('throttle:20,1');
+        Route::post('/lock/verify', [DesktopSettingsApiController::class, 'lockVerify'])->middleware('throttle:30,1');
+        Route::post('/lock/disable', [DesktopSettingsApiController::class, 'lockDisable'])->middleware('throttle:20,1');
+        Route::post('/lock/otp', [DesktopSettingsApiController::class, 'lockOtp'])->middleware('throttle:10,1');
+        Route::post('/lock/reset', [DesktopSettingsApiController::class, 'lockReset'])->middleware('throttle:20,1');
     });
 
     // متابعة بلاغات الشات — admin (الكل) / university (جامعته) / faculty (كليته). الفحص جوّه ChatSafetyService::scopeFor.
