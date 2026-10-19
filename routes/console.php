@@ -54,3 +54,6 @@ Schedule::command('mail:update-disposable-domains')->weekly()->withoutOverlappin
 
 // سلة محذوفات المحادثات: حذف نهائي لكل اللي عدّى عليه 30 يوم.
 Schedule::command('messaging:purge-trash')->dailyAt('03:30')->withoutOverlapping();
+
+// "جهازي" (My PC): مسح نهائي لعناصر سلة الملفات اللي عدّى عليها DRIVE_TRASH_DAYS (30 افتراضيًا).
+Schedule::command('drive:purge-trash')->dailyAt('04:00')->withoutOverlapping();

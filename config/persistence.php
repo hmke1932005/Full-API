@@ -21,5 +21,6 @@ return [
         'storage/app/private'      => 'storage-private',  // disk 'local': لقطات/تسجيلات مراقبة الامتحانات
         'storage/app/exam-exports' => 'exam-exports',     // ملفات تصدير الامتحانات (ليها صفوف في DB)
         'storage/logs/security'    => 'security-logs',    // سجلات الأمان (أثر تدقيق)
+        'storage/app/drive'        => 'drive',            // "جهازي": ملفات الطلاب الشخصية (disk 'drive' — صفوفها في drive_nodes)
     ],
 ];

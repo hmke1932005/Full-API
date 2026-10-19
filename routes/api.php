@@ -109,6 +109,7 @@ use App\Http\Controllers\Api\FacultySettingsApiController;
 use App\Http\Controllers\Api\DashboardsApiController;
 use App\Http\Controllers\Api\ProjectsApiController;
 use App\Http\Controllers\Api\SandboxApiController;
+use App\Http\Controllers\Api\DriveApiController;
 use App\Http\Controllers\Api\GithubConnectionApiController;
 use App\Http\Controllers\Api\AdminApprovalsApiController;
 use App\Http\Controllers\Api\AdminFeaturedProjectsApiController;
@@ -231,6 +232,36 @@ Route::prefix('v1')->group(function () {
     Route::prefix('subtitles/auto')->middleware(['uip.auth', 'throttle:40,1'])->group(function () {
         Route::get('/status', [\App\Http\Controllers\Api\SubtitlesApiController::class, 'status']);
         Route::post('/', [\App\Http\Controllers\Api\SubtitlesApiController::class, 'generate']);
+    });
+
+    // "جهازي" (My PC) — نظام ملفات شخصي معزول لكل طالب. راجع docblock الـ DriveApiController.
+    // الروتس الثابتة (tree/search/trash/...) قبل nodes/{id} عشان Laravel ميطابقهاش كـ {id}.
+    Route::prefix('drive')->middleware('uip.auth')->group(function () {
+        Route::get('/', [DriveApiController::class, 'index']);
+        Route::get('/tree', [DriveApiController::class, 'tree']);
+        Route::get('/search', [DriveApiController::class, 'search']);
+        Route::get('/usage', [DriveApiController::class, 'usage']);
+        Route::get('/templates', [DriveApiController::class, 'templates']);
+        Route::post('/folders', [DriveApiController::class, 'createFolder'])->middleware('throttle:120,1');
+        Route::post('/files', [DriveApiController::class, 'createFile'])->middleware('throttle:120,1');
+        Route::post('/projects', [DriveApiController::class, 'createProject'])->middleware('throttle:30,1');
+        Route::post('/upload', [DriveApiController::class, 'upload'])->middleware('throttle:120,1');
+        Route::post('/move', [DriveApiController::class, 'move']);
+        Route::post('/copy', [DriveApiController::class, 'copy'])->middleware('throttle:30,1');
+        Route::post('/zip', [DriveApiController::class, 'zip'])->middleware('throttle:20,1');
+        Route::post('/trash', [DriveApiController::class, 'trash']);
+        Route::post('/restore', [DriveApiController::class, 'restore']);
+        Route::post('/purge', [DriveApiController::class, 'purge']);
+        Route::get('/trash', [DriveApiController::class, 'trashList']);
+        Route::delete('/trash', [DriveApiController::class, 'emptyTrash']);
+        Route::get('/nodes/{id}/content', [DriveApiController::class, 'content']);
+        Route::put('/nodes/{id}/content', [DriveApiController::class, 'saveContent'])->middleware('throttle:120,1');
+        Route::post('/nodes/{id}/replace', [DriveApiController::class, 'replace'])->middleware('throttle:60,1');
+        Route::patch('/nodes/{id}', [DriveApiController::class, 'rename']);
+        Route::get('/nodes/{id}/archive', [DriveApiController::class, 'archive'])->middleware('throttle:20,1');
+        Route::post('/nodes/{id}/unzip', [DriveApiController::class, 'unzip'])->middleware('throttle:20,1');
+        Route::post('/nodes/{id}/sync', [DriveApiController::class, 'sync'])->middleware('throttle:30,1');
+        Route::post('/nodes/{id}/sandbox-token', [DriveApiController::class, 'sandboxToken'])->middleware('throttle:30,1');
     });
 
     Route::prefix('files')->middleware('uip.auth')->group(function () {
