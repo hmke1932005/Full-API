@@ -275,10 +275,8 @@ class DriveApiController extends Controller
             if ($url === '' || strlen($secret) < 32) {
                 return $this->apiError('The sandbox is not configured on this server.', null, 503);
             }
+            // a folder (code editor) OR a ZIP file opened in the viewer: ownership is what matters; the id only keys the session
             $node = $this->drive->find($uid, (int) $id);
-            if (!$node->isFolder()) {
-                return $this->apiError('Item not found.', null, 404);
-            }
             $ttl = max(30, (int) config('services.sandbox.token_ttl', 120));
             $now = time();
             $b64 = static fn (string $s): string => rtrim(strtr(base64_encode($s), '+/', '-_'), '=');
